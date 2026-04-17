@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(wait)",
+      "Bash(npm run:*)",
+      "Bash(npx update-browserslist-db@latest)",
+      "Bash(npm update:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vite:*)",
+      "Bash(powershell:*)",
+      "Bash(node \"C:/Users/rosin/Desktop/digygocrm/frontend/node_modules/.bin/tsc\" --noEmit --project \"C:/Users/rosin/Desktop/digygocrm/frontend/tsconfig.app.json\")",
+      "Bash(node \"C:/Users/rosin/Desktop/digygocrm/frontend/node_modules/typescript/bin/tsc\" --noEmit --project \"C:/Users/rosin/Desktop/digygocrm/frontend/tsconfig.app.json\")",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(bash -c \"cd 'C:/Users/rosin/Desktop/digygocrm/frontend' && node_modules/.bin/tsc --noEmit 2>&1 | cat\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(xargs ls *)",
+      "Bash(wc -l /c/Users/rosin/Desktop/digygocrm/frontend/src/pages/*.tsx)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(grep -n \"\\)} $\\\\|^      \\)\\\\|^      }$\" ~/Desktop/digygocrm/frontend/src/pages/LeadsPage.tsx)",
+      "Bash(awk '/^function LeadDetailPanel/,/^}$/' ~/Desktop/digygocrm/frontend/src/pages/LeadsPage.tsx)",
+      "Bash(grep -n \"const inputCls\\\\|return \\(\\\\|^}$\")",
+      "Bash(awk *)",
+      "Bash(sed -n '1340,1680p' ~/Desktop/digygocrm/frontend/src/pages/LeadsPage.tsx)",
+      "Read(//tmp/**)",
+      "Bash(head -n 1350 LeadsPage.tsx)",
+      "Bash(tail -n +1937 LeadsPage.tsx)",
+      "Bash(cat /tmp/leads_part1.tsx ~/AppData/Local/Temp/new_panel.tsx /tmp/leads_part2.tsx)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(./node_modules/.bin/vite build *)",
+      "Bash(ls ~/AppData/Local/Temp/*.tsx)",
+      "Bash(git init *)",
+      "Bash(git remote *)"
+    ]
+  }
+}

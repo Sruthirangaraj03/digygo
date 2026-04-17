@@ -1,0 +1,141 @@
+import { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import {
+  LayoutDashboard, Users, MessageSquare, Zap, Inbox, Settings, Calendar,
+  UserCog, SlidersHorizontal, ChevronDown, ChevronRight, X, Database,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+interface NavItem {
+  label: string;
+  icon: React.ElementType;
+  path?: string;
+  children?: { label: string; path: string }[];
+}
+
+const navItems: NavItem[] = [
+  { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { label: 'Lead Generation', icon: Database, path: '/lead-generation' },
+  { label: 'Lead Management', icon: Users, path: '/lead-management' },
+  { label: 'Automation', icon: Zap, path: '/automation' },
+  { label: 'Inbox', icon: Inbox, path: '/inbox' },
+  { label: 'Fields', icon: SlidersHorizontal, path: '/fields' },
+  { label: 'Calendar', icon: Calendar, path: '/calendar' },
+  { label: 'Staff', icon: UserCog, path: '/staff' },
+  { label: 'Settings', icon: Settings, path: '/settings' },
+];
+
+export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const location = useLocation();
+  const [expanded, setExpanded] = useState<string[]>(['Lead Generation', 'Automation']);
+
+  const toggleExpand = (label: string) =>
+    setExpanded((prev) => prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label]);
+
+  const isActive = (path?: string) => {
+    if (!path) return false;
+    const [p, q] = path.split('?');
+    if (q) return location.pathname === p && location.search === `?${q}`;
+    return location.pathname === p && !location.search;
+  };
+
+  const isChildActive = (item: NavItem) => item.children?.some((c) => {
+    const [p] = c.path.split('?');
+    return location.pathname.startsWith(p);
+  });
+
+  return (
+    <>
+      {/* Mobile overlay */}
+      {open && (
+        <div
+          className="fixed inset-0 bg-black/40 z-40 md:hidden"
+          onClick={onClose}
+        />
+      )}
+
+      <aside className={cn(
+        'fixed top-0 left-0 z-50 h-full w-56 bg-[#faf8f6] border-r border-black/5 flex flex-col transition-transform duration-300',
+        'md:translate-x-0 md:static md:z-auto',
+        open ? 'translate-x-0' : '-translate-x-full'
+      )}>
+
+        {/* Logo */}
+        <div className="flex items-center gap-2.5 px-4 py-4 mb-1">
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>
+            <Zap className="w-5 h-5 text-white" />
+          </div>
+          <span className="font-headline text-[16px] font-bold text-[#1c1410]">NexCRM</span>
+          <button
+            onClick={onClose}
+            className="ml-auto md:hidden p-1.5 rounded-lg text-[#7a6b5c] hover:bg-[#f5ede3] transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Nav */}
+        <nav className="flex-1 overflow-y-auto px-2.5 space-y-0.5">
+          {navItems.map((item) => (
+            <div key={item.label}>
+              {item.children ? (
+                <>
+                  <button
+                    onClick={() => toggleExpand(item.label)}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200',
+                      isChildActive(item)
+                        ? 'bg-[#fde8d5] text-primary font-semibold'
+                        : 'text-[#6b4f30] hover:bg-[#f5ede3] hover:text-primary'
+                    )}
+                  >
+                    <item.icon className="w-[18px] h-[18px] shrink-0" />
+                    <span className="flex-1 text-left">{item.label}</span>
+                    {expanded.includes(item.label) || isChildActive(item)
+                      ? <ChevronDown className="w-4 h-4 opacity-60" />
+                      : <ChevronRight className="w-4 h-4 opacity-40" />}
+                  </button>
+                  {(expanded.includes(item.label) || isChildActive(item)) && (
+                    <div className="ml-7 mt-0.5 mb-1 space-y-0.5">
+                      {item.children.map((child) => (
+                        <Link
+                          key={child.path}
+                          to={child.path}
+                          onClick={onClose}
+                          className={cn(
+                            'block px-3 py-2 rounded-xl text-[13px] transition-all duration-200',
+                            isActive(child.path)
+                              ? 'bg-[#fde8d5] text-primary font-semibold'
+                              : 'text-[#7a6b5c] hover:bg-[#f5ede3] hover:text-primary'
+                          )}
+                        >
+                          {child.label}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <Link
+                  to={item.path!}
+                  onClick={onClose}
+                  className={cn(
+                    'flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200',
+                    isActive(item.path)
+                      ? 'bg-[#fde8d5] text-primary font-semibold'
+                      : 'text-[#6b4f30] hover:bg-[#f5ede3] hover:text-primary'
+                  )}
+                >
+                  <item.icon className="w-[18px] h-[18px] shrink-0" />
+                  {item.label}
+                </Link>
+              )}
+            </div>
+          ))}
+        </nav>
+
+        <div className="pb-4" />
+      </aside>
+    </>
+  );
+}

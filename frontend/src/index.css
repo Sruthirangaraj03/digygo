@@ -1,0 +1,147 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ── Core palette — warm orange brand ── */
+    --background: 30 25% 97%;          /* #faf8f6 warm off-white */
+    --foreground: 20 20% 10%;          /* #1c1410 warm near-black */
+    --card: 0 0% 100%;                 /* #ffffff */
+    --card-foreground: 20 20% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 20% 10%;
+
+    /* Primary = #c2410c → #ea580c → #f97316 orange gradient brand */
+    --primary: 21 90% 48%;             /* #ea580c orange-600 */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 30 20% 93%;           /* warm beige #f0e8dc */
+    --secondary-foreground: 20 15% 28%;
+
+    --muted: 28 22% 93%;               /* #f2ebe0 warm muted */
+    --muted-foreground: 24 12% 45%;    /* #7a6b5c warm grey */
+
+    --accent: 28 22% 93%;
+    --accent-foreground: 20 20% 10%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 30 15% 88%;              /* warm light border */
+    --input: 30 15% 88%;
+    --ring: 21 90% 48%;
+    --radius: 0.45rem;
+
+    /* Status colors */
+    --success: 160 84% 39%;
+    --success-bg: 149 80% 90%;
+    --success-foreground: 163 94% 20%;
+    --warning: 38 92% 50%;
+    --warning-bg: 48 96% 89%;
+    --warning-foreground: 28 80% 30%;
+
+    /* Sidebar — same warm background */
+    --sidebar-background: 30 25% 97%;
+    --sidebar-foreground: 20 20% 10%;
+    --sidebar-primary: 21 90% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 28 22% 93%;
+    --sidebar-accent-foreground: 20 20% 10%;
+    --sidebar-border: 30 15% 88%;
+    --sidebar-ring: 21 90% 48%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer utilities {
+  /* ── Typography ── */
+  .font-headline {
+    font-family: 'Manrope', sans-serif;
+  }
+
+  /* ── Blur surfaces ── */
+  .ios-blur {
+    background: rgba(250, 248, 246, 0.95);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+  }
+  .tab-blur {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+  }
+
+  /* ── iOS safe area for bottom nav ── */
+  .safe-area-pb {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* ── Hide scrollbar ── */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* ── Shadows ── */
+  .card-shadow {
+    box-shadow: 0 2px 14px rgba(0, 0, 0, 0.06);
+  }
+  .gradient-shadow {
+    box-shadow: 0 8px 24px rgba(234, 88, 12, 0.25);
+  }
+
+  /* ── Card hover lift ── */
+  .card-hover {
+    @apply transition-all duration-300;
+  }
+  .card-hover:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 28px rgba(234, 88, 12, 0.12);
+  }
+
+  /* ── Button gradient (orange) ── */
+  .btn-gradient {
+    background: linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%);
+    @apply text-white font-semibold shadow-lg;
+    box-shadow: 0 8px 24px rgba(234, 88, 12, 0.28);
+    transition: all 0.2s;
+  }
+  .btn-gradient:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 28px rgba(234, 88, 12, 0.36);
+  }
+  .btn-gradient:active {
+    transform: scale(0.97);
+  }
+
+  /* ── Section label ── */
+  .section-label {
+    @apply text-[11px] font-bold uppercase tracking-widest text-primary opacity-70;
+  }
+
+  /* ── Safe area helpers ── */
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 16px);
+  }
+}
