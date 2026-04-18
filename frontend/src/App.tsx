@@ -33,6 +33,7 @@ import AssignmentRulesPage from "./pages/AssignmentRulesPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import LoginPage from "./pages/LoginPage";
 import SuperAdminPage from "./pages/SuperAdminPage";
+import CreateBusinessPage from "./pages/CreateBusinessPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -86,6 +87,7 @@ const App = () => (
 
             {/* Super Admin */}
             <Route path="/admin" element={<SuperAdminPage />} />
+            <Route path="/admin/create" element={<CreateBusinessPage />} />
           </Route>
 
           {/* Full-screen editors — outside AppLayout */}
