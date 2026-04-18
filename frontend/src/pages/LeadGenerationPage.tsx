@@ -35,8 +35,8 @@ const channels = [
     bg: 'bg-purple-50',
     border: 'border-purple-100',
     cta: 'Build a Page',
-    count: null,
-    available: false,
+    count: '0 pages',
+    available: true,
   },
   {
     label: 'WhatsApp',

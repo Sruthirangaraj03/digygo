@@ -19,7 +19,7 @@ export default function LoginPage() {
     if (!email || !password) { setError('Please fill in all fields'); return; }
     setLoading(true);
     await new Promise((r) => setTimeout(r, 400)); // brief animation
-    const ok = login(email, password);
+    const ok = await login(email, password);
     setLoading(false);
     if (ok) {
       toast.success('Welcome back!');
@@ -53,7 +53,7 @@ export default function LoginPage() {
             Welcome back
           </h1>
           <p className="text-[#5c5245] mt-2 text-center text-[15px] leading-relaxed max-w-[280px]">
-            Sign in to your NexCRM account to continue
+            Sign in to your DigyGo CRM account to continue
           </p>
         </header>
 
@@ -134,16 +134,13 @@ export default function LoginPage() {
                 {!loading && <ArrowRight size={20} />}
               </button>
 
-              <p className="text-center text-[11px] text-[#7a6b5c]">
-                Demo: use any email + password to sign in
-              </p>
             </form>
           </div>
         </main>
 
         {/* Footer */}
         <footer className="mt-8 mb-6 text-center">
-          <p className="text-[11px] text-[#b09e8d]">Powered by NexCRM © 2026</p>
+          <p className="text-[11px] text-[#b09e8d]">Powered by DigyGo CRM © 2026</p>
         </footer>
       </div>
     </div>

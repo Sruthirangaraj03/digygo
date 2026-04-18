@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useCrmStore } from '@/store/crmStore';
-import { staff } from '@/data/mockData';
 import {
   ChevronLeft, ChevronRight, Plus, Video, Phone as PhoneIcon, Users, Clock,
   ExternalLink, Copy, Trash2, Settings2, ChevronDown,
@@ -67,7 +66,7 @@ const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export default function CalendarPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { calendarEvents, updateEventStatus, availabilitySlots, addCalendarEvent } = useCrmStore();
+  const { calendarEvents, updateEventStatus, availabilitySlots, addCalendarEvent, staff } = useCrmStore();
 
   const [searchParams] = useSearchParams();
   const tab = (searchParams.get('tab') ?? 'dashboard') as 'dashboard' | 'create-edit' | 'appointments' | 'availability';

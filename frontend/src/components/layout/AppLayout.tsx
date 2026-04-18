@@ -1,11 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { AppSidebar } from './AppSidebar';
 import { AppHeader } from './AppHeader';
 import { MobileBottomNav } from './MobileBottomNav';
+import { useCrmStore } from '@/store/crmStore';
 
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const initFromApi = useCrmStore((s) => s.initFromApi);
+
+  useEffect(() => { initFromApi(); }, []);
 
   return (
     <div className="h-[100dvh] flex w-full bg-[#faf8f6] overflow-hidden">

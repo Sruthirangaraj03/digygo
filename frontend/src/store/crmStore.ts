@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { api } from '@/lib/api';
 import {
   leads as initialLeads,
   conversations as initialConversations,
@@ -153,6 +154,9 @@ interface CrmState {
   updatePipeline: (id: string, updates: Partial<Pipeline>) => void;
   deletePipeline: (id: string) => void;
   clonePipeline: (id: string) => void;
+
+  // API sync
+  initFromApi: () => Promise<void>;
 }
 
 export const useCrmStore = create<CrmState>((set) => ({
@@ -340,4 +344,52 @@ export const useCrmStore = create<CrmState>((set) => ({
     const newId = `pipeline-${Date.now()}`;
     return { pipelines: [...s.pipelines, { ...src, id: newId, name: `${src.name} (Copy)`, stages: src.stages.map((st) => ({ ...st, id: `${st.id}-c${Date.now()}` })) }] };
   }),
+
+  initFromApi: async () => {
+    try {
+      const [leadsRes, staffRes] = await Promise.all([
+        api.get<any[]>('/api/leads'),
+        api.get<any[]>('/api/settings/staff'),
+      ]);
+
+      const mappedLeads: Lead[] = leadsRes.map((l) => {
+        const parts = (l.name ?? '').split(' ');
+        return {
+          id: l.id,
+          firstName: parts[0] ?? '',
+          lastName: parts.slice(1).join(' ') ?? '',
+          email: l.email ?? '',
+          phone: l.phone ?? '',
+          stage: l.stage_id ?? 'New',
+          source: l.source ?? 'Manual',
+          tags: [],
+          assignedTo: l.assigned_to ?? '',
+          createdAt: l.created_at ?? new Date().toISOString(),
+          lastActivity: l.created_at ?? new Date().toISOString(),
+          businessName: '',
+          city: '',
+          notes: '',
+          value: 0,
+          probability: 0,
+          nextFollowUp: null,
+          customFields: {},
+        } as Lead;
+      });
+
+      const mappedStaff: StaffMember[] = staffRes.map((s) => ({
+        id: s.id,
+        name: s.name,
+        email: s.email,
+        role: s.role as StaffMember['role'],
+        status: s.is_active ? 'active' as const : 'inactive' as const,
+        leadsAssigned: 0,
+        lastActive: s.created_at ?? new Date().toISOString(),
+        avatar: (s.name as string).split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase(),
+      }));
+
+      set({ leads: mappedLeads, staff: mappedStaff });
+    } catch {
+      // Keep mock data if API fails (e.g. not logged in yet)
+    }
+  },
 }));

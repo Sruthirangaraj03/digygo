@@ -1,38 +1,27 @@
+import { useMemo } from 'react';
 import { Users, Layers, MessageCircle, Calendar, TrendingUp, ArrowUpRight } from 'lucide-react';
 import { useCrmStore } from '@/store/crmStore';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { formatDistanceToNow } from 'date-fns';
-import { staff } from '@/data/mockData';
 
-const lineData = Array.from({ length: 30 }, (_, i) => ({
-  day: `${i + 1}`,
-  leads: Math.floor(Math.random() * 40) + 60,
-}));
-
-const pieData = [
-  { name: 'Meta Forms', value: 42, color: '#ea580c' },
-  { name: 'WhatsApp', value: 31, color: '#f97316' },
-  { name: 'Custom Form', value: 18, color: '#c2410c' },
-  { name: 'Manual', value: 9, color: '#fed7aa' },
-];
-
-const statCards = [
-  { label: 'Total Leads', value: '2,847', change: '+12% this month', icon: Users, color: 'text-primary' },
-  { label: 'Active Pipelines', value: '5', change: '3 stages each avg', icon: Layers, color: 'text-purple-500' },
-  { label: 'Conversations Today', value: '143', change: '12 unread', icon: MessageCircle, color: 'text-success' },
-  { label: 'Appointments This Week', value: '28', change: '4 pending', icon: Calendar, color: 'text-warning' },
-];
-
-const activities = [
-  { user: 'Ranjith', action: 'moved Saral Bakery → Qualified', time: '2 mins ago', avatar: 'RK' },
-  { user: 'Priya', action: 'added note to TechWave Solutions', time: '8 mins ago', avatar: 'PS' },
-  { user: 'Amit', action: 'created lead GreenLeaf Organics', time: '15 mins ago', avatar: 'AP' },
-  { user: 'Sara', action: 'sent proposal to UrbanEdge Realty', time: '25 mins ago', avatar: 'SR' },
-  { user: 'Vikram', action: 'scheduled demo with SparkDigital', time: '1 hour ago', avatar: 'VS' },
-];
+const lineData = Array.from({ length: 30 }, (_, i) => ({ day: `${i + 1}`, leads: Math.floor(Math.random() * 40) + 60 }));
 
 export default function DashboardPage() {
-  const { leads, calendarEvents } = useCrmStore();
+  const { leads, calendarEvents, staff } = useCrmStore();
+
+  const pieData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    leads.forEach((l) => { counts[l.source] = (counts[l.source] ?? 0) + 1; });
+    const colors = ['#ea580c', '#f97316', '#c2410c', '#fed7aa', '#7c3aed'];
+    return Object.entries(counts).map(([name, value], i) => ({ name, value, color: colors[i % colors.length] }));
+  }, [leads]);
+
+  const statCards = [
+    { label: 'Total Leads', value: leads.length.toLocaleString(), change: 'in your pipeline', icon: Users, color: 'text-primary' },
+    { label: 'Active Staff', value: staff.filter((s) => s.status === 'active').length.toString(), change: 'team members', icon: Layers, color: 'text-purple-500' },
+    { label: 'Conversations', value: '0', change: 'coming soon', icon: MessageCircle, color: 'text-success' },
+    { label: 'Appointments', value: calendarEvents.length.toString(), change: 'scheduled', icon: Calendar, color: 'text-warning' },
+  ];
 
   const upcomingFollowups = leads.slice(0, 5).map((l) => ({
     name: `${l.firstName} ${l.lastName}`,
@@ -125,21 +114,20 @@ export default function DashboardPage() {
       {/* Activity + Follow-ups */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div className="bg-white rounded-2xl border border-black/5 card-shadow p-6">
-          <h3 className="font-headline font-bold text-[#1c1410] mb-5">Recent Activity</h3>
-          <div className="space-y-4">
-            {activities.map((a, i) => (
-              <div key={i} className="flex items-start gap-3">
+          <h3 className="font-headline font-bold text-[#1c1410] mb-5">Recent Leads</h3>
+          <div className="space-y-3">
+            {leads.slice(0, 5).map((l) => (
+              <div key={l.id} className="flex items-start gap-3">
                 <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">
-                  {a.avatar}
+                  {l.firstName[0]}{l.lastName[0]}
                 </div>
                 <div className="flex-1">
-                  <p className="text-[13px] font-semibold text-[#1c1410]">
-                    {a.user} <span className="font-normal text-[#7a6b5c]">{a.action}</span>
-                  </p>
-                  <p className="text-[11px] text-[#8a7c6e] mt-0.5">{a.time}</p>
+                  <p className="text-[13px] font-semibold text-[#1c1410]">{l.firstName} {l.lastName}</p>
+                  <p className="text-[11px] text-[#8a7c6e] mt-0.5">{l.source} · {l.stage}</p>
                 </div>
               </div>
             ))}
+            {leads.length === 0 && <p className="text-[13px] text-[#b09e8d]">No leads yet.</p>}
           </div>
         </div>
         <div className="bg-white rounded-2xl border border-black/5 card-shadow p-6">

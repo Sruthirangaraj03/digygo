@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useCrmStore } from '@/store/crmStore';
 import { StaffMember } from '@/data/mockData';
+import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -205,20 +206,27 @@ export default function StaffPage() {
     }));
   }, [staff]);
 
-  const handleInvite = (data: { name: string; email: string; role: StaffMember['role'] }) => {
-    const initials = data.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
-    addStaff({
-      id: `s-${Date.now()}`,
-      name: data.name,
-      email: data.email,
-      role: data.role,
-      status: 'active',
-      leadsAssigned: 0,
-      lastActive: new Date().toISOString(),
-      avatar: initials,
-    });
-    setShowInviteModal(false);
-    toast.success(`Invite sent to ${data.email}`);
+  const handleInvite = async (data: { name: string; email: string; role: StaffMember['role'] }) => {
+    try {
+      const res = await api.post<{ id: string; name: string; email: string; role: string }>('/api/settings/staff', {
+        name: data.name, email: data.email, role: data.role, password: 'Welcome@123',
+      });
+      const initials = data.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+      addStaff({
+        id: res.id,
+        name: res.name,
+        email: res.email,
+        role: data.role,
+        status: 'active',
+        leadsAssigned: 0,
+        lastActive: new Date().toISOString(),
+        avatar: initials,
+      });
+      setShowInviteModal(false);
+      toast.success(`${data.name} added. Temporary password: Welcome@123`);
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to add staff');
+    }
   };
 
   const handleEdit = (data: { name: string; email: string; role: StaffMember['role'] }) => {
