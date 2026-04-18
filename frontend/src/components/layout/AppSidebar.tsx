@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, MessageSquare, Zap, Inbox, Settings, Calendar,
-  UserCog, SlidersHorizontal, ChevronDown, ChevronRight, X, Database,
+  UserCog, SlidersHorizontal, ChevronDown, ChevronRight, X, Database, ShieldCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCompanyStore } from '@/store/companyStore';
+import { useAuthStore } from '@/store/authStore';
 
 interface NavItem {
   label: string;
@@ -30,6 +31,8 @@ export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => vo
   const location = useLocation();
   const [expanded, setExpanded] = useState<string[]>(['Lead Generation', 'Automation']);
   const { logoUrl, companyName } = useCompanyStore();
+  const currentUser = useAuthStore((s) => s.currentUser);
+  const isSuperAdmin = currentUser?.role === 'super_admin';
 
   const toggleExpand = (label: string) =>
     setExpanded((prev) => prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label]);
@@ -140,7 +143,26 @@ export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => vo
           ))}
         </nav>
 
-        <div className="pb-4" />
+        {/* Super Admin link — CEO only */}
+        {isSuperAdmin && (
+          <div className="px-2.5 pb-3 border-t border-black/5 pt-3">
+            <Link
+              to="/admin"
+              onClick={onClose}
+              className={cn(
+                'flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200',
+                location.pathname === '/admin'
+                  ? 'bg-primary text-white font-semibold'
+                  : 'text-primary bg-primary/10 hover:bg-primary/20'
+              )}
+            >
+              <ShieldCheck className="w-[18px] h-[18px] shrink-0" />
+              Manage Businesses
+            </Link>
+          </div>
+        )}
+
+        <div className="pb-2" />
       </aside>
     </>
   );

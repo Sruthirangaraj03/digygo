@@ -32,6 +32,7 @@ import NotificationsPage from "./pages/NotificationsPage";
 import AssignmentRulesPage from "./pages/AssignmentRulesPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import LoginPage from "./pages/LoginPage";
+import SuperAdminPage from "./pages/SuperAdminPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -82,6 +83,9 @@ const App = () => (
             <Route path="/settings/notifications" element={<NotificationsPage />} />
             <Route path="/settings/assignment-rules" element={<AssignmentRulesPage />} />
             <Route path="/settings/integrations" element={<IntegrationsPage />} />
+
+            {/* Super Admin */}
+            <Route path="/admin" element={<SuperAdminPage />} />
           </Route>
 
           {/* Full-screen editors — outside AppLayout */}
