@@ -322,11 +322,6 @@ export default function CustomFormDetailPage() {
                               )}
                             </select>
                           </div>
-                          {field.mapTo && (
-                            <p className="text-[10px] text-emerald-600 mt-1 ml-7">
-                              → Saves to <span className="font-semibold">{allCrmFields.find((f) => f.slug === field.mapTo)?.name ?? field.mapTo}</span>
-                            </p>
-                          )}
                         </div>
 
                         {/* Type + Required + Delete */}
