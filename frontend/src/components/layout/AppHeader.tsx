@@ -3,6 +3,7 @@ import { Bell, Menu, X, Zap } from 'lucide-react';
 import { useLocation, Link } from 'react-router-dom';
 import { useCrmStore } from '@/store/crmStore';
 import { useAuthStore } from '@/store/authStore';
+import { useCompanyStore } from '@/store/companyStore';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 
@@ -64,6 +65,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
   const [showNotifs, setShowNotifs] = useState(false);
   const { notifications, markAllNotificationsRead, markNotificationRead } = useCrmStore();
   const currentUser = useAuthStore((s) => s.currentUser);
+  const { logoUrl, companyName } = useCompanyStore();
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   const initials = currentUser
@@ -93,10 +95,14 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
 
         {/* Mobile: logo mark */}
         <div className="md:hidden flex items-center gap-2 shrink-0">
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>
-            <Zap className="w-4 h-4 text-white" />
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center overflow-hidden shrink-0"
+            style={logoUrl ? { background: 'transparent' } : { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>
+            {logoUrl
+              ? <img src={logoUrl} alt="logo" className="w-full h-full object-contain" />
+              : <Zap className="w-4 h-4 text-white" />
+            }
           </div>
-          <span className="font-headline text-[15px] font-bold text-[#1c1410]">NexCRM</span>
+          <span className="font-headline text-[15px] font-bold text-[#1c1410]">{companyName}</span>
         </div>
 
         {/* Tab nav — desktop only in full, scrollable on mobile */}

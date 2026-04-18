@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { Building2, Upload, RefreshCw, Check, ArrowLeft } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Building2, Upload, RefreshCw, Check, ArrowLeft, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { useCompanyStore } from '@/store/companyStore';
 
 const TIMEZONES = ['Asia/Kolkata (IST +5:30)', 'Asia/Dubai (GST +4:00)', 'Europe/London (GMT +0:00)', 'America/New_York (EST -5:00)', 'America/Los_Angeles (PST -8:00)'];
 const CURRENCIES = ['INR — Indian Rupee (₹)', 'USD — US Dollar ($)', 'EUR — Euro (€)', 'GBP — British Pound (£)', 'AED — UAE Dirham (د.إ)'];
@@ -14,6 +15,8 @@ const labelCls = "block text-[11px] font-bold uppercase tracking-[0.08em] text-[
 
 export default function CompanyDetailsPage() {
   const navigate = useNavigate();
+  const { logoUrl, setLogo, setCompanyName } = useCompanyStore();
+  const fileRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     name: 'NexCRM Demo Workspace',
@@ -30,9 +33,22 @@ export default function CompanyDetailsPage() {
 
   const update = (key: string, val: string) => setForm((f) => ({ ...f, [key]: val }));
 
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { toast.error('Image must be under 2MB'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setLogo(reader.result as string);
+      toast.success('Logo updated — visible in the sidebar now');
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSave = () => {
     if (!form.name.trim()) { toast.error('Company name is required'); return; }
     setSaving(true);
+    setCompanyName(form.name.trim());
     setTimeout(() => { setSaving(false); toast.success('Company details saved'); }, 1000);
   };
 
@@ -52,17 +68,53 @@ export default function CompanyDetailsPage() {
       <div className="bg-white rounded-2xl border border-black/5 card-shadow p-6">
         <h3 className="font-headline font-bold text-[#1c1410] mb-4">Workspace Identity</h3>
         <div className="flex items-center gap-5">
-          <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
-            <Building2 className="w-9 h-9 text-primary/60" />
+          {/* Preview */}
+          <div
+            className="w-20 h-20 rounded-2xl shrink-0 overflow-hidden flex items-center justify-center cursor-pointer border-2 border-dashed border-black/10 hover:border-primary/40 transition-colors group relative"
+            onClick={() => fileRef.current?.click()}
+          >
+            {logoUrl ? (
+              <>
+                <img src={logoUrl} alt="Company logo" className="w-full h-full object-contain p-1" />
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-2xl">
+                  <Upload className="w-5 h-5 text-white" />
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center gap-1 text-primary/40 group-hover:text-primary/70 transition-colors">
+                <Building2 className="w-8 h-8" />
+                <span className="text-[9px] font-semibold">Upload</span>
+              </div>
+            )}
           </div>
+
           <div>
             <p className="text-sm font-semibold text-[#1c1410] mb-1">Company Logo</p>
-            <p className="text-[12px] text-[#7a6b5c] mb-3">PNG or JPG, max 2MB. Recommended: 256×256px</p>
-            <Button variant="outline" size="sm" onClick={() => toast.info('File picker would open here')}>
-              <Upload className="w-4 h-4 mr-1" /> Upload Logo
-            </Button>
+            <p className="text-[12px] text-[#7a6b5c] mb-3">PNG or JPG, max 2MB · Replaces "NexCRM" in sidebar</p>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
+                <Upload className="w-3.5 h-3.5" /> {logoUrl ? 'Change Logo' : 'Upload Logo'}
+              </Button>
+              {logoUrl && (
+                <button
+                  onClick={() => { setLogo(null); toast.success('Logo removed'); }}
+                  className="flex items-center gap-1 text-[12px] text-[#7a6b5c] hover:text-red-500 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" /> Remove
+                </button>
+              )}
+            </div>
           </div>
         </div>
+
+        {/* Hidden file input */}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+          className="hidden"
+          onChange={handleLogoChange}
+        />
       </div>
 
       {/* Basic Info */}

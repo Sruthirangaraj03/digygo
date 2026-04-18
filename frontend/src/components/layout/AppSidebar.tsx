@@ -5,6 +5,7 @@ import {
   UserCog, SlidersHorizontal, ChevronDown, ChevronRight, X, Database,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useCompanyStore } from '@/store/companyStore';
 
 interface NavItem {
   label: string;
@@ -28,6 +29,7 @@ const navItems: NavItem[] = [
 export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const location = useLocation();
   const [expanded, setExpanded] = useState<string[]>(['Lead Generation', 'Automation']);
+  const { logoUrl, companyName } = useCompanyStore();
 
   const toggleExpand = (label: string) =>
     setExpanded((prev) => prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label]);
@@ -62,10 +64,14 @@ export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => vo
 
         {/* Logo */}
         <div className="flex items-center gap-2.5 px-4 py-4 mb-1">
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>
-            <Zap className="w-5 h-5 text-white" />
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center overflow-hidden shrink-0"
+            style={logoUrl ? { background: 'transparent' } : { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>
+            {logoUrl
+              ? <img src={logoUrl} alt="logo" className="w-full h-full object-contain" />
+              : <Zap className="w-5 h-5 text-white" />
+            }
           </div>
-          <span className="font-headline text-[16px] font-bold text-[#1c1410]">NexCRM</span>
+          <span className="font-headline text-[16px] font-bold text-[#1c1410] truncate">{companyName}</span>
           <button
             onClick={onClose}
             className="ml-auto md:hidden p-1.5 rounded-lg text-[#7a6b5c] hover:bg-[#f5ede3] transition-colors"
