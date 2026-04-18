@@ -1,30 +1,50 @@
 import { create } from 'zustand';
-import { StaffMember, staff } from '@/data/mockData';
+import { persist } from 'zustand/middleware';
+import { api } from '@/lib/api';
+
+interface User {
+  id: string;
+  tenantId: string | null;
+  email: string;
+  name: string;
+  role: string;
+  avatarUrl?: string;
+}
 
 interface AuthState {
-  currentUser: StaffMember | null;
+  currentUser: User | null;
+  token: string | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => boolean;
+  login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
-  currentUser: null,
-  isAuthenticated: false,
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set) => ({
+      currentUser: null,
+      token: null,
+      isAuthenticated: false,
 
-  login: (email, _password) => {
-    const user = staff.find((s) => s.email.toLowerCase() === email.toLowerCase());
-    if (user) {
-      set({ currentUser: user, isAuthenticated: true });
-      return true;
-    }
-    // Accept any non-empty credentials and default to first admin
-    if (email && _password) {
-      set({ currentUser: staff[0], isAuthenticated: true });
-      return true;
-    }
-    return false;
-  },
+      login: async (email, password) => {
+        try {
+          const res = await api.post<{ token: string; user: User }>('/api/auth/login', { email, password });
+          localStorage.setItem('digygo_token', res.token);
+          set({ currentUser: res.user, token: res.token, isAuthenticated: true });
+          return true;
+        } catch {
+          return false;
+        }
+      },
 
-  logout: () => set({ currentUser: null, isAuthenticated: false }),
-}));
+      logout: () => {
+        localStorage.removeItem('digygo_token');
+        set({ currentUser: null, token: null, isAuthenticated: false });
+      },
+    }),
+    {
+      name: 'digygo-auth',
+      partialize: (s) => ({ currentUser: s.currentUser, token: s.token, isAuthenticated: s.isAuthenticated }),
+    }
+  )
+);
