@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Bell, Menu, X, Zap } from 'lucide-react';
-import { useLocation, Link } from 'react-router-dom';
+import { Bell, X, Zap, LogOut, Settings, User } from 'lucide-react';
+import { useLocation, Link, useNavigate } from 'react-router-dom';
 import { useCrmStore } from '@/store/crmStore';
 import { useAuthStore } from '@/store/authStore';
 import { useCompanyStore } from '@/store/companyStore';
@@ -62,15 +62,22 @@ const notifIconColors: Record<string, string> = {
 
 export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [showNotifs, setShowNotifs] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const { notifications, markAllNotificationsRead, markNotificationRead } = useCrmStore();
-  const currentUser = useAuthStore((s) => s.currentUser);
+  const { currentUser, logout } = useAuthStore();
   const { logoUrl, companyName } = useCompanyStore();
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   const initials = currentUser
     ? `${currentUser.name.split(' ')[0][0]}${currentUser.name.split(' ')[1]?.[0] ?? ''}`
     : 'U';
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   const activeSection = Object.keys(sectionNavs).find((prefix) => {
     // exclude calendar edit page — let it show no sub-nav
@@ -226,17 +233,65 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
           <div className="w-px h-6 bg-black/8" />
 
           {/* Profile */}
-          <div className="flex items-center gap-3 cursor-pointer">
-            <div className="hidden sm:block text-right">
-              <p className="text-[13px] font-semibold text-[#1c1410] leading-tight">{currentUser?.name ?? 'User'}</p>
-              <p className="text-[11px] text-[#7a6b5c] capitalize leading-tight mt-0.5">{currentUser?.role ?? 'agent'}</p>
-            </div>
-            <div
-              className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold ring-2 ring-primary/20 hover:ring-primary/40 transition-all"
-              style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}
+          <div className="relative">
+            <button
+              onClick={() => { setShowProfile((v) => !v); setShowNotifs(false); }}
+              className="flex items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-[#f5ede3] transition-colors"
             >
-              {initials}
-            </div>
+              <div className="hidden sm:block text-right">
+                <p className="text-[13px] font-semibold text-[#1c1410] leading-tight">{currentUser?.name ?? 'User'}</p>
+                <p className="text-[11px] text-[#7a6b5c] capitalize leading-tight mt-0.5">{currentUser?.role ?? 'agent'}</p>
+              </div>
+              <div
+                className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold ring-2 ring-primary/20 hover:ring-primary/40 transition-all shrink-0"
+                style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}
+              >
+                {initials}
+              </div>
+            </button>
+
+            {/* Profile dropdown */}
+            {showProfile && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowProfile(false)} />
+                <div className="absolute right-0 top-12 z-50 w-56 bg-white rounded-2xl border border-black/5 overflow-hidden"
+                  style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.14)' }}>
+
+                  {/* User info */}
+                  <div className="px-4 py-3.5 border-b border-black/5">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+                        style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>
+                        {initials}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-bold text-[#1c1410] truncate">{currentUser?.name}</p>
+                        <p className="text-[11px] text-[#7a6b5c] truncate">{currentUser?.email}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Menu items */}
+                  <div className="py-1.5">
+                    <Link to="/settings/company" onClick={() => setShowProfile(false)}
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf8f6] transition-colors">
+                      <User className="w-4 h-4 text-[#7a6b5c]" /> Profile
+                    </Link>
+                    <Link to="/settings" onClick={() => setShowProfile(false)}
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf8f6] transition-colors">
+                      <Settings className="w-4 h-4 text-[#7a6b5c]" /> Settings
+                    </Link>
+                  </div>
+
+                  <div className="border-t border-black/5 py-1.5">
+                    <button onClick={handleLogout}
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-red-500 hover:bg-red-50 transition-colors font-medium">
+                      <LogOut className="w-4 h-4" /> Log out
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
