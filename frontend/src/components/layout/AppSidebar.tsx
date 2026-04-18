@@ -157,7 +157,7 @@ export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => vo
               )}
             >
               <ShieldCheck className="w-[18px] h-[18px] shrink-0" />
-              Manage Businesses
+              Business
             </Link>
           </div>
         )}
