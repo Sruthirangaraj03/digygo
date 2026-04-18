@@ -10,6 +10,7 @@ import MetaFormsPage from "./pages/MetaFormsPage";
 import CustomFormsPage from "./pages/CustomFormsPage";
 import CustomFormDetailPage from "./pages/CustomFormDetailPage";
 import LandingPagesPage from "./pages/LandingPagesPage";
+import LandingPageBuilderPage from "./pages/LandingPageBuilderPage";
 import WhatsAppSetupPage from "./pages/WhatsAppSetupPage";
 import LeadManagementOverviewPage from "./pages/LeadManagementOverviewPage";
 import LeadsPage from "./pages/LeadsPage";
@@ -83,8 +84,9 @@ const App = () => (
             <Route path="/settings/integrations" element={<IntegrationsPage />} />
           </Route>
 
-          {/* Full-screen editor — outside AppLayout */}
+          {/* Full-screen editors — outside AppLayout */}
           <Route path="/automation/editor/:id" element={<WorkflowEditorPage />} />
+          <Route path="/lead-generation/landing-pages/builder" element={<LandingPageBuilderPage />} />
 
           <Route path="*" element={<NotFound />} />
         </Routes>

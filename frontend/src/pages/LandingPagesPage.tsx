@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Pencil, Trash2, Copy, Layout, X, Check, Globe, Eye, BarChart2, Users, ArrowLeft } from 'lucide-react';
+import {
+  Plus, Pencil, Trash2, Copy, Layout, X, Check, Globe, Eye,
+  Users, Paintbrush,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
@@ -27,8 +30,6 @@ const defaultPages: LandingPage[] = [
   { id: 'lp-3', title: 'Summer Sale Campaign', slug: 'summer-sale-2025', template: 'Product Launch', views: 321, leads: 22, status: 'draft', createdAt: '2025-04-05' },
 ];
 
-// ── Modal ──────────────────────────────────────────────────────────────────────
-
 function PageModal({ initial, onClose, onSave }: {
   initial?: LandingPage | null;
   onClose: () => void;
@@ -49,11 +50,8 @@ function PageModal({ initial, onClose, onSave }: {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
       <div className="bg-white rounded-2xl border border-black/5 w-full max-w-md shadow-2xl">
         <div className="flex items-center justify-between px-6 py-4 border-b border-black/5">
-          <h3 className="font-headline font-bold text-[#1c1410]">{initial ? 'Edit Page' : 'Create Landing Page'}</h3>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors"
-          >
+          <h3 className="font-headline font-bold text-[#1c1410]">{initial ? 'Edit Page' : 'New Landing Page'}</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -71,19 +69,12 @@ function PageModal({ initial, onClose, onSave }: {
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-[#5c5245] mb-2">Template</label>
+            <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-[#5c5245] mb-2">Start from template</label>
             <div className="space-y-2">
               {TEMPLATES.map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTemplate(t)}
-                  className={cn(
-                    'w-full flex items-center gap-3 p-3 rounded-xl border text-sm font-medium transition-all text-left',
-                    template === t
-                      ? 'border-primary/30 bg-primary/5 text-primary'
-                      : 'border-black/5 text-[#7a6b5c] hover:border-primary/20 hover:bg-[#f5ede3] hover:text-primary'
-                  )}
-                >
+                <button key={t} onClick={() => setTemplate(t)}
+                  className={cn('w-full flex items-center gap-3 p-3 rounded-xl border text-sm font-medium transition-all text-left',
+                    template === t ? 'border-primary/30 bg-primary/5 text-primary' : 'border-black/5 text-[#7a6b5c] hover:border-primary/20 hover:bg-[#f5ede3] hover:text-primary')}>
                   <Layout className="w-4 h-4 shrink-0" />
                   {t}
                   {template === t && <Check className="w-4 h-4 ml-auto" />}
@@ -104,7 +95,7 @@ function PageModal({ initial, onClose, onSave }: {
         <div className="flex justify-end gap-2 px-6 py-4 border-t border-black/5">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={handleSave}>
-            <Check className="w-4 h-4" /> {initial ? 'Save Changes' : 'Create Page'}
+            <Check className="w-4 h-4" /> {initial ? 'Save' : 'Create Page'}
           </Button>
         </div>
       </div>
@@ -112,18 +103,20 @@ function PageModal({ initial, onClose, onSave }: {
   );
 }
 
-// ── Main Page ──────────────────────────────────────────────────────────────────
-
 export default function LandingPagesPage() {
   const navigate = useNavigate();
   const [pages, setPages] = useState(defaultPages);
   const [showModal, setShowModal] = useState(false);
   const [editPage, setEditPage] = useState<LandingPage | null>(null);
 
+  const totalViews = pages.reduce((s, p) => s + p.views, 0);
+  const totalLeads = pages.reduce((s, p) => s + p.leads, 0);
+  const published = pages.filter((p) => p.status === 'published').length;
+
   const handleCreate = (data: Pick<LandingPage, 'title' | 'slug' | 'template' | 'status'>) => {
     setPages([...pages, { ...data, id: `lp-${Date.now()}`, views: 0, leads: 0, createdAt: new Date().toISOString().split('T')[0] }]);
     setShowModal(false);
-    toast.success(`"${data.title}" created`);
+    toast.success(`"${data.title}" created — open builder to design it`);
   };
 
   const handleEdit = (data: Pick<LandingPage, 'title' | 'slug' | 'template' | 'status'>) => {
@@ -145,152 +138,126 @@ export default function LandingPagesPage() {
     toast.success(`"${page?.title}" deleted`);
   };
 
-  const totalViews = pages.reduce((s, p) => s + p.views, 0);
-  const totalLeads = pages.reduce((s, p) => s + p.leads, 0);
-  const published = pages.filter((p) => p.status === 'published').length;
-
-  const statCards = [
-    { label: 'Total Pages', value: pages.length, icon: Layout, color: 'text-primary' },
-    { label: 'Published', value: published, icon: Globe, color: 'text-emerald-500' },
-    { label: 'Total Views', value: totalViews.toLocaleString(), icon: Eye, color: 'text-primary' },
-    { label: 'Leads Generated', value: totalLeads.toLocaleString(), icon: Users, color: 'text-primary' },
-  ];
-
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
 
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/lead-generation')}
-            className="p-2 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-[#1c1410] transition-colors shrink-0"
-          >
-            <ArrowLeft className="w-5 h-5" />
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 className="font-headline font-bold text-[#1c1410] text-[16px]">Landing Pages</h2>
+          <p className="text-[12px] text-[#7a6b5c] mt-0.5">
+            {published} live · {pages.length} total · {totalViews.toLocaleString()} views · {totalLeads} leads
+          </p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={() => navigate('/lead-generation/landing-pages/builder')}>
+            <Paintbrush className="w-3.5 h-3.5" /> Open Builder
+          </Button>
+          <Button size="sm" onClick={() => setShowModal(true)}>
+            <Plus className="w-3.5 h-3.5" /> New Page
+          </Button>
+        </div>
+      </div>
+
+      {/* Page cards */}
+      {pages.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-black/5 card-shadow px-8 py-16 text-center">
+          <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <Layout className="w-7 h-7 text-primary" />
+          </div>
+          <h3 className="font-headline font-bold text-[#1c1410] text-[15px] mb-1">No pages yet</h3>
+          <p className="text-[13px] text-[#7a6b5c] mb-5 max-w-xs mx-auto">
+            Create your first landing page and start capturing leads from any campaign.
+          </p>
+          <Button onClick={() => setShowModal(true)}><Plus className="w-4 h-4" /> Create your first page</Button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {pages.map((page) => {
+            const conv = page.views > 0 ? ((page.leads / page.views) * 100).toFixed(1) : '0';
+            return (
+              <div key={page.id} className="bg-white rounded-2xl border border-black/5 card-shadow overflow-hidden group hover:-translate-y-0.5 transition-all duration-200">
+                {/* Preview banner with gradient */}
+                <div
+                  className="h-20 flex items-center justify-center cursor-pointer relative"
+                  style={{ background: 'linear-gradient(135deg, rgba(194,65,12,0.10) 0%, rgba(249,115,22,0.15) 100%)' }}
+                  onClick={() => navigate('/lead-generation/landing-pages/builder')}
+                >
+                  <Layout className="w-9 h-9 text-primary/25" />
+                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-primary/5">
+                    <div className="flex items-center gap-1.5 text-primary text-[12px] font-semibold bg-white px-3 py-1.5 rounded-xl shadow-sm border border-primary/20">
+                      <Paintbrush className="w-3.5 h-3.5" /> Open Builder
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-5 space-y-4">
+                  {/* Title + badge */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h3 className="font-headline font-bold text-[#1c1410] text-[14px] truncate">{page.title}</h3>
+                      <p className="text-[10px] text-[#7a6b5c] font-mono truncate mt-0.5">/{page.slug}</p>
+                    </div>
+                    <Badge className={cn('border-0 text-[10px] font-semibold shrink-0',
+                      page.status === 'published' ? 'bg-emerald-50 text-emerald-700' : 'bg-[#f5ede3] text-[#7a6b5c]')}>
+                      {page.status === 'published' ? 'Live' : 'Draft'}
+                    </Badge>
+                  </div>
+
+                  {/* Stats row */}
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { label: 'Views', value: page.views.toLocaleString(), icon: Eye },
+                      { label: 'Leads', value: page.leads, icon: Users },
+                      { label: 'Conv.', value: `${conv}%`, icon: null },
+                    ].map(({ label, value, icon: Icon }) => (
+                      <div key={label} className="bg-[#faf8f6] rounded-xl p-2.5 text-center">
+                        <p className="font-headline text-[16px] font-bold text-[#1c1410] leading-none">{value}</p>
+                        <p className="text-[10px] text-[#7a6b5c] mt-0.5">{label}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Footer */}
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="flex items-center gap-2">
+                      <Switch checked={page.status === 'published'} onCheckedChange={() => toggleStatus(page.id)} />
+                      <span className="text-[11px] text-[#7a6b5c]">Live</span>
+                    </div>
+                    <div className="flex gap-0.5">
+                      <button onClick={() => navigate('/lead-generation/landing-pages/builder')}
+                        className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors" title="Edit in builder">
+                        <Paintbrush className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => { navigator.clipboard.writeText(`https://digygocrm.com/p/${page.slug}`); toast.success('URL copied'); }}
+                        className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors" title="Copy URL">
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => setEditPage(page)}
+                        className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors" title="Edit details">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => deletePage(page.id)}
+                        className="p-1.5 rounded-lg hover:bg-red-50 text-[#7a6b5c] hover:text-red-500 transition-colors" title="Delete">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* New page card */}
+          <button onClick={() => setShowModal(true)}
+            className="group bg-white rounded-2xl border-2 border-dashed border-black/10 p-6 flex flex-col items-center justify-center gap-2 text-center hover:border-primary hover:bg-primary/5 transition-all duration-200 min-h-[200px]">
+            <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+              <Plus className="w-5 h-5 text-primary" />
+            </div>
+            <span className="text-[13px] font-semibold text-[#7a6b5c] group-hover:text-primary transition-colors">New Page</span>
           </button>
         </div>
-        <Button onClick={() => setShowModal(true)} className="shrink-0">
-          <Plus className="w-4 h-4" /> New Page
-        </Button>
-      </div>
-
-      {/* Stat Cards — same pattern as Dashboard */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {statCards.map((s, idx) => {
-          const isHighlight = idx === statCards.length - 1;
-          return isHighlight ? (
-            <div
-              key={s.label}
-              className="rounded-2xl px-6 py-5 flex flex-col justify-between text-white hover:-translate-y-1 transition-all duration-300 cursor-pointer"
-              style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 8px 32px rgba(234,88,12,0.28)' }}
-            >
-              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center mb-4">
-                <s.icon className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <p className="text-[13px] opacity-80 mb-1">{s.label}</p>
-                <h3 className="font-headline text-[28px] font-bold tracking-tight">{s.value}</h3>
-              </div>
-            </div>
-          ) : (
-            <div
-              key={s.label}
-              className="bg-white rounded-2xl px-6 py-5 card-shadow border border-black/5 flex flex-col justify-between hover:-translate-y-1 transition-all duration-300 cursor-pointer"
-            >
-              <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center mb-4">
-                <s.icon className={cn('w-5 h-5', s.color)} />
-              </div>
-              <div>
-                <p className="text-[13px] text-[#7a6b5c] mb-1">{s.label}</p>
-                <h3 className="font-headline text-[28px] font-bold text-[#1c1410] tracking-tight">{s.value}</h3>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Page Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {pages.map((page) => {
-          const convRate = page.views > 0 ? ((page.leads / page.views) * 100).toFixed(1) : '0';
-          return (
-            <div
-              key={page.id}
-              className="bg-white rounded-2xl border border-black/5 card-shadow overflow-hidden hover:-translate-y-1 transition-all duration-300 cursor-pointer"
-            >
-              {/* Preview banner */}
-              <div
-                className="h-24 flex items-center justify-center"
-                style={{ background: 'linear-gradient(135deg, rgba(194,65,12,0.08) 0%, rgba(249,115,22,0.12) 100%)' }}
-              >
-                <Layout className="w-10 h-10 text-primary/30" />
-              </div>
-
-              <div className="p-6 space-y-4">
-                {/* Title + badge */}
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <h3 className="font-headline font-bold text-[#1c1410]">{page.title}</h3>
-                    <p className="text-[11px] text-[#7a6b5c] font-mono truncate mt-0.5">digygocrm.com/p/{page.slug}</p>
-                  </div>
-                  <Badge className={cn(
-                    'border-0 text-[10px] font-semibold shrink-0',
-                    page.status === 'published' ? 'bg-emerald-50 text-emerald-700' : 'bg-[#f5ede3] text-[#7a6b5c]'
-                  )}>
-                    {page.status === 'published' ? 'Published' : 'Draft'}
-                  </Badge>
-                </div>
-
-                {/* Mini stats row */}
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="bg-[#faf8f6] rounded-xl p-3 text-center">
-                    <p className="font-headline text-[18px] font-bold text-[#1c1410] leading-none">{page.views.toLocaleString()}</p>
-                    <p className="text-[10px] text-[#7a6b5c] mt-1">Views</p>
-                  </div>
-                  <div className="bg-[#faf8f6] rounded-xl p-3 text-center">
-                    <p className="font-headline text-[18px] font-bold text-primary leading-none">{page.leads}</p>
-                    <p className="text-[10px] text-[#7a6b5c] mt-1">Leads</p>
-                  </div>
-                  <div className="bg-[#faf8f6] rounded-xl p-3 text-center">
-                    <p className="font-headline text-[18px] font-bold text-emerald-600 leading-none">{convRate}%</p>
-                    <p className="text-[10px] text-[#7a6b5c] mt-1">Conv.</p>
-                  </div>
-                </div>
-
-                <p className="text-[11px] text-[#7a6b5c]">Template: <span className="font-medium text-[#1c1410]">{page.template}</span></p>
-
-                {/* Footer */}
-                <div className="flex items-center justify-between pt-1">
-                  <div className="flex items-center gap-2">
-                    <Switch checked={page.status === 'published'} onCheckedChange={() => toggleStatus(page.id)} />
-                    <span className="text-[11px] text-[#7a6b5c]">Live</span>
-                  </div>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={() => { navigator.clipboard.writeText(`https://digygocrm.com/p/${page.slug}`); toast.success('URL copied'); }}
-                      className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => setEditPage(page)}
-                      className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => deletePage(page.id)}
-                      className="p-1.5 rounded-lg hover:bg-red-50 text-[#7a6b5c] hover:text-red-500 transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      )}
 
       {showModal && <PageModal onClose={() => setShowModal(false)} onSave={handleCreate} />}
       {editPage && <PageModal initial={editPage} onClose={() => setEditPage(null)} onSave={handleEdit} />}
