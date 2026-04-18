@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
-  type DragEndEvent,
+  DragOverlay, type DragEndEvent, type DragStartEvent,
 } from '@dnd-kit/core';
 import {
   arrayMove, SortableContext, useSortable, verticalListSortingStrategy,
@@ -235,45 +235,61 @@ function SortableBlock({
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.35 : 1 }}
-      className={cn(
-        'relative group cursor-pointer transition-all overflow-hidden',
-        selected
-          ? 'ring-2 ring-primary ring-offset-1 rounded-xl'
-          : 'hover:ring-1 hover:ring-primary/30 rounded-xl'
-      )}
-      onClick={(e) => { e.stopPropagation(); onSelect(); }}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn('relative flex group', isDragging && 'opacity-0')}
     >
-      {/* Floating toolbar */}
-      <div className={cn(
-        'absolute inset-x-0 top-0 z-10 h-8 flex items-center justify-between px-2 transition-all duration-150',
-        'bg-gradient-to-r from-primary to-orange-400 text-white',
-        selected || isDragging ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-      )}>
-        {/* Left: drag + label */}
-        <div className="flex items-center gap-1.5" {...attributes} {...listeners}>
-          <GripVertical className="w-3.5 h-3.5 cursor-grab active:cursor-grabbing opacity-80" />
-          <span className="text-[10px] font-bold uppercase tracking-wider opacity-90">{block.type}</span>
+      {/* Left gutter — drag handle + actions, no layout shift */}
+      <div className="w-9 shrink-0 flex flex-col items-center py-3 gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+        {/* Drag handle */}
+        <div
+          {...attributes}
+          {...listeners}
+          className="p-1.5 rounded-lg hover:bg-black/8 cursor-grab active:cursor-grabbing touch-none"
+          title="Drag to reorder"
+        >
+          <GripVertical className="w-4 h-4 text-[#b09e8d]" />
         </div>
-        {/* Right: actions */}
-        <div className="flex items-center gap-0.5">
-          <button onClick={(e) => { e.stopPropagation(); onMoveUp(); }} disabled={isFirst}
-            className="p-1 rounded hover:bg-white/20 disabled:opacity-30 transition-colors">
-            <ChevronUp className="w-3 h-3" />
-          </button>
-          <button onClick={(e) => { e.stopPropagation(); onMoveDown(); }} disabled={isLast}
-            className="p-1 rounded hover:bg-white/20 disabled:opacity-30 transition-colors">
-            <ChevronDown className="w-3 h-3" />
-          </button>
-          <button onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="p-1 rounded hover:bg-red-500/50 transition-colors ml-1">
-            <Trash2 className="w-3 h-3" />
-          </button>
-        </div>
+        <button
+          onClick={(e) => { e.stopPropagation(); onMoveUp(); }}
+          disabled={isFirst}
+          className="p-1 rounded-lg hover:bg-black/8 disabled:opacity-20 transition-colors"
+          title="Move up"
+        >
+          <ChevronUp className="w-3.5 h-3.5 text-[#b09e8d]" />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onMoveDown(); }}
+          disabled={isLast}
+          className="p-1 rounded-lg hover:bg-black/8 disabled:opacity-20 transition-colors"
+          title="Move down"
+        >
+          <ChevronDown className="w-3.5 h-3.5 text-[#b09e8d]" />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          className="p-1 rounded-lg hover:bg-red-50 transition-colors mt-1"
+          title="Delete block"
+        >
+          <Trash2 className="w-3.5 h-3.5 text-[#b09e8d] hover:text-red-500" />
+        </button>
       </div>
 
-      {/* Content (push down when toolbar visible) */}
-      <div className={cn('transition-all duration-150', (selected) ? 'pt-8' : 'group-hover:pt-8')}>
+      {/* Block content — zero layout shift */}
+      <div
+        className={cn(
+          'flex-1 min-w-0 cursor-pointer rounded-xl overflow-hidden transition-all duration-150',
+          selected
+            ? 'ring-2 ring-primary ring-offset-2 shadow-lg'
+            : 'hover:ring-1 hover:ring-primary/40 hover:shadow-md'
+        )}
+        onClick={(e) => { e.stopPropagation(); onSelect(); }}
+      >
+        {/* Block type badge — top-left corner on select/hover */}
+        {selected && (
+          <div className="absolute left-9 top-0 z-10 px-2 py-0.5 bg-primary text-white text-[9px] font-bold uppercase tracking-wider rounded-b-lg">
+            {block.type}
+          </div>
+        )}
         <BlockContent block={block} theme={theme} />
       </div>
     </div>
@@ -458,6 +474,7 @@ export default function LandingPageBuilderPage() {
   const navigate = useNavigate();
   const [blocks, setBlocks] = useState<Block[]>(STARTER);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [themeKey, setThemeKey] = useState('brand');
   const [device, setDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [pageName, setPageName] = useState('Free Demo Booking');
@@ -466,10 +483,16 @@ export default function LandingPageBuilderPage() {
 
   const theme = THEMES[themeKey];
   const selectedBlock = blocks.find((b) => b.id === selectedId) ?? null;
+  const activeBlock = blocks.find((b) => b.id === activeId) ?? null;
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  };
 
   const handleDragEnd = (event: DragEndEvent) => {
+    setActiveId(null);
     const { active, over } = event;
     if (over && active.id !== over.id) {
       const oldIdx = blocks.findIndex((b) => b.id === active.id);
@@ -613,7 +636,12 @@ export default function LandingPageBuilderPage() {
             className="transition-all duration-300 rounded-2xl overflow-hidden shadow-2xl self-start"
             style={{ width: canvasWidth, maxWidth: '100%', minWidth: canvasWidth ? canvasWidth : 320, background: theme.bg, minHeight: 500 }}
           >
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+            >
               <SortableContext items={blocks.map((b) => b.id)} strategy={verticalListSortingStrategy}>
                 <div>
                   {blocks.map((block, idx) => (
@@ -632,6 +660,18 @@ export default function LandingPageBuilderPage() {
                   ))}
                 </div>
               </SortableContext>
+
+              {/* Drag ghost — follows the cursor cleanly */}
+              <DragOverlay dropAnimation={{ duration: 180, easing: 'cubic-bezier(0.18,0.67,0.6,1.22)' }}>
+                {activeBlock && (
+                  <div
+                    className="rounded-xl overflow-hidden shadow-2xl ring-2 ring-primary opacity-95 pointer-events-none"
+                    style={{ background: theme.bg }}
+                  >
+                    <BlockContent block={activeBlock} theme={theme} />
+                  </div>
+                )}
+              </DragOverlay>
             </DndContext>
 
             {blocks.length === 0 && (
