@@ -1,46 +1,54 @@
 import { useNavigate } from 'react-router-dom';
-import { Facebook, FileText, Layout, MessageCircle, ArrowRight, Link2, Users } from 'lucide-react';
-import { cn } from '@/lib/utils';
-
-const statCards = [
-  { label: 'Lead Sources', value: '4', icon: Link2, color: 'text-primary' },
-  { label: 'Meta Forms', value: '7', icon: Facebook, color: 'text-blue-500' },
-  { label: 'Custom Forms', value: '3', icon: FileText, color: 'text-primary' },
-  { label: 'Total Leads', value: '1,240', icon: Users, color: 'text-primary' },
-];
+import { Facebook, FileText, Layout, MessageCircle, ArrowRight, Sparkles } from 'lucide-react';
 
 const channels = [
   {
     label: 'Meta Forms',
-    description: 'Capture leads directly from Facebook & Instagram ads',
+    description: 'Sync leads directly from Facebook & Instagram ad forms. Connect your Meta Business account once — leads flow in automatically.',
     icon: Facebook,
     path: '/lead-generation/meta-forms',
-    color: 'text-blue-500',
+    color: 'text-blue-600',
     bg: 'bg-blue-50',
+    border: 'border-blue-100',
+    cta: 'Manage Meta Forms',
+    count: '7 forms connected',
+    available: true,
   },
   {
     label: 'Custom Forms',
-    description: 'Build and embed forms on any website or landing page',
+    description: 'Build forms with drag-and-drop fields. Embed them on any website or share as a standalone link — leads land straight in your CRM.',
     icon: FileText,
     path: '/lead-generation/custom-forms',
     color: 'text-primary',
     bg: 'bg-primary/10',
+    border: 'border-primary/20',
+    cta: 'Create a Form',
+    count: '3 forms',
+    available: true,
   },
   {
     label: 'Landing Pages',
-    description: 'Create high-converting pages to capture leads',
+    description: 'Design high-converting landing pages with built-in lead capture, analytics, and A/B testing — no code needed.',
     icon: Layout,
     path: '/lead-generation/landing-pages',
-    color: 'text-purple-500',
+    color: 'text-purple-600',
     bg: 'bg-purple-50',
+    border: 'border-purple-100',
+    cta: 'Build a Page',
+    count: null,
+    available: false,
   },
   {
     label: 'WhatsApp',
-    description: 'Collect leads through WhatsApp click-to-chat links',
+    description: 'Collect leads through WhatsApp click-to-chat links and automated conversational flows that pre-qualify prospects.',
     icon: MessageCircle,
     path: '/lead-generation/whatsapp',
-    color: 'text-emerald-500',
+    color: 'text-emerald-600',
     bg: 'bg-emerald-50',
+    border: 'border-emerald-100',
+    cta: 'Setup WhatsApp',
+    count: null,
+    available: false,
   },
 ];
 
@@ -48,64 +56,66 @@ export default function LeadGenerationPage() {
   const navigate = useNavigate();
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {statCards.map((s, idx) => {
-          const isHighlight = idx === statCards.length - 1;
-          return isHighlight ? (
-            <div
-              key={s.label}
-              className="rounded-2xl px-6 py-5 flex flex-col justify-between text-white hover:-translate-y-1 transition-all duration-300 cursor-pointer"
-              style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 8px 32px rgba(234,88,12,0.28)' }}
-            >
-              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center mb-4">
-                <s.icon className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <p className="text-[13px] opacity-80 mb-1">{s.label}</p>
-                <h3 className="font-headline text-[28px] font-bold tracking-tight">{s.value}</h3>
-              </div>
-            </div>
-          ) : (
-            <div
-              key={s.label}
-              className="bg-white rounded-2xl px-6 py-5 card-shadow border border-black/5 flex flex-col justify-between hover:-translate-y-1 transition-all duration-300 cursor-pointer"
-            >
-              <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center mb-4">
-                <s.icon className={cn('w-5 h-5', s.color)} />
-              </div>
-              <div>
-                <p className="text-[13px] text-[#7a6b5c] mb-1">{s.label}</p>
-                <h3 className="font-headline text-[28px] font-bold text-[#1c1410] tracking-tight">{s.value}</h3>
-              </div>
-            </div>
-          );
-        })}
+      {/* Page intro */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="font-headline font-bold text-[#1c1410] text-[18px]">Choose a lead source</h2>
+          <p className="text-[13px] text-[#7a6b5c] mt-1">Every form you create or connect automatically routes new leads into your CRM pipeline.</p>
+        </div>
+        <div className="hidden sm:flex items-center gap-1.5 bg-primary/10 text-primary px-3 py-1.5 rounded-xl text-[12px] font-semibold shrink-0">
+          <Sparkles className="w-3.5 h-3.5" />
+          1,240 leads captured
+        </div>
       </div>
 
-      {/* Channel Cards */}
-      <div>
-        <h3 className="font-headline font-bold text-[#1c1410] text-[15px] mb-4">Lead Sources</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {channels.map((item) => (
-            <div
-              key={item.label}
-              onClick={() => navigate(item.path)}
-              className="group bg-white rounded-2xl border border-black/5 card-shadow p-5 cursor-pointer hover:-translate-y-1 transition-all duration-300 flex items-center gap-4"
-            >
-              <div className={`w-10 h-10 rounded-xl ${item.bg} flex items-center justify-center shrink-0`}>
-                <item.icon className={`w-5 h-5 ${item.color}`} />
+      {/* Channel cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {channels.map((item) => (
+          <div
+            key={item.label}
+            onClick={() => item.available && navigate(item.path)}
+            className={`group bg-white rounded-2xl border card-shadow p-6 flex flex-col gap-4 transition-all duration-200 ${
+              item.available
+                ? 'cursor-pointer hover:-translate-y-0.5 hover:shadow-md border-black/5'
+                : 'opacity-60 cursor-default border-black/5'
+            }`}
+          >
+            {/* Header row */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl ${item.bg} flex items-center justify-center shrink-0`}>
+                  <item.icon className={`w-5 h-5 ${item.color}`} />
+                </div>
+                <div>
+                  <h4 className="font-semibold text-[#1c1410] text-[14px]">{item.label}</h4>
+                  {item.count ? (
+                    <span className={`text-[11px] font-medium ${item.color}`}>{item.count}</span>
+                  ) : (
+                    <span className="text-[11px] text-[#b09e8d] bg-[#faf8f6] px-2 py-0.5 rounded-md border border-black/5">
+                      Coming soon
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <h4 className="font-semibold text-[#1c1410] text-[13px]">{item.label}</h4>
-                <p className="text-[11px] text-[#7a6b5c] mt-0.5 leading-relaxed">{item.description}</p>
-              </div>
-              <ArrowRight className="w-4 h-4 text-[#c4b09e] group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
+              {item.available && (
+                <ArrowRight className="w-4 h-4 text-[#c4b09e] group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
+              )}
             </div>
-          ))}
-        </div>
+
+            {/* Description */}
+            <p className="text-[12px] text-[#7a6b5c] leading-relaxed">{item.description}</p>
+
+            {/* CTA */}
+            {item.available && (
+              <div className={`inline-flex items-center gap-1.5 text-[12px] font-semibold ${item.color} mt-auto`}>
+                {item.cta}
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+              </div>
+            )}
+          </div>
+        ))}
       </div>
 
     </div>

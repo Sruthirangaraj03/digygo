@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Plus, Trash2, X, Copy, Link, Code2, Pencil, Copy as CloneIcon,
-  FileText, Users, BarChart2, ArrowLeft, GripVertical,
+  Plus, Trash2, X, Copy, Link, Code2, Pencil,
+  FileText, Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -56,192 +56,135 @@ export default function CustomFormsPage() {
   };
 
   const handleClone = (form: CustomForm) => {
-    const newForm: CustomForm = {
-      ...form,
-      id: `form-${Date.now()}`,
-      name: `${form.name} (Copy)`,
-      leads: 0,
-    };
+    const newForm: CustomForm = { ...form, id: `form-${Date.now()}`, name: `${form.name} (Copy)`, leads: 0 };
     setForms([...forms, newForm]);
     toast.success(`"${form.name}" cloned`);
   };
 
-  const statCards = [
-    { label: 'Total Forms', value: forms.length, icon: FileText, color: 'text-primary' },
-    { label: 'Total Leads', value: totalLeads.toLocaleString(), icon: Users, color: 'text-emerald-500' },
-    { label: 'Avg. Leads / Form', value: forms.length ? Math.round(totalLeads / forms.length).toLocaleString() : '0', icon: BarChart2, color: 'text-primary' },
-  ];
-
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
 
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/lead-generation')}
-            className="p-2 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-[#1c1410] transition-colors shrink-0"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 className="font-headline font-bold text-[#1c1410] text-[16px]">Custom Forms</h2>
+          <p className="text-[12px] text-[#7a6b5c] mt-0.5">
+            {forms.length} forms · {totalLeads.toLocaleString()} leads captured
+          </p>
         </div>
-        <Button onClick={() => navigate('/lead-generation/custom-forms/new')} className="shrink-0">
+        <Button onClick={() => navigate('/lead-generation/custom-forms/new')}>
           <Plus className="w-4 h-4" /> Create Form
         </Button>
       </div>
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-        {statCards.map((s, idx) => {
-          const isHighlight = idx === statCards.length - 1;
-          return isHighlight ? (
-            <div
-              key={s.label}
-              className="rounded-2xl px-6 py-5 flex flex-col justify-between text-white hover:-translate-y-1 transition-all duration-300 cursor-pointer"
-              style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 8px 32px rgba(234,88,12,0.28)' }}
-            >
-              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center mb-4">
-                <s.icon className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <p className="text-[13px] opacity-80 mb-1">{s.label}</p>
-                <h3 className="font-headline text-[28px] font-bold tracking-tight">{s.value}</h3>
-              </div>
-            </div>
-          ) : (
-            <div
-              key={s.label}
-              className="bg-white rounded-2xl px-6 py-5 card-shadow border border-black/5 flex flex-col justify-between hover:-translate-y-1 transition-all duration-300 cursor-pointer"
-            >
-              <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center mb-4">
-                <s.icon className={cn('w-5 h-5', s.color)} />
-              </div>
-              <div>
-                <p className="text-[13px] text-[#7a6b5c] mb-1">{s.label}</p>
-                <h3 className="font-headline text-[28px] font-bold text-[#1c1410] tracking-tight">{s.value}</h3>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Forms Table */}
-      <div className="bg-white rounded-2xl border border-black/5 card-shadow overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-black/5">
-          <div>
-            <h3 className="font-headline font-bold text-[#1c1410]">All Forms</h3>
-            <p className="text-[12px] text-[#7a6b5c] mt-0.5">{forms.length} forms · {totalLeads.toLocaleString()} total leads</p>
+      {/* Empty state */}
+      {forms.length === 0 && (
+        <div className="bg-white rounded-2xl border border-black/5 card-shadow px-8 py-16 text-center">
+          <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <FileText className="w-7 h-7 text-primary" />
           </div>
-          <Button size="sm" variant="outline" onClick={() => navigate('/lead-generation/custom-forms/new')}>
-            <Plus className="w-3.5 h-3.5" /> New Form
+          <h3 className="font-headline font-bold text-[#1c1410] text-[15px] mb-1">No forms yet</h3>
+          <p className="text-[13px] text-[#7a6b5c] mb-5 max-w-xs mx-auto">
+            Create your first form and start capturing leads from your website or landing pages.
+          </p>
+          <Button onClick={() => navigate('/lead-generation/custom-forms/new')}>
+            <Plus className="w-4 h-4" /> Create your first form
           </Button>
         </div>
+      )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px]">
-            <thead>
-              <tr className="border-b border-black/5 bg-[#faf8f6]">
-                <th className="w-8 pl-4 pr-2 py-3" />
-                <th className="text-left text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] px-2 py-3 w-7">#</th>
-                <th className="text-left text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] px-4 py-3">Form Name</th>
-                <th className="text-left text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] px-4 py-3">Pipeline</th>
-                <th className="text-left text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] px-4 py-3">Stage</th>
-                <th className="text-left text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] px-4 py-3">Leads</th>
-                <th className="text-left text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] px-4 py-3">Options</th>
-              </tr>
-            </thead>
-            <tbody>
-              {forms.map((form, idx) => (
-                <tr
-                  key={form.id}
-                  onClick={() => navigate(`/lead-generation/custom-forms/${form.id}`)}
-                  className="border-b border-black/5 last:border-0 hover:bg-[#faf8f6] transition-colors cursor-pointer group"
+      {/* Form cards grid */}
+      {forms.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {forms.map((form) => (
+            <div
+              key={form.id}
+              className="group bg-white rounded-2xl border border-black/5 card-shadow flex flex-col hover:-translate-y-0.5 hover:shadow-md transition-all duration-200"
+            >
+              {/* Card body — clickable to edit */}
+              <div
+                className="flex-1 p-5 cursor-pointer"
+                onClick={() => navigate(`/lead-generation/custom-forms/${form.id}`)}
+              >
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center shrink-0">
+                      <FileText className="w-4 h-4 text-primary" />
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className="font-semibold text-[#1c1410] text-[14px] truncate group-hover:text-primary transition-colors">
+                        {form.name}
+                      </h4>
+                      <p className="text-[11px] text-[#7a6b5c] mt-0.5 truncate">
+                        {form.pipeline !== 'NA' ? `${form.pipeline} → ${form.stage}` : 'No pipeline'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 bg-[#faf8f6] border border-black/5 rounded-lg px-2 py-1 shrink-0">
+                    <Users className="w-3 h-3 text-[#7a6b5c]" />
+                    <span className="text-[12px] font-bold text-[#1c1410]">{form.leads.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-[#7a6b5c] leading-relaxed line-clamp-2">
+                  {form.shareLink}
+                </p>
+              </div>
+
+              {/* Action bar */}
+              <div className="flex items-center gap-1 px-4 py-3 border-t border-black/5">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShareLinkFormId(form.id); }}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 hover:bg-amber-100 transition-colors"
                 >
-                  {/* Drag handle */}
-                  <td className="pl-4 pr-2 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
-                    <GripVertical className="w-4 h-4 text-[#d4c4b4] opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />
-                  </td>
+                  <Link className="w-3 h-3" /> Copy Link
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setEmbedFormId(form.id); }}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-teal-50 text-teal-600 border border-teal-200 hover:bg-teal-100 transition-colors"
+                >
+                  <Code2 className="w-3 h-3" /> Embed
+                </button>
+                <div className="flex-1" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleClone(form); }}
+                  className="p-1.5 rounded-lg text-[#7a6b5c] border border-black/8 hover:bg-[#f5ede3] hover:text-primary transition-colors"
+                  title="Clone"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); navigate(`/lead-generation/custom-forms/${form.id}`); }}
+                  className="p-1.5 rounded-lg text-[#7a6b5c] border border-black/8 hover:bg-[#f5ede3] hover:text-primary transition-colors"
+                  title="Edit"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDelete(form.id); }}
+                  className="p-1.5 rounded-lg text-[#7a6b5c] border border-black/8 hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors"
+                  title="Delete"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
 
-                  {/* # */}
-                  <td className="px-2 py-3.5 text-[12px] font-medium text-[#b09e8d]">{idx + 1}</td>
-
-                  {/* Form Name */}
-                  <td className="px-4 py-3.5 whitespace-nowrap">
-                    <span className="text-[13px] font-semibold text-[#1c1410] group-hover:text-primary transition-colors">
-                      {form.name}
-                    </span>
-                  </td>
-
-                  {/* Pipeline */}
-                  <td className="px-4 py-3.5 whitespace-nowrap">
-                    {form.pipeline === 'NA' ? (
-                      <span className="text-[12px] text-[#c4b09e] italic">—</span>
-                    ) : (
-                      <span className="text-[13px] text-[#5c5245] font-medium">{form.pipeline}</span>
-                    )}
-                  </td>
-
-                  {/* Stage */}
-                  <td className="px-4 py-3.5 whitespace-nowrap">
-                    {form.stage === 'NA' ? (
-                      <span className="text-[12px] text-[#c4b09e] italic">—</span>
-                    ) : (
-                      <span className="text-[13px] font-medium text-[#5c5245]">{form.stage}</span>
-                    )}
-                  </td>
-
-                  {/* Leads */}
-                  <td className="px-4 py-3.5 whitespace-nowrap">
-                    <div className="flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5 text-[#b09e8d]" />
-                      <span className="text-[14px] font-bold text-[#1c1410]">{form.leads.toLocaleString()}</span>
-                    </div>
-                  </td>
-
-                  {/* Options — all on one row, icon+text for key actions, icon-only for Edit/Delete */}
-                  <td className="px-4 py-3.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => setShareLinkFormId(form.id)}
-                        className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 hover:bg-amber-100 transition-colors"
-                        title="Share link">
-                        <Link className="w-3 h-3" /> Copy Link
-                      </button>
-                      <button onClick={() => setEmbedFormId(form.id)}
-                        className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold bg-teal-50 text-teal-600 border border-teal-200 hover:bg-teal-100 transition-colors"
-                        title="Embed code">
-                        <Code2 className="w-3 h-3" /> Embed
-                      </button>
-                      <button onClick={() => navigate(`/lead-generation/custom-forms/${form.id}`)}
-                        className="p-1.5 rounded-lg text-[#7a6b5c] border border-black/8 hover:bg-[#f5ede3] hover:text-primary transition-colors"
-                        title="Edit">
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => handleClone(form)}
-                        className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold text-white transition-colors"
-                        style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}
-                        title="Clone">
-                        <CloneIcon className="w-3 h-3" /> Clone
-                      </button>
-                      <button onClick={() => handleDelete(form.id)}
-                        className="p-1.5 rounded-lg text-white bg-red-500 hover:bg-red-600 transition-colors"
-                        title="Delete">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {forms.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-6 py-16 text-center text-[13px] text-[#7a6b5c]">
-                    No forms yet. Create your first form.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          {/* "New form" card */}
+          <button
+            onClick={() => navigate('/lead-generation/custom-forms/new')}
+            className="group bg-white rounded-2xl border-2 border-dashed border-black/10 p-5 flex flex-col items-center justify-center gap-2 text-center hover:border-primary hover:bg-primary/5 transition-all duration-200 min-h-[140px]"
+          >
+            <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+              <Plus className="w-4 h-4 text-primary" />
+            </div>
+            <span className="text-[13px] font-semibold text-[#7a6b5c] group-hover:text-primary transition-colors">
+              New Form
+            </span>
+          </button>
         </div>
-      </div>
+      )}
 
       {/* Share Link Modal */}
       {shareLinkForm && (
@@ -252,8 +195,7 @@ export default function CustomFormsPage() {
                 <h3 className="font-headline font-bold text-[#1c1410]">Share "{shareLinkForm.name}"</h3>
                 <p className="text-[11px] text-[#7a6b5c] mt-0.5">Public link to this form</p>
               </div>
-              <button onClick={() => setShareLinkFormId(null)}
-                className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors">
+              <button onClick={() => setShareLinkFormId(null)} className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -263,10 +205,10 @@ export default function CustomFormsPage() {
                 <p className="text-[12px] text-amber-700 font-medium flex-1 break-all">{shareLinkForm.shareLink}</p>
               </div>
               <p className="text-[12px] text-[#7a6b5c]">
-                This is the public URL where visitors can fill out your form. Share it via email, WhatsApp, or social media.
+                Share this link via email, WhatsApp, or social media. Anyone with the link can fill out the form.
               </p>
               <p className="text-[11px] text-[#b09e8d] bg-[#faf8f6] rounded-xl px-3 py-2.5 border border-black/5">
-                Note: This link is active only after your form is published and your domain is configured.
+                Active only after your form is published and domain is configured.
               </p>
             </div>
             <div className="flex justify-end gap-2 px-6 py-4 border-t border-black/5">
@@ -286,12 +228,9 @@ export default function CustomFormsPage() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-black/5">
               <div>
                 <h3 className="font-headline font-bold text-[#1c1410]">Embed "{embedForm.name}"</h3>
-                <p className="text-[11px] text-[#7a6b5c] mt-0.5">Copy and paste this code into your website</p>
+                <p className="text-[11px] text-[#7a6b5c] mt-0.5">Copy and paste into your website</p>
               </div>
-              <button
-                onClick={() => setEmbedFormId(null)}
-                className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors"
-              >
+              <button onClick={() => setEmbedFormId(null)} className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </div>
