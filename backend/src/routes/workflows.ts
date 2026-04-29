@@ -905,9 +905,13 @@ export async function executeNodes(
               : conditions.every(evalOne);
             message = `Condition [${logic} of ${conditions.length}] → ${conditionMet ? 'YES' : 'NO'}`;
           } else {
-            // Legacy single-condition
+            // Legacy single-condition — skip if no field configured
+            const legacyField = (node.config.field ?? '') as string;
+            if (!legacyField) {
+              status = 'skipped'; message = 'if_else: no condition configured'; break;
+            }
             conditionMet = evalOne({
-              field:    (node.config.field    ?? '') as string,
+              field:    legacyField,
               operator: (node.config.operator ?? 'equals') as string,
               value:    (node.config.value    ?? '') as string,
             });
@@ -1233,18 +1237,29 @@ export async function enrichLead(lead: LeadContext): Promise<LeadContext> {
     const r = await query('SELECT name FROM pipeline_stages WHERE id=$1', [lead.stage_id]);
     enriched.stage_name = r.rows[0]?.name ?? '';
   }
-  // Leak 6 fix: fetch custom field values so if_else conditions can evaluate them
+  // Fetch custom field values so if_else conditions can evaluate them
   if (lead.id) {
-    const cfRes = await query(
-      `SELECT cf.slug, lfv.value
-       FROM lead_field_values lfv
-       JOIN custom_fields cf ON cf.id = lfv.field_id
-       WHERE lfv.lead_id = $1`,
-      [lead.id]
-    ).catch(() => ({ rows: [] }));
+    const [cfRes, lqRes] = await Promise.all([
+      query(
+        `SELECT cf.slug, lfv.value
+         FROM lead_field_values lfv
+         JOIN custom_fields cf ON cf.id = lfv.field_id
+         WHERE lfv.lead_id = $1`,
+        [lead.id]
+      ).catch(() => ({ rows: [] })),
+      // lead_quality is stored in leads.custom_fields JSONB, not lead_field_values
+      query(
+        `SELECT custom_fields->>'lead_quality' AS lead_quality FROM leads WHERE id=$1`,
+        [lead.id]
+      ).catch(() => ({ rows: [] })),
+    ]);
     enriched.custom_fields = {};
     for (const row of cfRes.rows) {
       enriched.custom_fields[row.slug] = row.value;
+    }
+    if (lqRes.rows[0]?.lead_quality) {
+      enriched.custom_fields['lead_quality'] = lqRes.rows[0].lead_quality;
+      (enriched as any).lead_quality = lqRes.rows[0].lead_quality;
     }
   }
   return enriched;
