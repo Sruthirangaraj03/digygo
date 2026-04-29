@@ -21,7 +21,7 @@ const loginSchema = z.object({
 function setRefreshCookie(res: Response, token: string) {
   res.cookie(REFRESH_COOKIE, token, {
     httpOnly: true,
-    secure: config.nodeEnv === 'production', // HTTPS only in production (#4)
+    secure: process.env.COOKIE_SECURE === 'true',
     sameSite: 'lax',
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     path: '/api/auth',
