@@ -66,20 +66,21 @@ app.use(cors({
 }));
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
-// Global limiter: 200 req / 60 s per IP
+// Global limiter: 1000 req / 60 s per IP (allows normal CRM usage with polling)
 app.use(rateLimit({
   windowMs: 60_000,
-  max: process.env.NODE_ENV === 'production' ? 200 : 2000,
+  max: process.env.NODE_ENV === 'production' ? 1000 : 5000,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please slow down.' },
   skip: (req) => req.path === '/health',
 }));
 
-// Strict limiter for auth endpoints: 10 req / 15 min per IP (relaxed in dev/test)
+// Strict limiter for sensitive auth endpoints only (login, refresh, password setup)
+// NOT applied to /me or /me/permissions — those are polled frequently by the frontend
 const authLimiter = rateLimit({
   windowMs: 15 * 60_000,
-  max: process.env.NODE_ENV === 'production' ? 10 : 500,
+  max: process.env.NODE_ENV === 'production' ? 30 : 500,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many login attempts. Try again in 15 minutes.' },
@@ -110,7 +111,9 @@ app.post('/webhook-echo', (_req, res) => {
 });
 
 // ── Routes ────────────────────────────────────────────────────────────────────
-app.use('/api/auth',          authLimiter);   // strict rate limit on auth
+app.use('/api/auth/login',          authLimiter);   // brute-force protection on login
+app.use('/api/auth/refresh',        authLimiter);   // refresh token rate limit
+app.use('/api/auth/setup-password', authLimiter);   // password setup rate limit
 app.use('/api/auth',          authRoutes);
 app.use('/api/dashboard',     dashboardRoutes);
 app.use('/api/leads',         leadsRoutes);

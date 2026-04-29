@@ -38,14 +38,17 @@ export function AppLayout() {
     refreshPermissions();
   }, [location.pathname]);
 
-  // Also poll every 30 seconds so data stays fresh while the user stays on one page
+  // Poll CRM data every 30 seconds; permissions are stable so only refresh every 5 min
   useEffect(() => {
     pollingRef.current = setInterval(() => {
       initFromApi();
-      refreshPermissions();
     }, 30_000);
+    const permInterval = setInterval(() => {
+      refreshPermissions();
+    }, 5 * 60_000);
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
+      clearInterval(permInterval);
     };
   }, []);
 
