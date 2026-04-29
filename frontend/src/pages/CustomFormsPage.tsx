@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { usePermission } from '@/hooks/usePermission';
+import { copyToClipboard } from '@/lib/utils';
 
 interface CustomForm {
   id: string;
@@ -96,7 +97,7 @@ export default function CustomFormsPage() {
   const copyFormLink = (e: React.MouseEvent, form: CustomForm) => {
     e.stopPropagation();
     if (!form.slug) return;
-    navigator.clipboard.writeText(getShareLink(form));
+    copyToClipboard(getShareLink(form));
     setCopiedFormId(form.id);
     setTimeout(() => setCopiedFormId(null), 2000);
   };
@@ -372,7 +373,7 @@ export default function CustomFormsPage() {
                     Share the form link to start collecting responses.
                   </p>
                   <button
-                    onClick={() => { navigator.clipboard.writeText(getShareLink(panelForm)); toast.success('Link copied!'); }}
+                    onClick={() => { copyToClipboard(getShareLink(panelForm)); toast.success('Link copied!'); }}
                     className="mt-4 flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-semibold bg-primary text-white mx-auto hover:bg-primary/90 transition-colors"
                   >
                     <Copy className="w-3.5 h-3.5" /> Copy Form Link
@@ -393,7 +394,7 @@ export default function CustomFormsPage() {
             {!subLoading && submissions.length > 0 && (
               <div className="shrink-0 px-5 py-3 border-t border-black/5 bg-[#faf8f6]">
                 <button
-                  onClick={() => { navigator.clipboard.writeText(getShareLink(panelForm)); toast.success('Link copied!'); }}
+                  onClick={() => { copyToClipboard(getShareLink(panelForm)); toast.success('Link copied!'); }}
                   className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-[12px] font-semibold border border-black/8 text-[#7a6b5c] hover:bg-white hover:text-primary transition-colors"
                 >
                   <Link className="w-3.5 h-3.5" /> Copy Form Link
@@ -426,7 +427,7 @@ export default function CustomFormsPage() {
             </div>
             <div className="flex justify-end gap-2 px-6 py-4 border-t border-black/5">
               <Button variant="outline" onClick={() => setShareLinkFormId(null)}>Close</Button>
-              <Button onClick={() => { navigator.clipboard.writeText(getShareLink(shareLinkForm)); toast.success('Link copied!'); }}>
+              <Button onClick={() => { copyToClipboard(getShareLink(shareLinkForm)); toast.success('Link copied!'); }}>
                 <Copy className="w-4 h-4" /> Copy Link
               </Button>
             </div>
@@ -530,7 +531,7 @@ export default function CustomFormsPage() {
                   {getEmbedCode(embedForm)}
                 </pre>
                 <button
-                  onClick={() => { navigator.clipboard.writeText(getEmbedCode(embedForm)); toast.success('Embed code copied'); }}
+                  onClick={() => { copyToClipboard(getEmbedCode(embedForm)); toast.success('Embed code copied'); }}
                   className="absolute top-2.5 right-2.5 p-1.5 rounded-lg bg-white border border-black/5 hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors"
                 ><Copy className="w-3.5 h-3.5" /></button>
               </div>

@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { copyToClipboard } from '@/lib/utils';
 
 interface WabaStatus {
   connected: boolean;
@@ -206,7 +207,7 @@ export default function WhatsAppSetupPage() {
           <label className="text-sm font-medium text-foreground mb-1.5 block">Inbound Webhook URL</label>
           <div className="flex gap-2">
             <Input value={webhookUrl} readOnly className="flex-1 font-mono text-sm bg-[#faf8f6]" />
-            <Button variant="outline" onClick={() => { navigator.clipboard.writeText(webhookUrl); toast.success('URL copied'); }}>
+            <Button variant="outline" onClick={() => { copyToClipboard(webhookUrl); toast.success('URL copied'); }}>
               <Copy className="w-4 h-4" />
             </Button>
           </div>
@@ -215,7 +216,7 @@ export default function WhatsAppSetupPage() {
           <label className="text-sm font-medium text-foreground mb-1.5 block">Webhook Verify Token</label>
           <div className="flex gap-2">
             <Input value={verifyToken} readOnly className="flex-1 font-mono text-sm bg-[#faf8f6]" />
-            <Button variant="outline" onClick={() => { navigator.clipboard.writeText(verifyToken); toast.success('Copied'); }}>
+            <Button variant="outline" onClick={() => { copyToClipboard(verifyToken); toast.success('Copied'); }}>
               <Copy className="w-4 h-4" />
             </Button>
           </div>

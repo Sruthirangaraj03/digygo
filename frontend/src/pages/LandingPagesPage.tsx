@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
+import { cn, copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 
 interface LandingPage {
@@ -270,7 +270,7 @@ export default function LandingPagesPage() {
                         className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors" title="Edit in builder">
                         <Paintbrush className="w-3.5 h-3.5" />
                       </button>
-                      <button onClick={() => { navigator.clipboard.writeText(`https://digygocrm.com/p/${page.slug}`); toast.success('URL copied'); }}
+                      <button onClick={() => { copyToClipboard(`https://digygocrm.com/p/${page.slug}`); toast.success('URL copied'); }}
                         className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors" title="Copy URL">
                         <Copy className="w-3.5 h-3.5" />
                       </button>

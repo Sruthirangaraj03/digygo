@@ -8,7 +8,7 @@ import {
   UserCheck, Ban, CalendarDays, AlertTriangle, ExternalLink, Link, UserCog,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { cn, copyToClipboard } from '@/lib/utils';
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   eachDayOfInterval, isSameDay, isSameMonth, isToday,
@@ -1035,7 +1035,7 @@ export default function CalendarPage() {
                       <div className="flex items-center gap-1.5 px-3 py-2 bg-[#faf8f6] rounded-xl border border-black/[0.04] cursor-pointer hover:bg-[#f0ebe5] transition-colors" onClick={(e) => { e.stopPropagation(); window.open(bookingUrl, '_blank'); }}>
                         <ExternalLink className="w-3 h-3 text-[#b09e8d] shrink-0" />
                         <span className="text-[10px] text-[#7a6b5c] font-mono truncate flex-1">/book/{et.slug}</span>
-                        <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(bookingUrl); toast.success('Link copied!'); }}
+                        <button onClick={(e) => { e.stopPropagation(); copyToClipboard(bookingUrl); toast.success('Link copied!'); }}
                           className="p-1 rounded hover:bg-[#f0ebe5] text-[#b09e8d] hover:text-primary transition-colors shrink-0">
                           <Copy className="w-3 h-3" />
                         </button>

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import { cn } from '@/lib/utils';
+import { cn, copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 
 type TemplateTab = 'waba' | 'email' | 'sms';
@@ -359,7 +359,7 @@ export default function AutomationTemplatesPage() {
                 </div>
                 <div className="flex gap-1 shrink-0">
                   <button onClick={() => setPreviewTemplate(t)} className="p-1.5 rounded-md hover:bg-[#f5ede3] text-muted-foreground hover:text-foreground transition-colors"><Eye className="w-4 h-4" /></button>
-                  <button onClick={() => { navigator.clipboard.writeText(t.name); toast.success('Template name copied'); }} className="p-1.5 rounded-md hover:bg-[#f5ede3] text-muted-foreground hover:text-foreground transition-colors"><Copy className="w-4 h-4" /></button>
+                  <button onClick={() => { copyToClipboard(t.name); toast.success('Template name copied'); }} className="p-1.5 rounded-md hover:bg-[#f5ede3] text-muted-foreground hover:text-foreground transition-colors"><Copy className="w-4 h-4" /></button>
                   <button onClick={() => setEditWABA(t)} className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-colors"><Pencil className="w-4 h-4" /></button>
                   <button onClick={() => { setWabaTemplates(wabaTemplates.filter((x) => x.id !== t.id)); toast.success('Template deleted'); }} className="p-1.5 rounded-md hover:bg-red-50 text-muted-foreground hover:text-destructive transition-colors"><Trash2 className="w-4 h-4" /></button>
                 </div>

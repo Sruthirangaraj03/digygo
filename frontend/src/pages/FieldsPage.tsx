@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useCrmStore, AdditionalField as StoreAdditionalField } from '@/store/crmStore';
 import { api } from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { cn, copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { ElementType } from 'react';
 
@@ -686,7 +686,7 @@ export default function FieldsPage() {
   }, [values, search]);
 
   const copyToken = (token: string) => {
-    navigator.clipboard.writeText(`{%${token}%}`);
+    copyToClipboard(`{%${token}%}`);
     toast.success(`Copied {%${token}%}`);
   };
 

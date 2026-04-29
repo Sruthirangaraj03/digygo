@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
-import { cn } from '@/lib/utils';
+import { cn, copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 import { api, getAccessToken, BASE } from '@/lib/api';
 import type { WFNode, WFRecord } from './AutomationPage';
@@ -493,7 +493,7 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
           <code className="text-xs text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg block break-all">
             https://api.digygo.com/webhooks/inbound/org_abc123
           </code>
-          <button className="text-xs text-primary font-medium flex items-center gap-1 hover:underline" onClick={() => { navigator.clipboard.writeText('https://api.digygo.com/webhooks/inbound/org_abc123'); toast.success('Copied!'); }}>
+          <button className="text-xs text-primary font-medium flex items-center gap-1 hover:underline" onClick={() => { copyToClipboard('https://api.digygo.com/webhooks/inbound/org_abc123'); toast.success('Copied!'); }}>
             <Copy className="w-3 h-3" /> Copy URL
           </button>
         </div>

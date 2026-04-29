@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
-import { cn } from '@/lib/utils';
+import { cn, copyToClipboard } from '@/lib/utils';
 import { formatDistanceToNow, format, isPast } from 'date-fns';
 import {
   DndContext, closestCorners, PointerSensor, useSensor, useSensors,
@@ -3648,7 +3648,7 @@ export default function LeadsPage() {
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1.5">
                         <span className="text-[#3d3128] truncate max-w-[160px]">{maskedEmail}</span>
-                        <button onClick={() => { navigator.clipboard.writeText(lead.email); toast.success('Email copied'); }} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors shrink-0">
+                        <button onClick={() => { copyToClipboard(lead.email); toast.success('Email copied'); }} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors shrink-0">
                           <Copy className="w-3 h-3" />
                         </button>
                       </div>
@@ -3656,7 +3656,7 @@ export default function LeadsPage() {
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1.5">
                         <span className="text-primary font-medium">{maskedPhone}</span>
-                        <button onClick={() => { navigator.clipboard.writeText(lead.phone); toast.success('Phone copied'); }} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors shrink-0">
+                        <button onClick={() => { copyToClipboard(lead.phone); toast.success('Phone copied'); }} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors shrink-0">
                           <Copy className="w-3 h-3" />
                         </button>
                       </div>
