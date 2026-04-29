@@ -1499,27 +1499,47 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
         </div>
       </>)}
 
-      {node.actionType === 'pincode_routing' && (<>
-        <div className="bg-green-50 border border-green-200 rounded-xl p-3">
-          <p className="text-xs text-green-800 flex items-start gap-1.5">
-            <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-            Looks up the lead's pincode in your mapping table and automatically sets the district and moves the lead to the mapped pipeline. Upload your pincode data in <strong>Settings → Pincode Routing</strong>.
-          </p>
-        </div>
-        <FieldRow label="Pincode Field">
-          <select
-            className={selectCls}
-            value={(cfg.pincode_field as string) ?? 'pincode'}
-            onChange={sel('pincode_field')}
-          >
-            <option value="pincode">pincode (default)</option>
-            {customFields.filter((cf) => cf.slug !== 'pincode').map((cf) => (
-              <option key={cf.id} value={cf.slug}>{cf.name}</option>
-            ))}
-          </select>
-          <p className="text-[11px] text-muted-foreground mt-1">Select the field on the lead that holds the pincode value.</p>
-        </FieldRow>
-      </>)}
+      {node.actionType === 'pincode_routing' && (() => {
+        const selectedSlug = (cfg.pincode_field as string) ?? '';
+        const selectedField = customFields.find((cf) => cf.slug === selectedSlug);
+        const noFields = customFields.length === 0;
+        return (<>
+          <div className="bg-green-50 border border-green-200 rounded-xl p-3">
+            <p className="text-xs text-green-800 flex items-start gap-1.5">
+              <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              Looks up the lead's pincode in your mapping table and sets the district and moves the lead to the mapped pipeline. Upload your pincode data in <strong>Settings → Pincode Routing</strong>.
+            </p>
+          </div>
+
+          {noFields ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs text-amber-800 font-semibold">No custom fields found</p>
+              <p className="text-xs text-amber-700 mt-0.5">Go to <strong>Settings → Fields</strong> and create a field (e.g. "Pincode") to hold the pincode value from your form.</p>
+            </div>
+          ) : (
+            <FieldRow label="Pincode Field">
+              <select
+                className={selectCls}
+                value={selectedSlug}
+                onChange={sel('pincode_field')}
+              >
+                <option value="">— Select a custom field —</option>
+                {customFields.map((cf) => (
+                  <option key={cf.id} value={cf.slug}>{cf.name}</option>
+                ))}
+              </select>
+              {!selectedSlug && (
+                <p className="text-[11px] text-red-500 font-medium mt-1">⚠ You must select a field — the node will be skipped until one is chosen.</p>
+              )}
+              {selectedField && (
+                <p className="text-[11px] text-blue-600 mt-1">
+                  Make sure <strong>{selectedField.name}</strong> is mapped in <strong>Meta Forms → Map Fields</strong> so incoming leads carry this value.
+                </p>
+              )}
+            </FieldRow>
+          )}
+        </>);
+      })()}
 
       {/* No-config actions */}
       {['exit_workflow', 'remove_workflow', 'remove_staff', 'remove_from_crm'].includes(node.actionType) && (
@@ -2131,6 +2151,14 @@ function NodeConfigModal({
   const isCommNode = ['send_email','send_sms','send_whatsapp','internal_notify','create_note'].includes(node.actionType);
   const isTrigger = node.type === 'trigger';
 
+  const handleSaveClose = () => {
+    if (node.actionType === 'pincode_routing' && !(node.config.pincode_field as string)) {
+      toast.error('Select a custom field for Pincode Routing before saving.');
+      return;
+    }
+    onClose();
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
       <div
@@ -2242,7 +2270,7 @@ function NodeConfigModal({
         {/* Footer */}
         <div className="flex gap-2 px-5 py-4 border-t border-black/[0.06] bg-[#faf8f6] shrink-0">
           <button
-            onClick={onClose}
+            onClick={handleSaveClose}
             className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white transition-all"
             style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)', boxShadow: '0 2px 8px rgba(234,88,12,0.25)' }}
           >
