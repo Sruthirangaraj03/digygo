@@ -982,6 +982,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
     onUpdate({ config: { ...node.config, [field]: e.target.value } });
   const cfg = node.config;
   const actionPipelineStages = (pipelines.find(p => p.id === cfg.pipeline_id) ?? pipelines[0])?.stages ?? [];
+  const customFields = useCrmStore((s) => s.customFields);
 
   return (
     <div className="space-y-5">
@@ -1505,14 +1506,18 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
             Looks up the lead's pincode in your mapping table and automatically sets the district and moves the lead to the mapped pipeline. Upload your pincode data in <strong>Settings → Pincode Routing</strong>.
           </p>
         </div>
-        <FieldRow label="Pincode Field (custom field slug)">
-          <input
-            className={inputCls}
-            placeholder="pincode"
+        <FieldRow label="Pincode Field">
+          <select
+            className={selectCls}
             value={(cfg.pincode_field as string) ?? 'pincode'}
             onChange={sel('pincode_field')}
-          />
-          <p className="text-[11px] text-muted-foreground mt-1">The slug of the custom field on the lead that contains the pincode. Default: <span className="font-mono">pincode</span></p>
+          >
+            <option value="pincode">pincode (default)</option>
+            {customFields.filter((cf) => cf.slug !== 'pincode').map((cf) => (
+              <option key={cf.id} value={cf.slug}>{cf.name}</option>
+            ))}
+          </select>
+          <p className="text-[11px] text-muted-foreground mt-1">Select the field on the lead that holds the pincode value.</p>
         </FieldRow>
       </>)}
 

@@ -893,35 +893,33 @@ export async function executeNodes(
           }
 
           // Move lead to the mapped pipeline (first stage of that pipeline)
-          if (pipeline_name) {
-            const pipeRes = await query(
-              `SELECT p.id AS pipeline_id, ps.id AS stage_id, ps.name AS stage_name
-               FROM pipelines p
-               JOIN pipeline_stages ps ON ps.pipeline_id = p.id
-               WHERE p.tenant_id=$1 AND LOWER(p.name)=LOWER($2)
-               ORDER BY ps.sort_order ASC NULLS LAST
-               LIMIT 1`,
-              [tenantId, pipeline_name]
-            ).catch(() => ({ rows: [] as any[] }));
+          // If pipeline_name is not set, fall back to district as the pipeline name
+          const effectivePipeline = (pipeline_name || district).trim();
+          const pipeRes = await query(
+            `SELECT p.id AS pipeline_id, ps.id AS stage_id, ps.name AS stage_name
+             FROM pipelines p
+             JOIN pipeline_stages ps ON ps.pipeline_id = p.id
+             WHERE p.tenant_id=$1 AND LOWER(p.name)=LOWER($2)
+             ORDER BY ps.sort_order ASC NULLS LAST
+             LIMIT 1`,
+            [tenantId, effectivePipeline]
+          ).catch(() => ({ rows: [] as any[] }));
 
-            if (pipeRes.rows[0]) {
-              const { pipeline_id, stage_id, stage_name } = pipeRes.rows[0];
-              if (lead.id) {
-                await query(
-                  `UPDATE leads SET pipeline_id=$1, stage_id=$2, updated_at=NOW()
-                   WHERE id=$3 AND tenant_id=$4`,
-                  [pipeline_id, stage_id, lead.id, tenantId]
-                );
-                lead.pipeline_id = pipeline_id;
-                lead.stage_id = stage_id;
-                lead.stage_name = stage_name;
-              }
-              message = `Pincode ${pincodeValue} → ${district}${state ? ', ' + state : ''} → Pipeline: ${pipeline_name} (Stage: ${stage_name})`;
-            } else {
-              message = `Pincode ${pincodeValue} → ${district} (pipeline "${pipeline_name}" not found — district set)`;
+          if (pipeRes.rows[0]) {
+            const { pipeline_id, stage_id, stage_name } = pipeRes.rows[0];
+            if (lead.id) {
+              await query(
+                `UPDATE leads SET pipeline_id=$1, stage_id=$2, updated_at=NOW()
+                 WHERE id=$3 AND tenant_id=$4`,
+                [pipeline_id, stage_id, lead.id, tenantId]
+              );
+              lead.pipeline_id = pipeline_id;
+              lead.stage_id = stage_id;
+              lead.stage_name = stage_name;
             }
+            message = `Pincode ${pincodeValue} → ${district}${state ? ', ' + state : ''} → Pipeline: ${effectivePipeline} (Stage: ${stage_name})`;
           } else {
-            message = `Pincode ${pincodeValue} → ${district}${state ? ', ' + state : ''} (district set on lead)`;
+            message = `Pincode ${pincodeValue} → ${district}${state ? ', ' + state : ''} (pipeline "${effectivePipeline}" not found — district set)`;
           }
           break;
         }
