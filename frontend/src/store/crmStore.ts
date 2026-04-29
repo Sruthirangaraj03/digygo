@@ -431,7 +431,7 @@ export const useCrmStore = create<CrmState>((set) => ({
 
   initFromApi: async () => {
     try {
-      const [leadsRes, staffRes, pipelinesRes, calRes, tagsRes, questionsRes, convsRes, notifsRes, bookingLinksRes, followUpsRes, customFieldsRes] = await Promise.all([
+      const [leadsRes, staffRes, pipelinesRes, calRes, tagsRes, questionsRes, convsRes, notifsRes, bookingLinksRes, followUpsRes, customFieldsRes, workflowsRes] = await Promise.all([
         api.get<any[]>('/api/leads?limit=5000').catch(() => [] as any[]),
         api.get<any[]>('/api/settings/staff').catch(() => [] as any[]),
         api.get<any[]>('/api/pipelines').catch(() => [] as any[]),
@@ -443,6 +443,7 @@ export const useCrmStore = create<CrmState>((set) => ({
         api.get<any[]>('/api/calendar/event-types').catch(() => [] as any[]),
         api.get<any[]>('/api/leads/followups').catch(() => [] as any[]),
         api.get<any[]>('/api/fields/custom').catch(() => [] as any[]),
+        api.get<any[]>('/api/workflows').catch(() => [] as any[]),
       ]);
 
       // Build stageId → stageName lookup
@@ -599,6 +600,16 @@ export const useCrmStore = create<CrmState>((set) => ({
         orderIndex: cf.order_index ?? 0,
       }));
 
+      const mappedWorkflows = (workflowsRes ?? []).map((w: any) => ({
+        id: w.id,
+        name: w.name,
+        status: (w.status ?? 'inactive') as 'active' | 'inactive',
+        trigger: w.trigger_key ?? '',
+        nodes: w.nodes ?? [],
+        allowReentry: w.allow_reentry ?? false,
+        createdAt: w.created_at ?? new Date().toISOString(),
+      }));
+
       set({
         leads: mappedLeads,
         staff: mappedStaff,
@@ -609,6 +620,7 @@ export const useCrmStore = create<CrmState>((set) => ({
         notifications: mappedNotifications,
         bookingLinks: mappedBookingLinks,
         followUps: mappedFollowUps,
+        workflows: mappedWorkflows,
         ...(mappedCustomFields.length > 0 ? { customFields: mappedCustomFields } : {}),
         ...(mappedAdditionalFields.length > 0 ? { additionalFields: mappedAdditionalFields } : {}),
       });
