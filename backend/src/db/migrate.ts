@@ -45,6 +45,7 @@ const MIGRATIONS = [
   'migration_043_unify_staff_model.sql',
   'migration_044_integrations_permissions.sql',
   'migration_045_owner_role.sql',
+  'migration_046_schema_drift_fix.sql',
 ];
 
 // Split SQL file into individual statements and execute each one separately.
