@@ -7,23 +7,26 @@ export interface Lead {
   email: string;
   phone: string;
   stage: string;
+  stageId: string;
   pipelineId: string;
   assignedTo: string;
+  assignedName?: string;
   source: string;
+  meta_form_name?: string;
   tags: string[];
   score: number;
   dealValue: number;
   createdAt: string;
   lastActivity: string;
   notes: string[];
-  customFields?: { label: string; value: string }[];
+  customFields?: { label: string; value: string; fieldId?: string }[];
 }
 
 export interface StaffMember {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'manager' | 'agent';
+  role: 'admin' | 'staff';
   status: 'active' | 'inactive';
   leadsAssigned: number;
   lastActive: string;
@@ -68,6 +71,7 @@ export interface CalendarEvent {
   title: string;
   type: 'meeting' | 'demo' | 'call';
   leadName: string;
+  email?: string;
   assignedTo: string;
   date: string;
   time: string;
@@ -75,6 +79,8 @@ export interface CalendarEvent {
   status: 'scheduled' | 'completed' | 'no-show' | 'cancelled';
   meetingLink?: string;
   notes?: string;
+  createdBy?: string;
+  createdByName?: string;
 }
 
 export interface Notification {
@@ -151,32 +157,30 @@ const tagsList = ['Hot Lead', 'Enterprise', 'SMB', 'Follow Up', 'Demo Scheduled'
 export const staff: StaffMember[] = [
   { id: 's1', name: 'Ranjith Kumar', email: 'ranjith@nexcrm.com', role: 'admin', status: 'active', leadsAssigned: 45, lastActive: subMinutes(new Date(), 5).toISOString(), avatar: 'RK' },
   { id: 's2', name: 'Priya Sharma', email: 'priya@nexcrm.com', role: 'admin', status: 'active', leadsAssigned: 38, lastActive: subMinutes(new Date(), 15).toISOString(), avatar: 'PS' },
-  { id: 's3', name: 'Amit Patel', email: 'amit@nexcrm.com', role: 'manager', status: 'active', leadsAssigned: 52, lastActive: subHours(new Date(), 1).toISOString(), avatar: 'AP' },
-  { id: 's4', name: 'Sara Reddy', email: 'sara@nexcrm.com', role: 'manager', status: 'active', leadsAssigned: 41, lastActive: subHours(new Date(), 2).toISOString(), avatar: 'SR' },
-  { id: 's5', name: 'Vikram Singh', email: 'vikram@nexcrm.com', role: 'agent', status: 'active', leadsAssigned: 67, lastActive: subMinutes(new Date(), 30).toISOString(), avatar: 'VS' },
-  { id: 's6', name: 'Ananya Nair', email: 'ananya@nexcrm.com', role: 'agent', status: 'active', leadsAssigned: 55, lastActive: subHours(new Date(), 3).toISOString(), avatar: 'AN' },
-  { id: 's7', name: 'Karthik Gupta', email: 'karthik@nexcrm.com', role: 'agent', status: 'inactive', leadsAssigned: 23, lastActive: subDays(new Date(), 3).toISOString(), avatar: 'KG' },
-  { id: 's8', name: 'Deepa Joshi', email: 'deepa@nexcrm.com', role: 'agent', status: 'active', leadsAssigned: 49, lastActive: subHours(new Date(), 1).toISOString(), avatar: 'DJ' },
+  { id: 's3', name: 'Amit Patel', email: 'amit@nexcrm.com', role: 'staff', status: 'active', leadsAssigned: 52, lastActive: subHours(new Date(), 1).toISOString(), avatar: 'AP' },
+  { id: 's4', name: 'Sara Reddy', email: 'sara@nexcrm.com', role: 'staff', status: 'active', leadsAssigned: 41, lastActive: subHours(new Date(), 2).toISOString(), avatar: 'SR' },
+  { id: 's5', name: 'Vikram Singh', email: 'vikram@nexcrm.com', role: 'staff', status: 'active', leadsAssigned: 67, lastActive: subMinutes(new Date(), 30).toISOString(), avatar: 'VS' },
+  { id: 's6', name: 'Ananya Nair', email: 'ananya@nexcrm.com', role: 'staff', status: 'active', leadsAssigned: 55, lastActive: subHours(new Date(), 3).toISOString(), avatar: 'AN' },
+  { id: 's7', name: 'Karthik Gupta', email: 'karthik@nexcrm.com', role: 'staff', status: 'inactive', leadsAssigned: 23, lastActive: subDays(new Date(), 3).toISOString(), avatar: 'KG' },
+  { id: 's8', name: 'Deepa Joshi', email: 'deepa@nexcrm.com', role: 'staff', status: 'active', leadsAssigned: 49, lastActive: subHours(new Date(), 1).toISOString(), avatar: 'DJ' },
 ];
 
-const ADS_STAGES = ['Ad Click', 'Form Filled', 'First Call', 'Follow Up 1', 'Follow Up 2', 'Demo Done', 'Proposal Sent', 'Negotiation', 'Won', 'Lost'];
-
 function generateLeads(): Lead[] {
-  const leads: Lead[] = [];
-  for (let i = 0; i < 50; i++) {
+  const result: Lead[] = [];
+  for (let i = 0; i < 60; i++) {
     const fn = firstNames[i % firstNames.length];
     const ln = lastNames[i % lastNames.length];
-    const pipelineEntry = PIPELINES[i % 4];
-    const isAds = pipelineEntry.id === 'ads';
-    const stage = isAds ? ADS_STAGES[i % ADS_STAGES.length] : STAGES[i % 5];
-    leads.push({
+    const pipeline = pipelines[i % pipelines.length];
+    const pipelineStage = pipeline.stages[i % pipeline.stages.length];
+    result.push({
       id: `lead-${i + 1}`,
       firstName: fn,
       lastName: ln,
       email: `${fn.toLowerCase()}.${ln.toLowerCase()}@${companies[i % companies.length].toLowerCase().replace(/\s/g, '')}.com`,
       phone: `+91 ${9000000000 + i * 1111}`,
-      stage,
-      pipelineId: pipelineEntry.id,
+      stage: pipelineStage.name,
+      stageId: pipelineStage.id,
+      pipelineId: pipeline.id,
       assignedTo: staff[i % staff.length].id,
       source: sources[i % sources.length],
       tags: [tagsList[i % tagsList.length], tagsList[(i + 3) % tagsList.length]].filter((v, idx, a) => a.indexOf(v) === idx),
@@ -187,7 +191,7 @@ function generateLeads(): Lead[] {
       notes: [],
     });
   }
-  return leads;
+  return result;
 }
 
 export const leads: Lead[] = generateLeads();

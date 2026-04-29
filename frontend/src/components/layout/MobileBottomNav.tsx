@@ -1,7 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Database, Users, Zap, Inbox,
-  SlidersHorizontal, Calendar, UserCog, Settings,
+  LayoutDashboard, Users, Inbox, Settings,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -9,7 +8,6 @@ const bottomItems = [
   { label: 'Dashboard',  icon: LayoutDashboard,   path: '/dashboard' },
   { label: 'Leads',      icon: Users,              path: '/lead-management' },
   { label: 'Inbox',      icon: Inbox,              path: '/inbox' },
-  { label: 'Calendar',   icon: Calendar,           path: '/calendar' },
   { label: 'Settings',   icon: Settings,           path: '/settings' },
 ];
 
