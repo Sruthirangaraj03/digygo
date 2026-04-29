@@ -1,27 +1,338 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Users, UserCheck, UserPlus, Phone, Search, Mail, MoreVertical, User,
   MessageCircle, Pencil, Trash2, ArrowRightLeft, Filter, X, Download,
-  ChevronDown, Tag,
+  ChevronDown, Tag, FileText, Loader2,
 } from 'lucide-react';
 import { useCrmStore } from '@/store/crmStore';
+import { usePermission } from '@/hooks/usePermission';
+import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import { Lead } from '@/data/mockData';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
+
+function getSourceLabel(lead: { source: string; meta_form_name?: string }) {
+  const s = lead.source ?? '';
+  if (s.startsWith('calendar:')) return s.slice(9);
+  if (s.startsWith('form:'))     return s.slice(5);
+  if (s === 'calendar_booking')  return 'Calendar Booking';
+  if (s === 'Custom Form')       return 'Custom Form';
+  if (s === 'meta_form') return lead.meta_form_name ? `Meta · ${lead.meta_form_name}` : 'Meta Form';
+  if (s === 'whatsapp' || s === 'WhatsApp') return 'WhatsApp';
+  if (s === 'Landing Page') return 'Landing Page';
+  return s || 'Manual';
+}
+
+function getSourceColor(source: string) {
+  const s = source ?? '';
+  if (s.startsWith('calendar:') || s === 'calendar_booking') return 'bg-teal-50 text-teal-600 border border-teal-200';
+  if (s.startsWith('form:') || s === 'Custom Form')          return 'bg-purple-50 text-purple-600 border border-purple-200';
+  if (s === 'meta_form')    return 'bg-blue-50 text-blue-600 border border-blue-200';
+  if (s === 'whatsapp' || s === 'WhatsApp') return 'bg-green-50 text-green-600 border border-green-200';
+  if (s === 'Manual')       return 'bg-gray-100 text-gray-600 border border-gray-200';
+  if (s === 'Landing Page') return 'bg-amber-50 text-amber-600 border border-amber-200';
+  return 'bg-gray-100 text-gray-600 border border-gray-200';
+}
 
 const SOURCE_COLORS: Record<string, string> = {
-  'Meta Forms':   'bg-blue-50 text-blue-600 border border-blue-200',
-  'WhatsApp':     'bg-green-50 text-green-600 border border-green-200',
-  'Custom Form':  'bg-purple-50 text-purple-600 border border-purple-200',
-  'Manual':       'bg-gray-100 text-gray-600 border border-gray-200',
-  'Landing Page': 'bg-amber-50 text-amber-600 border border-amber-200',
+  'meta_form':        'bg-blue-50 text-blue-600 border border-blue-200',
+  'Meta Forms':       'bg-blue-50 text-blue-600 border border-blue-200',
+  'WhatsApp':         'bg-green-50 text-green-600 border border-green-200',
+  'whatsapp':         'bg-green-50 text-green-600 border border-green-200',
+  'Custom Form':      'bg-purple-50 text-purple-600 border border-purple-200',
+  'Manual':           'bg-gray-100 text-gray-600 border border-gray-200',
+  'Landing Page':     'bg-amber-50 text-amber-600 border border-amber-200',
+  'calendar_booking': 'bg-teal-50 text-teal-600 border border-teal-200',
 };
 
 const TYPE_OPTIONS = ['All', 'Lead', 'Customer'] as const;
 const DATE_OPTIONS = ['All time', 'Today', 'This week', 'This month', 'Last 30 days'] as const;
 
+// ─── Contact Detail Modal ──────────────────────────────────────────────────────
+function ContactDetailModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
+  const { pipelines, updateLead } = useCrmStore();
+  const [fields, setFields] = useState<{ field_name: string; field_type: string; slug: string; value: string }[]>([]);
+  const [loadingFields, setLoadingFields] = useState(true);
+  const [activeTab, setActiveTab] = useState<'opportunity' | 'additional'>('opportunity');
+  const [saving, setSaving] = useState(false);
+
+  const [form, setForm] = useState({
+    opportunityName: `${lead.firstName} ${lead.lastName}`,
+    contactName: `${lead.firstName} ${lead.lastName}`,
+    email: lead.email,
+    phone: lead.phone,
+    city: '',
+    pipelineId: lead.pipelineId,
+    stageId: lead.stageId,
+  });
+
+  useEffect(() => {
+    const loadFields = async () => {
+      let data = await api.get<any[]>(`/api/leads/${lead.id}/fields`).catch(() => [] as any[]);
+      // Auto-backfill: if empty and this is a meta_form lead, trigger backfill then re-fetch
+      if (data.length === 0 && lead.source === 'meta_form') {
+        try {
+          const fullLead = await api.get<any>(`/api/leads/${lead.id}`);
+          if (fullLead?.meta_form_id) {
+            await api.post(`/api/integrations/meta/forms/${fullLead.meta_form_id}/backfill`);
+            data = await api.get<any[]>(`/api/leads/${lead.id}/fields`).catch(() => [] as any[]);
+          }
+        } catch { /* ignore — backfill is best-effort */ }
+      }
+      setFields(data);
+    };
+    loadFields().finally(() => setLoadingFields(false));
+  }, [lead.id, lead.source]);
+
+  const selectedPipeline = pipelines.find((p) => p.id === form.pipelineId);
+  const selectedStages = selectedPipeline?.stages ?? [];
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const [firstName, ...rest] = form.contactName.trim().split(' ');
+      const lastName = rest.join(' ');
+      await api.patch(`/api/leads/${lead.id}`, {
+        name: form.contactName,
+        email: form.email,
+        phone: form.phone,
+        pipeline_id: form.pipelineId,
+        stage_id: form.stageId,
+      });
+      updateLead(lead.id, {
+        firstName: firstName ?? form.contactName,
+        lastName,
+        email: form.email,
+        phone: form.phone,
+        pipelineId: form.pipelineId,
+        stageId: form.stageId,
+        stage: selectedStages.find((s) => s.id === form.stageId)?.name ?? lead.stage,
+      });
+      toast.success('Contact updated');
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Failed to save changes');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2.5 text-[13px] text-[#1c1410] placeholder-gray-300 outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all bg-white';
+  const labelCls = 'block text-[12px] font-medium text-[#555] mb-1.5';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+          <h2 className="font-bold text-[17px] text-[#1c1410]">+ Edit Contact</h2>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors">
+            <X className="w-4 h-4 text-gray-400" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+
+          {/* Tab buttons */}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setActiveTab('opportunity')}
+              className="px-5 py-2 rounded-lg text-[13px] font-bold text-white transition-all"
+              style={{
+                background: activeTab === 'opportunity'
+                  ? 'linear-gradient(135deg, #c2410c 0%, #ea580c 100%)'
+                  : '#e5e7eb',
+                color: activeTab === 'opportunity' ? '#fff' : '#555',
+              }}
+            >
+              Opportunity
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('additional')}
+              className="px-5 py-2 rounded-lg text-[13px] font-bold transition-all"
+              style={{
+                background: activeTab === 'additional'
+                  ? 'linear-gradient(135deg, #c2410c 0%, #ea580c 100%)'
+                  : '#e5e7eb',
+                color: activeTab === 'additional' ? '#fff' : '#555',
+              }}
+            >
+              Additional Data
+            </button>
+          </div>
+
+          {/* ── Opportunity tab ── */}
+          {activeTab === 'opportunity' && (
+            <>
+              <h3 className="font-bold text-[15px] text-[#1c1410]">Contact Info</h3>
+
+              <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+                <div>
+                  <label className={labelCls}>Opportunity Name <span className="text-red-500">*</span></label>
+                  <input
+                    value={form.opportunityName}
+                    onChange={(e) => setForm((f) => ({ ...f, opportunityName: e.target.value }))}
+                    placeholder="Add Opportunity Name"
+                    className={inputCls}
+                  />
+                </div>
+
+                <div>
+                  <label className={labelCls}>Contact Name <span className="text-red-500">*</span></label>
+                  <input
+                    value={form.contactName}
+                    onChange={(e) => setForm((f) => ({ ...f, contactName: e.target.value }))}
+                    placeholder="Contact Name"
+                    className={inputCls}
+                  />
+                </div>
+
+                <div>
+                  <label className={labelCls}>Email</label>
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                    placeholder="Email"
+                    className={inputCls}
+                  />
+                </div>
+
+                <div>
+                  <label className={labelCls}>Phone</label>
+                  <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
+                    <span className="px-3 py-2.5 text-[12px] font-semibold text-[#555] bg-gray-50 border-r border-gray-200 shrink-0 whitespace-nowrap">
+                      IN +91
+                    </span>
+                    <input
+                      value={form.phone.replace(/^\+?91/, '')}
+                      onChange={(e) => setForm((f) => ({ ...f, phone: '+91' + e.target.value.replace(/\D/g, '') }))}
+                      placeholder="81234 56789"
+                      className="flex-1 px-3 py-2.5 text-[13px] text-[#1c1410] placeholder-gray-300 outline-none bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className={labelCls}>City</label>
+                  <input
+                    value={form.city}
+                    onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
+                    placeholder="City"
+                    className={inputCls}
+                  />
+                </div>
+
+                <div>
+                  <label className={labelCls}>Pipeline <span className="text-red-500">*</span></label>
+                  <select
+                    value={form.pipelineId}
+                    onChange={(e) => {
+                      const first = pipelines.find((p) => p.id === e.target.value)?.stages[0]?.id ?? '';
+                      setForm((f) => ({ ...f, pipelineId: e.target.value, stageId: first }));
+                    }}
+                    className={cn(inputCls, 'cursor-pointer appearance-none')}
+                  >
+                    {pipelines.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className={labelCls}>Stage <span className="text-red-500">*</span></label>
+                  <select
+                    value={form.stageId}
+                    onChange={(e) => setForm((f) => ({ ...f, stageId: e.target.value }))}
+                    className={cn(inputCls, 'cursor-pointer appearance-none')}
+                  >
+                    {selectedStages.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className={labelCls}>Created At</label>
+                  <input
+                    readOnly
+                    value={format(new Date(lead.createdAt), 'dd-MM-yyyy HH:mm')}
+                    className={cn(inputCls, 'bg-gray-50 cursor-default text-[#7a6b5c]')}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ── Additional Data tab ── */}
+          {activeTab === 'additional' && (
+            <div>
+              {loadingFields ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                </div>
+              ) : fields.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+                  <div className="w-12 h-12 bg-[#faf8f6] rounded-2xl flex items-center justify-center">
+                    <FileText className="w-5 h-5 text-gray-300" />
+                  </div>
+                  <p className="text-[13px] font-semibold text-[#1c1410]">No additional fields</p>
+                  <p className="text-[12px] text-[#b09e8d]">No custom field data recorded for this contact.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+                  {fields.map((f, i) => (
+                    <div key={i}>
+                      <label className={labelCls}>{f.field_name}</label>
+                      <input
+                        readOnly
+                        value={f.value || '—'}
+                        className={cn(inputCls, 'bg-gray-50 cursor-default text-[#7a6b5c]')}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between shrink-0">
+          <p className="text-[11px] text-[#7a6b5c]">
+            Created On: {format(new Date(lead.createdAt), 'dd/MM/yyyy hh:mm aa').toUpperCase()}
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="px-6 py-2 rounded-lg text-[13px] font-bold text-white bg-red-400 hover:bg-red-500 transition-colors"
+            >
+              CANCEL
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="px-6 py-2 rounded-lg text-[13px] font-bold text-white transition-colors disabled:opacity-60"
+              style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 100%)' }}
+            >
+              {saving ? 'SAVING…' : 'SAVE'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ContactsPage() {
-  const { leads, updateLead, deleteLead } = useCrmStore();
+  const { leads, pipelines, staff, updateLead, deleteLead } = useCrmStore();
+  const canEditContact   = usePermission('leads:edit');
+  const canDeleteContact = usePermission('leads:delete');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -30,8 +341,12 @@ export default function ContactsPage() {
   const [tagFilter, setTagFilter] = useState('All');
   const [dateFilter, setDateFilter] = useState<typeof DATE_OPTIONS[number]>('All time');
   const [showFilters, setShowFilters] = useState(false);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const selectedContact = leads.find((l) => l.id === selectedContactId) ?? null;
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
-  const allSources = useMemo(() => ['All', ...Array.from(new Set(leads.map((l) => l.source)))], [leads]);
+  const allSources = useMemo(() => ['All', ...Array.from(new Set(leads.map((l) => l.source)))].filter(Boolean), [leads]);
   const allTags = useMemo(() => ['All', ...Array.from(new Set(leads.flatMap((l) => l.tags)))], [leads]);
 
   const totalContacts = leads.length;
@@ -41,7 +356,7 @@ export default function ContactsPage() {
     const now = new Date();
     return created.getMonth() === now.getMonth() && created.getFullYear() === now.getFullYear();
   }).length;
-  const whatsappContacts = leads.filter((l) => l.source === 'WhatsApp').length;
+  const whatsappContacts = leads.filter((l) => l.source === 'WhatsApp' || l.source === 'whatsapp').length;
 
   const statCards = [
     { label: 'Total Contacts', value: totalContacts, icon: Users, color: 'text-primary' },
@@ -85,16 +400,30 @@ export default function ContactsPage() {
 
   const clearFilters = () => { setSourceFilter('All'); setTypeFilter('All'); setTagFilter('All'); setDateFilter('All time'); };
 
-  const bulkDelete = () => {
-    if (!window.confirm(`Delete ${selected.length} contact(s)? This cannot be undone.`)) return;
-    selected.forEach((id) => deleteLead(id));
-    toast.success(`${selected.length} contact(s) deleted`);
+  const bulkDelete = async () => {
+    let failed = 0;
+    await Promise.all(selected.map((id) =>
+      api.delete(`/api/leads/${id}`).then(() => deleteLead(id)).catch(() => { failed++; })
+    ));
+    const done = selected.length - failed;
+    if (done > 0) toast.success(`${done} contact${done !== 1 ? 's' : ''} deleted`);
+    if (failed > 0) toast.error(`${failed} could not be deleted`);
     setSelected([]);
+    setShowBulkDeleteConfirm(false);
+  };
+
+  const deleteSingle = async (id: string) => {
+    await api.delete(`/api/leads/${id}`);
+    deleteLead(id);
+    toast.success('Contact deleted');
+    setOpenMenu(null);
+    setDeleteTargetId(null);
   };
 
   const selectCls = 'appearance-none pl-3 pr-8 py-2 bg-white border border-black/10 rounded-xl text-[13px] font-medium text-[#1c1410] outline-none hover:border-primary/40 focus:border-primary/40 cursor-pointer';
 
   return (
+    <>
     <div className="space-y-5">
 
       {/* Stat Cards */}
@@ -190,7 +519,7 @@ export default function ContactsPage() {
         <div className="flex items-center gap-3 flex-wrap animate-fade-in">
           <div className="relative">
             <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} className={selectCls} style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-              {allSources.map((s) => <option key={s} value={s}>{s === 'All' ? 'All Sources' : s}</option>)}
+              {allSources.map((s) => <option key={s} value={s}>{s === 'All' ? 'All Sources' : getSourceLabel({ source: s })}</option>)}
             </select>
             <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#9a8a7a] pointer-events-none" />
           </div>
@@ -222,9 +551,11 @@ export default function ContactsPage() {
             <div className="w-6 h-6 rounded-full bg-primary text-white text-[11px] font-bold flex items-center justify-center">{selected.length}</div>
             <span className="text-[12px] font-semibold text-[#1c1410]">selected</span>
           </div>
-          <button onClick={bulkDelete} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-red-500 hover:bg-red-50 transition-colors">
-            <Trash2 className="w-3.5 h-3.5" /> Delete
-          </button>
+          {canDeleteContact && (
+            <button onClick={() => setShowBulkDeleteConfirm(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-red-500 hover:bg-red-50 transition-colors">
+              <Trash2 className="w-3.5 h-3.5" /> Delete
+            </button>
+          )}
           <div className="flex-1" />
           <button onClick={() => setSelected([])} className="p-1.5 rounded-lg hover:bg-white transition-colors text-[#7a6b5c]">
             <X className="w-4 h-4" />
@@ -285,12 +616,12 @@ export default function ContactsPage() {
 
                     {/* Contact — name + email + phone stacked */}
                     <td className="px-4 py-3.5 min-w-[240px]">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 cursor-pointer" onClick={() => setSelectedContactId(lead.id)}>
                         <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-[11px] font-bold text-primary shrink-0">
                           {lead.firstName[0]}{lead.lastName[0]}
                         </div>
                         <div className="min-w-0">
-                          <p className="font-semibold text-[13px] text-[#1c1410] truncate">{lead.firstName} {lead.lastName}</p>
+                          <p className="font-semibold text-[13px] text-[#1c1410] truncate hover:text-primary transition-colors">{lead.firstName} {lead.lastName}</p>
                           <div className="flex items-center gap-3 mt-0.5">
                             {lead.email && <span className="text-[11px] text-[#7a6b5c] truncate max-w-[160px]">{lead.email}</span>}
                             <span className="text-[11px] text-[#7a6b5c]">{lead.phone}</span>
@@ -301,8 +632,8 @@ export default function ContactsPage() {
 
                     {/* Source */}
                     <td className="px-4 py-3.5">
-                      <span className={cn('text-[11px] font-medium px-2.5 py-1 rounded-lg whitespace-nowrap', SOURCE_COLORS[lead.source] ?? 'bg-gray-100 text-gray-600 border border-gray-200')}>
-                        {lead.source}
+                      <span className={cn('text-[11px] font-medium px-2.5 py-1 rounded-lg whitespace-nowrap', getSourceColor(lead.source))}>
+                        {getSourceLabel(lead)}
                       </span>
                     </td>
 
@@ -337,11 +668,13 @@ export default function ContactsPage() {
                     {/* Created */}
                     <td className="px-4 py-3.5 whitespace-nowrap">
                       <p className="text-[12px] text-[#1c1410]">{format(new Date(lead.createdAt), 'dd MMM yyyy')}</p>
+                      <p className="text-[11px] text-[#b09e8d]">{format(new Date(lead.createdAt), 'h:mm a')}</p>
                     </td>
 
                     {/* Last Activity */}
                     <td className="px-4 py-3.5 whitespace-nowrap">
                       <p className="text-[12px] text-[#7a6b5c]">{format(new Date(lead.lastActivity), 'dd MMM yyyy')}</p>
+                      <p className="text-[11px] text-[#b09e8d]">{format(new Date(lead.lastActivity), 'h:mm a')}</p>
                     </td>
 
                     {/* Actions */}
@@ -364,30 +697,44 @@ export default function ContactsPage() {
                               >
                                 <MessageCircle className="w-3.5 h-3.5 text-[#7a6b5c]" /> Message
                               </button>
-                              <button
-                                onClick={() => { toast.info('Edit coming soon'); setOpenMenu(null); }}
-                                className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors"
-                              >
-                                <Pencil className="w-3.5 h-3.5 text-[#7a6b5c]" /> Edit
-                              </button>
-                              <button
-                                onClick={() => {
-                                  updateLead(lead.id, { stage: isCustomer ? 'Contacted' : 'Closed Won' });
-                                  toast.success(isCustomer ? 'Converted to Lead' : 'Converted to Customer');
-                                  setOpenMenu(null);
-                                }}
-                                className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors"
-                              >
-                                <ArrowRightLeft className="w-3.5 h-3.5 text-[#7a6b5c]" />
-                                {isCustomer ? 'Convert to Lead' : 'Convert to Customer'}
-                              </button>
-                              <div className="border-t border-black/5 my-1" />
-                              <button
-                                onClick={() => { deleteLead(lead.id); toast.success('Contact deleted'); setOpenMenu(null); }}
-                                className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-red-500 hover:bg-red-50 transition-colors"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" /> Delete
-                              </button>
+                              {canEditContact && (
+                                <button
+                                  onClick={() => { toast.info('Edit coming soon'); setOpenMenu(null); }}
+                                  className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors"
+                                >
+                                  <Pencil className="w-3.5 h-3.5 text-[#7a6b5c]" /> Edit
+                                </button>
+                              )}
+                              {canEditContact && (
+                                <button
+                                  onClick={async () => {
+                                    const newStage = isCustomer ? 'Contacted' : 'Closed Won';
+                                    const pipeline = pipelines.find((p) => p.id === lead.pipelineId) ?? pipelines[0];
+                                    const stageId = pipeline?.stages.find((s) => s.name === newStage)?.id;
+                                    try {
+                                      await api.patch(`/api/leads/${lead.id}`, stageId ? { stage_id: stageId } : {});
+                                      updateLead(lead.id, { stage: newStage, ...(stageId ? { stageId } : {}) });
+                                      toast.success(isCustomer ? 'Converted to Lead' : 'Converted to Customer');
+                                    } catch { toast.error('Failed to update contact'); }
+                                    setOpenMenu(null);
+                                  }}
+                                  className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors"
+                                >
+                                  <ArrowRightLeft className="w-3.5 h-3.5 text-[#7a6b5c]" />
+                                  {isCustomer ? 'Convert to Lead' : 'Convert to Customer'}
+                                </button>
+                              )}
+                              {canDeleteContact && (
+                                <>
+                                  <div className="border-t border-black/5 my-1" />
+                                  <button
+                                    onClick={() => { setDeleteTargetId(lead.id); setOpenMenu(null); }}
+                                    className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-red-500 hover:bg-red-50 transition-colors"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </>
                         )}
@@ -401,5 +748,31 @@ export default function ContactsPage() {
         </div>
       </div>
     </div>
+
+    {selectedContact && <ContactDetailModal lead={selectedContact} onClose={() => setSelectedContactId(null)} />}
+
+    {showBulkDeleteConfirm && (
+      <ConfirmModal
+        title={`Delete ${selected.length} contact${selected.length !== 1 ? 's' : ''}?`}
+        message="This will permanently remove them from the CRM. This cannot be undone."
+        confirmLabel="Yes, Delete"
+        onConfirm={bulkDelete}
+        onClose={() => setShowBulkDeleteConfirm(false)}
+      />
+    )}
+
+    {deleteTargetId && (() => {
+      const lead = leads.find((l) => l.id === deleteTargetId);
+      return lead ? (
+        <ConfirmModal
+          title="Delete Contact?"
+          message={<><span className="font-semibold text-[#1c1410]">{lead.firstName} {lead.lastName}</span> will be permanently removed from the CRM. This cannot be undone.</>}
+          confirmLabel="Yes, Delete"
+          onConfirm={() => deleteSingle(deleteTargetId)}
+          onClose={() => setDeleteTargetId(null)}
+        />
+      ) : null;
+    })()}
+    </>
   );
 }

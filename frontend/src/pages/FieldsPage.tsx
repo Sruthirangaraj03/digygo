@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Search, Plus, Pencil, Copy, X, Check, ChevronDown, Trash2,
@@ -8,6 +8,7 @@ import {
   ArrowLeft, Eye,
 } from 'lucide-react';
 import { useCrmStore, AdditionalField as StoreAdditionalField } from '@/store/crmStore';
+import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { ElementType } from 'react';
@@ -27,6 +28,7 @@ interface StandardField {
   type: DataType;
   slug: string;
   required: boolean;
+  is_active?: boolean;
   isSystem?: boolean;
   options?: string[];
   group?: string;
@@ -617,23 +619,47 @@ function ValueModal({ value, onClose, onSave }: {
 type Tab = 'standard' | 'additional' | 'values';
 
 export default function FieldsPage() {
-  const { pipelines, additionalFields: additional, addAdditionalField, updateAdditionalField, deleteAdditionalField } = useCrmStore();
+  const { pipelines } = useCrmStore();
   const [searchParams] = useSearchParams();
   const tab = (searchParams.get('tab') ?? 'standard') as Tab;
   const [search, setSearch] = useState('');
 
-  // Standard Fields
-  const [customStandard, setCustomStandard] = useState<StandardField[]>(INIT_CUSTOM_STANDARD);
+  // Standard Fields — custom tab
+  const [customStandard, setCustomStandard] = useState<StandardField[]>([]);
   const [stdModal, setStdModal] = useState<{ open: boolean; editing?: StandardField }>({ open: false });
   const [activeGroup, setActiveGroup] = useState<string>('Contact');
 
-  // Additional Fields (from store)
+  // Additional Fields — pipeline questions
+  const [additional, setAdditional] = useState<AdditionalField[]>(INIT_ADDITIONAL);
   const [selectedPipeline, setSelectedPipeline] = useState<string>(pipelines[0]?.id ?? 'sales');
   const [addModal, setAddModal] = useState<{ open: boolean; editing?: AdditionalField }>({ open: false });
 
-  // Values
-  const [values, setValues] = useState<ValueToken[]>(INIT_VALUES);
+  // Values — token macros
+  const [values, setValues] = useState<ValueToken[]>([]);
   const [valueModal, setValueModal] = useState<{ open: boolean; editing?: ValueToken }>({ open: false });
+
+  // Load from API
+  useEffect(() => {
+    api.get<any[]>('/api/fields/custom').then((rows) => {
+      setCustomStandard(rows.map((r) => ({
+        id: r.id, name: r.name, type: r.type as DataType, slug: r.slug,
+        placeholder: r.placeholder ?? undefined, options: r.options ?? undefined,
+        required: r.required ?? false, is_active: r.is_active !== false, isSystem: false,
+      })));
+    }).catch(() => {});
+
+    api.get<any[]>('/api/fields/questions').then((rows) => {
+      setAdditional(rows.map((r) => ({
+        id: r.id, pipelineId: r.pipeline_id, question: r.question,
+        type: r.type as AdditionalField['type'], slug: r.slug,
+        options: r.options ?? undefined, required: r.required ?? false,
+      })));
+    }).catch(() => {});
+
+    api.get<any[]>('/api/fields/values').then((rows) => {
+      setValues(rows.map((r) => ({ id: r.id, name: r.name, replaceWith: r.replace_with })));
+    }).catch(() => {});
+  }, []);
 
   const filteredPipelineQuestions = useMemo(() => {
     // When "all" is selected → show only global questions
@@ -809,12 +835,21 @@ export default function FieldsPage() {
                       </div>
                       <code className="text-[11px] font-mono text-[#7a6b5c] bg-[#faf8f6] px-2 py-1 rounded truncate inline-block">{`{%${f.slug}%}`}</code>
                       <button
-                        onClick={() => { setCustomStandard((p) => p.map((x) => x.id === f.id ? { ...x, required: !x.required } : x)); }}
-                        title={f.required ? 'Required (click to make optional)' : 'Optional (click to make required)'}
-                        className={cn('relative w-9 h-5 rounded-full transition-colors', f.required ? 'bg-primary' : 'bg-gray-200')}
+                        onClick={async () => {
+                          const next = !(f.is_active !== false);
+                          setCustomStandard((p) => p.map((x) => x.id === f.id ? { ...x, is_active: next } : x));
+                          try {
+                            await api.patch(`/api/fields/custom/${f.id}`, { is_active: next });
+                          } catch {
+                            setCustomStandard((p) => p.map((x) => x.id === f.id ? { ...x, is_active: !next } : x));
+                            toast.error('Failed to update status');
+                          }
+                        }}
+                        title={(f.is_active !== false) ? 'Active (click to disable)' : 'Inactive (click to enable)'}
+                        className={cn('relative w-9 h-5 rounded-full transition-colors', (f.is_active !== false) ? 'bg-primary' : 'bg-gray-200')}
                       >
                         <div className={cn('absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform',
-                          f.required ? 'translate-x-[18px]' : 'translate-x-0.5'
+                          (f.is_active !== false) ? 'translate-x-[18px]' : 'translate-x-0.5'
                         )} />
                       </button>
                       <div className="flex items-center gap-1 justify-end">
@@ -824,7 +859,7 @@ export default function FieldsPage() {
                         <button onClick={() => copyToken(f.slug)} title="Copy unique key" className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center text-[#7a6b5c] hover:text-primary transition-colors">
                           <Copy className="w-3.5 h-3.5" />
                         </button>
-                        <button onClick={() => { if (window.confirm(`Delete "${f.name}"?`)) { setCustomStandard((p) => p.filter((x) => x.id !== f.id)); toast.success('Deleted'); } }} title="Delete" className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-[#7a6b5c] hover:text-red-500 transition-colors">
+                        <button onClick={async () => { if (window.confirm(`Delete "${f.name}"?`)) { try { await api.delete(`/api/fields/custom/${f.id}`); setCustomStandard((p) => p.filter((x) => x.id !== f.id)); toast.success('Deleted'); } catch { toast.error('Failed to delete'); } } }} title="Delete" className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-[#7a6b5c] hover:text-red-500 transition-colors">
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -878,7 +913,7 @@ export default function FieldsPage() {
                       <button onClick={() => setAddModal({ open: true, editing: f })} title="Edit" className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center text-[#7a6b5c] hover:text-primary transition-colors">
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
-                      <button onClick={() => { if (window.confirm('Delete this question?')) { deleteAdditionalField(f.id); toast.success('Question removed'); } }} title="Delete" className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-[#7a6b5c] hover:text-red-500 transition-colors">
+                      <button onClick={async () => { if (window.confirm('Delete this question?')) { try { await api.delete(`/api/fields/questions/${f.id}`); setAdditional((p) => p.filter((x) => x.id !== f.id)); toast.success('Question removed'); } catch { toast.error('Failed to delete'); } } }} title="Delete" className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-[#7a6b5c] hover:text-red-500 transition-colors">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -897,10 +932,16 @@ export default function FieldsPage() {
                   if (!other) return;
                   const toCopy = additional.filter((a) => a.pipelineId === other.id);
                   if (toCopy.length === 0) { toast.info(`No questions in ${other.name} to copy`); return; }
-                  toCopy.forEach((a) => {
-                    addAdditionalField({ ...a, id: `a-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, pipelineId: selectedPipeline });
-                  });
-                  toast.success(`Copied ${toCopy.length} questions from ${other.name}`);
+                  Promise.all(toCopy.map((a) =>
+                    api.post<any>('/api/fields/questions', {
+                      pipeline_id: selectedPipeline, question: a.question, type: a.type,
+                      slug: `${a.slug}_copy_${Date.now()}`.slice(0, 100),
+                      options: a.options, required: a.required,
+                    }).then((created) => ({ ...a, id: created.id, pipelineId: selectedPipeline }))
+                  )).then((copied) => {
+                    setAdditional((p) => [...p, ...copied]);
+                    toast.success(`Copied ${copied.length} questions from ${other.name}`);
+                  }).catch(() => toast.error('Failed to copy questions'));
                 }}
                 className="text-[12px] text-primary font-semibold hover:underline flex items-center gap-1 mx-auto"
               >
@@ -946,7 +987,7 @@ export default function FieldsPage() {
                     <button onClick={() => setValueModal({ open: true, editing: v })} title="Edit" className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center text-[#7a6b5c] hover:text-primary transition-colors">
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
-                    <button onClick={() => { if (window.confirm(`Delete "${v.name}"?`)) { setValues((p) => p.filter((x) => x.id !== v.id)); toast.success('Deleted'); } }} title="Delete" className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-[#7a6b5c] hover:text-red-500 transition-colors">
+                    <button onClick={async () => { if (window.confirm(`Delete "${v.name}"?`)) { try { await api.delete(`/api/fields/values/${v.id}`); setValues((p) => p.filter((x) => x.id !== v.id)); toast.success('Deleted'); } catch { toast.error('Failed to delete'); } } }} title="Delete" className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-[#7a6b5c] hover:text-red-500 transition-colors">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -964,7 +1005,7 @@ export default function FieldsPage() {
         <StandardFieldModal
           field={stdModal.editing}
           onClose={() => setStdModal({ open: false })}
-          onSave={(f) => {
+          onSave={async (f) => {
             const editingId = stdModal.editing?.id;
             const allKeys = [
               ...SYSTEM_STANDARD.map((x) => x.slug.toLowerCase()),
@@ -976,14 +1017,26 @@ export default function FieldsPage() {
               toast.error(`Key "{%${f.slug}%}" already exists. Pick a different name.`);
               return;
             }
-            if (stdModal.editing) {
-              setCustomStandard((p) => p.map((x) => x.id === stdModal.editing!.id ? { ...x, ...f } : x));
-              toast.success('Field updated');
-            } else {
-              setCustomStandard((p) => [...p, { ...f, id: `c-${Date.now()}` }]);
-              toast.success(`Field "${f.name}" created`);
+            try {
+              if (stdModal.editing) {
+                await api.patch<any>(`/api/fields/custom/${stdModal.editing.id}`, {
+                  name: f.name, type: f.type, placeholder: f.placeholder,
+                  options: f.options, required: f.required,
+                });
+                setCustomStandard((p) => p.map((x) => x.id === stdModal.editing!.id ? { ...x, ...f, id: x.id } : x));
+                toast.success('Field updated');
+              } else {
+                const created = await api.post<any>('/api/fields/custom', {
+                  name: f.name, type: f.type, slug: f.slug, placeholder: f.placeholder,
+                  options: f.options, required: f.required, is_active: true,
+                });
+                setCustomStandard((p) => [...p, { ...f, id: created.id, is_active: true }]);
+                toast.success(`Field "${f.name}" created`);
+              }
+              setStdModal({ open: false });
+            } catch (err: any) {
+              toast.error(err.message ?? 'Failed to save field');
             }
-            setStdModal({ open: false });
           }}
         />
       )}
@@ -993,7 +1046,7 @@ export default function FieldsPage() {
           pipelineId={selectedPipeline}
           field={addModal.editing}
           onClose={() => setAddModal({ open: false })}
-          onSave={(f) => {
+          onSave={async (f) => {
             const editingId = addModal.editing?.id;
             const newKey = `custom.${f.slug}`.toLowerCase();
             const allKeys = [
@@ -1006,14 +1059,25 @@ export default function FieldsPage() {
               toast.error(`Key "{%${newKey}%}" already exists. Pick a different question name.`);
               return;
             }
-            if (addModal.editing) {
-              updateAdditionalField(addModal.editing.id, f);
-              toast.success('Question updated');
-            } else {
-              addAdditionalField({ ...f, id: `a-${Date.now()}` });
-              toast.success('Question added');
+            try {
+              if (addModal.editing) {
+                await api.patch(`/api/fields/questions/${addModal.editing.id}`, {
+                  question: f.question, type: f.type, options: f.options, required: f.required,
+                });
+                setAdditional((p) => p.map((x) => x.id === addModal.editing!.id ? { ...x, ...f } : x));
+                toast.success('Question updated');
+              } else {
+                const created = await api.post<any>('/api/fields/questions', {
+                  pipeline_id: f.pipelineId, question: f.question, type: f.type,
+                  slug: f.slug, options: f.options, required: f.required,
+                });
+                setAdditional((p) => [...p, { ...f, id: created.id }]);
+                toast.success('Question added');
+              }
+              setAddModal({ open: false });
+            } catch (err: any) {
+              toast.error(err.message ?? 'Failed to save question');
             }
-            setAddModal({ open: false });
           }}
         />
       )}
@@ -1022,8 +1086,7 @@ export default function FieldsPage() {
         <ValueModal
           value={valueModal.editing}
           onClose={() => setValueModal({ open: false })}
-          onSave={(v) => {
-            // Uniqueness check — exclude the one being edited, compare auto-derived tokens
+          onSave={async (v) => {
             const editingId = valueModal.editing?.id;
             const newToken = slugify(v.name);
             const allKeys = [
@@ -1036,14 +1099,24 @@ export default function FieldsPage() {
               toast.error(`Unique key "{%${newToken}%}" already exists. Pick a different name.`);
               return;
             }
-            if (valueModal.editing) {
-              setValues((p) => p.map((x) => x.id === valueModal.editing!.id ? { ...x, ...v } : x));
-              toast.success('Value updated');
-            } else {
-              setValues((p) => [...p, { ...v, id: `v-${Date.now()}` }]);
-              toast.success(`Value {%${newToken}%} created`);
+            try {
+              if (valueModal.editing) {
+                await api.patch(`/api/fields/values/${valueModal.editing.id}`, {
+                  name: v.name, replace_with: v.replaceWith,
+                });
+                setValues((p) => p.map((x) => x.id === valueModal.editing!.id ? { ...x, ...v } : x));
+                toast.success('Value updated');
+              } else {
+                const created = await api.post<any>('/api/fields/values', {
+                  name: v.name, replace_with: v.replaceWith,
+                });
+                setValues((p) => [...p, { ...v, id: created.id }]);
+                toast.success(`Value {%${newToken}%} created`);
+              }
+              setValueModal({ open: false });
+            } catch (err: any) {
+              toast.error(err.message ?? 'Failed to save value');
             }
-            setValueModal({ open: false });
           }}
         />
       )}

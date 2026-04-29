@@ -1,23 +1,24 @@
 import { useState } from 'react';
-import { Bell, X, Zap, LogOut, Settings, User } from 'lucide-react';
+import { Bell, X, LogOut, Settings, User, Unplug } from 'lucide-react';
 import { useLocation, Link, useNavigate } from 'react-router-dom';
 import { useCrmStore } from '@/store/crmStore';
 import { useAuthStore } from '@/store/authStore';
 import { useCompanyStore } from '@/store/companyStore';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { api } from '@/lib/api';
+import { toast } from 'sonner';
 
 const sectionNavs: Record<string, { label: string; path: string }[]> = {
   '/lead-generation': [
     { label: 'Overview', path: '/lead-generation' },
     { label: 'Meta Forms', path: '/lead-generation/meta-forms' },
     { label: 'Custom Forms', path: '/lead-generation/custom-forms' },
-    { label: 'Landing Pages', path: '/lead-generation/landing-pages' },
-    { label: 'WhatsApp', path: '/lead-generation/whatsapp' },
   ],
   '/lead-management': [
     { label: 'Overview', path: '/lead-management' },
     { label: 'Pipeline', path: '/leads' },
+    { label: 'Follow-ups', path: '/lead-management/followups' },
     { label: 'Contacts', path: '/lead-management/contacts' },
     { label: 'Contact Group', path: '/lead-management/contact-groups' },
   ],
@@ -25,13 +26,11 @@ const sectionNavs: Record<string, { label: string; path: string }[]> = {
     { label: 'Overview', path: '/automation' },
     { label: 'Workflows', path: '/automation/workflows' },
     { label: 'Templates', path: '/automation/templates' },
-    { label: 'WhatsApp', path: '/automation/whatsapp' },
   ],
   '/calendar': [
     { label: 'Dashboard', path: '/calendar' },
     { label: 'Create / Edit', path: '/calendar?tab=create-edit' },
     { label: 'Appointments', path: '/calendar?tab=appointments' },
-    { label: 'Availability', path: '/calendar?tab=availability' },
   ],
   '/fields': [
     { label: 'Standard Fields', path: '/fields' },
@@ -48,8 +47,21 @@ const sectionNavs: Record<string, { label: string; path: string }[]> = {
     { label: 'Company Details', path: '/settings/company' },
     { label: 'Integrations', path: '/settings/integrations' },
     { label: 'Notifications', path: '/settings/notifications' },
-    { label: 'Assignment Rules', path: '/settings/assignment-rules' },
   ],
+};
+
+// Pages that have a disconnect action — path → { label, endpoint, confirm }
+const PAGE_DISCONNECT: Record<string, { label: string; endpoint: string; confirm: string }> = {
+  '/lead-generation/meta-forms': {
+    label: 'Disconnect Meta',
+    endpoint: '/api/integrations/meta/disconnect',
+    confirm: 'Disconnect Meta? All linked forms and leads sync will stop.',
+  },
+  '/lead-generation/whatsapp': {
+    label: 'Disconnect WhatsApp',
+    endpoint: '/api/integrations/waba/disconnect',
+    confirm: 'Disconnect WhatsApp? The WABA integration will be removed.',
+  },
 };
 
 const notifIconColors: Record<string, string> = {
@@ -65,18 +77,42 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
   const navigate = useNavigate();
   const [showNotifs, setShowNotifs] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const { notifications, markAllNotificationsRead, markNotificationRead } = useCrmStore();
-  const { currentUser, logout } = useAuthStore();
-  const { logoUrl, companyName } = useCompanyStore();
+  const { currentUser, logout, isImpersonating } = useAuthStore();
+  const { companyName } = useCompanyStore();
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   const initials = currentUser
     ? `${currentUser.name.split(' ')[0][0]}${currentUser.name.split(' ')[1]?.[0] ?? ''}`
     : 'U';
 
+  const roleLabel = currentUser?.role === 'super_admin'
+    ? 'Super Admin'
+    : currentUser?.role === 'owner'
+      ? 'Owner'
+      : 'Staff';
+
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  const pageDisconnect = PAGE_DISCONNECT[location.pathname] ?? null;
+  const handleDisconnect = async () => {
+    if (!pageDisconnect) return;
+    if (!window.confirm(pageDisconnect.confirm)) return;
+    setDisconnecting(true);
+    try {
+      await api.delete(pageDisconnect.endpoint);
+      toast.success(`${pageDisconnect.label.replace('Disconnect ', '')} disconnected`);
+      navigate(location.pathname); // reload same page to reflect state
+      window.location.reload();
+    } catch {
+      toast.error('Failed to disconnect');
+    } finally {
+      setDisconnecting(false);
+    }
   };
 
   const activeSection = Object.keys(sectionNavs).find((prefix) => {
@@ -102,12 +138,8 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
 
         {/* Mobile: logo mark */}
         <div className="md:hidden flex items-center gap-2 shrink-0">
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center overflow-hidden shrink-0"
-            style={logoUrl ? { background: 'transparent' } : { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>
-            {logoUrl
-              ? <img src={logoUrl} alt="logo" className="w-full h-full object-contain" />
-              : <Zap className="w-4 h-4 text-white" />
-            }
+          <div className="w-7 h-7 rounded-lg overflow-hidden shrink-0 flex items-center justify-center">
+            <img src="/digygo-logo.png" alt="DigyGo" className="w-full h-full object-contain" />
           </div>
           <span className="font-headline text-[15px] font-bold text-[#1c1410]">{companyName}</span>
         </div>
@@ -136,6 +168,18 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
             </nav>
           ) : (
             <div />
+          )}
+
+          {/* Per-page Disconnect button */}
+          {pageDisconnect && (
+            <button
+              onClick={handleDisconnect}
+              disabled={disconnecting}
+              className="ml-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-red-500 border border-red-200 hover:bg-red-50 transition-colors disabled:opacity-50 whitespace-nowrap shrink-0"
+            >
+              <Unplug className="w-3.5 h-3.5" />
+              {disconnecting ? 'Disconnecting…' : pageDisconnect.label}
+            </button>
           )}
         </div>
 
@@ -240,7 +284,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
             >
               <div className="hidden sm:block text-right">
                 <p className="text-[13px] font-semibold text-[#1c1410] leading-tight">{currentUser?.name ?? 'User'}</p>
-                <p className="text-[11px] text-[#7a6b5c] capitalize leading-tight mt-0.5">{currentUser?.role ?? 'agent'}</p>
+                <p className="text-[11px] text-[#7a6b5c] leading-tight mt-0.5">{roleLabel}</p>
               </div>
               <div
                 className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold ring-2 ring-primary/20 hover:ring-primary/40 transition-all shrink-0"

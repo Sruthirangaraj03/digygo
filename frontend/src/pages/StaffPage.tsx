@@ -1,12 +1,10 @@
-import { useState, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import React, { useState, useMemo, useRef } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
-  Plus, Pencil, Shield, ShieldCheck, User, X, Check, MoreHorizontal,
-  Mail, UserMinus, UserCheck,
+  Plus, Pencil, ShieldCheck, User, X, Check, MoreHorizontal,
+  Mail, UserMinus, UserCheck, Upload, ChevronDown, Eye, EyeOff,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useCrmStore } from '@/store/crmStore';
@@ -14,32 +12,132 @@ import { StaffMember } from '@/data/mockData';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
+import { usePermission } from '@/hooks/usePermission';
 
-const roleBadge: Record<string, string> = {
-  admin: 'bg-primary/10 text-primary',
-  manager: 'bg-purple-100 text-purple-700',
-  agent: 'bg-muted text-muted-foreground',
+// ── Permission group types ───────────────────────────────────────────────────
+
+type FlatItem  = { key: string; label: string };
+type SimpleRow = { label: string; keys: FlatItem[] };
+type CrudRow   = { label: string; keys: (string | null)[] };
+type FlatGroup = { type: 'flat'; label: string; items: FlatItem[] };
+type CrudGroup = {
+  type: 'crud'; label: string;
+  columns: string[];
+  rows: CrudRow[];
+  simpleRows?: SimpleRow[];
 };
+type PermGroup = FlatGroup | CrudGroup;
 
-const basePermissions: Record<string, string[]> = {
-  Leads: ['view_all', 'view_own', 'create', 'edit', 'delete', 'export', 'import', 'assign'],
-  Pipeline: ['manage'],
-  Automation: ['view', 'manage'],
-  Inbox: ['view_all', 'view_own', 'send'],
-  Calendar: ['view_all', 'manage'],
-  Staff: ['view', 'manage'],
-  Settings: ['manage'],
-  Reports: ['view'],
-};
+const ONLY_ASSIGNED_KEY = 'leads:only_assigned';
+const MASK_PHONE_KEY    = 'leads:mask_phone';
 
-const defaultPerms = (role: string): Record<string, Record<string, boolean>> => {
-  const result: Record<string, Record<string, boolean>> = {};
-  Object.entries(basePermissions).forEach(([mod, perms]) => {
-    result[mod] = {};
-    perms.forEach((p) => {
-      result[mod][p] = role === 'admin' || (role === 'manager' && p !== 'delete' && mod !== 'Settings');
-    });
-  });
+const PERM_GROUPS: PermGroup[] = [
+  {
+    type: 'flat',
+    label: 'Dashboard Stats',
+    items: [
+      { key: 'dashboard:total_leads',   label: 'Total Leads' },
+      { key: 'dashboard:active_staff',  label: 'Active Staff' },
+      { key: 'dashboard:conversations', label: 'Conversations' },
+      { key: 'dashboard:appointments',  label: 'Appointments' },
+    ],
+  },
+  {
+    type: 'crud',
+    label: 'Lead Generation',
+    columns: ['Read', 'Create', 'Edit', 'Delete'],
+    rows: [
+      { label: 'Meta Forms',    keys: ['meta_forms:read',    'meta_forms:create',    'meta_forms:edit',    'meta_forms:delete'] },
+      { label: 'Custom Forms',  keys: ['custom_forms:read',  'custom_forms:create',  'custom_forms:edit',  'custom_forms:delete'] },
+      { label: 'Landing Pages', keys: ['landing_pages:read', 'landing_pages:create', 'landing_pages:edit', 'landing_pages:delete'] },
+    ],
+    simpleRows: [
+      { label: 'WhatsApp Setup', keys: [{ key: 'whatsapp_setup:read', label: 'Read' }, { key: 'whatsapp_setup:manage', label: 'Manage' }] },
+    ],
+  },
+  {
+    type: 'crud',
+    label: 'Lead Management',
+    columns: ['Read', 'Create', 'Edit', 'Delete'],
+    rows: [
+      { label: 'Leads', keys: ['leads:view_all', 'leads:create', 'leads:edit', 'leads:delete'] },
+      { label: 'Contacts', keys: ['contacts:read',  'contacts:create', 'contacts:edit', 'contacts:delete'] },
+    ],
+    simpleRows: [
+      { label: 'Contact Groups', keys: [{ key: 'contact_groups:read', label: 'Read' }, { key: 'contact_groups:manage', label: 'Manage' }] },
+    ],
+  },
+  {
+    type: 'flat',
+    label: 'Automation',
+    items: [
+      { key: 'automation:view',               label: 'View Workflows' },
+      { key: 'automation:manage',             label: 'Manage Workflows' },
+      { key: 'automation_templates:read',     label: 'View Templates' },
+      { key: 'automation_templates:manage',   label: 'Manage Templates' },
+      { key: 'whatsapp_automation:read',      label: 'View WA Automation' },
+      { key: 'whatsapp_automation:manage',    label: 'Manage WA Automation' },
+    ],
+  },
+  {
+    type: 'flat',
+    label: 'Communications',
+    items: [
+      { key: 'inbox:view_all', label: 'View All Conversations' },
+      { key: 'inbox:send',     label: 'Send Messages' },
+    ],
+  },
+  {
+    type: 'flat',
+    label: 'Administration',
+    items: [
+      { key: 'fields:view',        label: 'View Fields' },
+      { key: 'fields:manage',      label: 'Manage Fields' },
+      { key: 'staff:view',         label: 'View Staff' },
+      { key: 'staff:manage',       label: 'Manage Staff' },
+      { key: 'settings:manage',    label: 'Manage Settings' },
+      { key: 'calendar:manage',    label: 'Manage Calendar' },
+      { key: 'pipeline:manage',    label: 'Manage Pipelines' },
+      { key: 'integrations:view',  label: 'View Integrations' },
+      { key: 'integrations:manage', label: 'Manage Integrations' },
+    ],
+  },
+];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function getGroupKeys(group: PermGroup): string[] {
+  if (group.type === 'flat') return group.items.map((i) => i.key);
+  const keys: string[] = [];
+  for (const row of group.rows) keys.push(...(row.keys.filter(Boolean) as string[]));
+  for (const row of group.simpleRows ?? []) keys.push(...row.keys.map((k) => k.key));
+  return keys;
+}
+
+function getAllPermKeys(): string[] {
+  return [ONLY_ASSIGNED_KEY, MASK_PHONE_KEY, ...PERM_GROUPS.flatMap(getGroupKeys)];
+}
+
+const FULL_ACCESS_EXCLUDED = new Set([ONLY_ASSIGNED_KEY, MASK_PHONE_KEY]);
+const CUSTOM_DEFAULTS = new Set([
+  'dashboard:total_leads',
+  'meta_forms:read', 'custom_forms:read', 'landing_pages:read', 'whatsapp_setup:read',
+  'leads:view_all', 'leads:create', 'leads:edit', 'leads:view_own',
+  'contacts:read', 'contact_groups:read',
+  'automation:view', 'automation_templates:read',
+  'inbox:view_all', 'inbox:send',
+  'fields:view', 'staff:view',
+]);
+
+const buildDefaultPerms = (full_access: boolean): Record<string, boolean> => {
+  const result: Record<string, boolean> = {};
+  for (const key of getAllPermKeys()) {
+    if (full_access) {
+      result[key] = !FULL_ACCESS_EXCLUDED.has(key);
+    } else {
+      result[key] = CUSTOM_DEFAULTS.has(key);
+    }
+  }
   return result;
 };
 
@@ -48,100 +146,201 @@ const defaultPerms = (role: string): Record<string, Record<string, boolean>> => 
 interface StaffModalProps {
   initial?: StaffMember | null;
   onClose: () => void;
-  onSave: (data: { name: string; email: string; role: StaffMember['role'] }) => void;
+  onSave: (data: { name: string; email: string; full_access: boolean; password?: string }) => void;
 }
+
+const COUNTRY_CODES = [
+  { flag: '🇮🇳', code: '+91', country: 'IN' },
+  { flag: '🇺🇸', code: '+1',  country: 'US' },
+  { flag: '🇬🇧', code: '+44', country: 'GB' },
+  { flag: '🇦🇪', code: '+971', country: 'AE' },
+  { flag: '🇸🇬', code: '+65', country: 'SG' },
+];
 
 function StaffModal({ initial, onClose, onSave }: StaffModalProps) {
-  const [name, setName] = useState(initial?.name ?? '');
-  const [email, setEmail] = useState(initial?.email ?? '');
-  const [role, setRole] = useState<StaffMember['role']>(initial?.role ?? 'agent');
+  const isEdit = !!initial;
+  const [firstName,  setFirstName]  = useState(initial ? initial.name.split(' ')[0] : '');
+  const [lastName,   setLastName]   = useState(initial ? initial.name.split(' ').slice(1).join(' ') : '');
+  const [email,      setEmail]      = useState(initial?.email ?? '');
+  const [fullAccess, setFullAccess] = useState(true);
+  const [phone,      setPhone]      = useState('');
+  const [password,   setPassword]   = useState('');
+  const [countryCode, setCountryCode] = useState(COUNTRY_CODES[0]);
+  const [showCountryDrop, setShowCountryDrop] = useState(false);
+  const [avatarUrl,     setAvatarUrl]    = useState<string | null>(null);
+  const [errors,        setErrors]       = useState<Record<string, string>>({});
+  const [showPassword,  setShowPassword] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const validate = () => {
+    const e: Record<string, string> = {};
+    if (!firstName.trim()) e.firstName = 'Required';
+    if (!lastName.trim())  e.lastName  = 'Required';
+    if (!email.trim() || !email.includes('@')) e.email = 'Valid email required';
+    if (!isEdit && !password.trim()) e.password = 'Password is required';
+    return e;
+  };
 
   const handleSave = () => {
-    if (!name.trim()) { toast.error('Name is required'); return; }
-    if (!email.trim() || !email.includes('@')) { toast.error('Valid email is required'); return; }
-    onSave({ name: name.trim(), email: email.trim(), role });
+    const e = validate();
+    setErrors(e);
+    if (Object.keys(e).length) return;
+    onSave({
+      name: `${firstName.trim()} ${lastName.trim()}`,
+      email: email.trim(),
+      full_access: fullAccess,
+      ...(password.trim() ? { password: password.trim() } : {}),
+    });
   };
 
+  const handleFile = (f: File | null) => {
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => setAvatarUrl(ev.target?.result as string);
+    reader.readAsDataURL(f);
+  };
+
+  const iCls = (err?: string) =>
+    cn('w-full rounded-xl border bg-white px-3 py-2 text-sm outline-none transition-all placeholder:text-[#b09e8d]',
+      err ? 'border-red-400 ring-2 ring-red-100' : 'border-[#e8ddd4] focus:border-primary focus:ring-2 focus:ring-primary/10');
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-      <div className="bg-card rounded-2xl border border-black/5 w-full max-w-md shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-black/5">
-          <h3 className="font-headline font-bold text-[#1c1410]">{initial ? 'Edit Staff Member' : 'Invite Staff'}</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[#f5ede3]"><X className="w-4 h-4" /></button>
-        </div>
-        <div className="p-5 space-y-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-[#f9f5f0] rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3.5 bg-white border-b border-[#ede6dd]">
           <div>
-            <label className="text-sm font-medium text-foreground mb-1.5 block">Full Name *</label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Ranjith Kumar" />
+            <h3 className="font-headline font-bold text-[#1c1410] text-base">
+              {isEdit ? 'Edit Staff Member' : 'Add Staff Member'}
+            </h3>
+            <p className="text-[11px] text-[#7a6b5c]">
+              {isEdit ? 'Update details or change access password' : 'Staff will log in using email + password below'}
+            </p>
           </div>
-          <div>
-            <label className="text-sm font-medium text-foreground mb-1.5 block">Email Address *</label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ranjith@company.com" className="pl-9" type="email" />
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f5ede3] transition-colors">
+            <X className="w-4 h-4 text-[#7a6b5c]" />
+          </button>
+        </div>
+
+        <div className="px-5 py-4 space-y-3">
+          {/* Name row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-[#1c1410] mb-1 block">First Name <span className="text-red-500">*</span></label>
+              <input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="e.g. Ranjith" className={iCls(errors.firstName)} />
+              {errors.firstName && <p className="text-[10px] text-red-500 mt-0.5">{errors.firstName}</p>}
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-[#1c1410] mb-1 block">Last Name <span className="text-red-500">*</span></label>
+              <input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="e.g. Kumar" className={iCls(errors.lastName)} />
+              {errors.lastName && <p className="text-[10px] text-red-500 mt-0.5">{errors.lastName}</p>}
             </div>
           </div>
-          <div>
-            <label className="text-sm font-medium text-foreground mb-1.5 block">Role</label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['admin', 'manager', 'agent'] as const).map((r) => {
-                const Icon = r === 'admin' ? ShieldCheck : r === 'manager' ? Shield : User;
-                return (
-                  <button
-                    key={r}
-                    onClick={() => setRole(r)}
-                    className={cn('flex flex-col items-center gap-1.5 p-3 rounded-xl border text-sm font-medium transition-all capitalize', role === r ? 'border-primary bg-primary/5 text-primary' : 'border-border text-muted-foreground hover:border-primary/50 hover:bg-[#f5ede3]')}
-                  >
-                    <Icon className="w-5 h-5" />
-                    {r}
+
+          {/* Email + Phone row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-[#1c1410] mb-1 block">Email <span className="text-red-500">*</span></label>
+              <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="ranjith@company.com" className={iCls(errors.email)} />
+              {errors.email && <p className="text-[10px] text-red-500 mt-0.5">{errors.email}</p>}
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-[#1c1410] mb-1 block">Phone</label>
+              <div className={cn('flex items-center rounded-xl border bg-white overflow-hidden transition-all',
+                'border-[#e8ddd4] focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/10')}>
+                <div className="relative">
+                  <button type="button" onClick={() => setShowCountryDrop(!showCountryDrop)}
+                    className="flex items-center gap-1 px-2 py-2 border-r border-[#e8ddd4] hover:bg-[#f5ede3] text-xs text-[#7a6b5c]">
+                    <span>{countryCode.flag}</span>
+                    <ChevronDown className="w-3 h-3" />
                   </button>
-                );
-              })}
+                  {showCountryDrop && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setShowCountryDrop(false)} />
+                      <div className="absolute top-full left-0 mt-1 bg-white border border-[#e8ddd4] rounded-xl shadow-xl z-50 py-1 w-32">
+                        {COUNTRY_CODES.map((c) => (
+                          <button key={c.country} type="button" onClick={() => { setCountryCode(c); setShowCountryDrop(false); }}
+                            className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs hover:bg-[#f5ede3]">
+                            <span>{c.flag}</span><span className="text-[#7a6b5c]">{c.code}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+                <span className="pl-1.5 text-xs text-[#7a6b5c] select-none">{countryCode.code}</span>
+                <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="98765 43210"
+                  className="flex-1 px-1.5 py-2 text-sm outline-none bg-transparent placeholder:text-[#b09e8d]" />
+              </div>
             </div>
           </div>
-          {!initial && (
-            <div className="p-3 bg-muted/50 rounded-lg">
-              <p className="text-[11px] text-[#7a6b5c]">An invitation email will be sent to the provided address. The staff member can set their own password via the invite link.</p>
+
+          {/* Password + Profile Image */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-[#1c1410] mb-1 block">
+                {isEdit ? 'New Password' : 'Password'} {!isEdit && <span className="text-red-500">*</span>}
+              </label>
+              <div className="relative">
+                <input value={password} onChange={(e) => setPassword(e.target.value)}
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder={isEdit ? 'Leave blank to keep current' : 'Min. 6 characters'}
+                  className={cn(iCls(errors.password), 'pr-9')} />
+                <button type="button" onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#b09e8d] hover:text-[#7a6b5c] transition-colors">
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {errors.password
+                ? <p className="text-[10px] text-red-500 mt-0.5">{errors.password}</p>
+                : <p className="text-[10px] text-[#7a6b5c] mt-0.5">{isEdit ? 'Only fill to change access' : 'Staff log in with this password'}</p>}
             </div>
-          )}
-        </div>
-        <div className="flex justify-end gap-2 px-5 py-4 border-t border-black/5">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave}><Check className="w-4 h-4 mr-1" /> {initial ? 'Save Changes' : 'Send Invite'}</Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Custom Role Modal ──────────────────────────────────────────────────────────
-
-function CustomRoleModal({ onClose }: { onClose: () => void }) {
-  const [roleName, setRoleName] = useState('');
-
-  const handleCreate = () => {
-    if (!roleName.trim()) { toast.error('Role name is required'); return; }
-    toast.success(`Custom role "${roleName}" created`);
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-      <div className="bg-card rounded-2xl border border-black/5 w-full max-w-sm shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-black/5">
-          <h3 className="font-headline font-bold text-[#1c1410]">Create Custom Role</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[#f5ede3]"><X className="w-4 h-4" /></button>
-        </div>
-        <div className="p-5 space-y-4">
-          <div>
-            <label className="text-sm font-medium text-foreground mb-1.5 block">Role Name *</label>
-            <Input value={roleName} onChange={(e) => setRoleName(e.target.value)} placeholder="e.g. Sales Lead, Support Tier 2" />
+            {!isEdit && (
+              <div>
+                <label className="text-xs font-semibold text-[#1c1410] mb-1 block">Access Level</label>
+                <div className="flex gap-2">
+                  {([true, false] as const).map((fa) => (
+                    <button key={String(fa)} type="button" onClick={() => setFullAccess(fa)}
+                      className={cn(
+                        'flex-1 py-2 rounded-xl text-xs font-semibold border transition-all',
+                        fullAccess === fa
+                          ? 'border-primary bg-primary text-white'
+                          : 'border-[#e8ddd4] bg-white text-[#7a6b5c] hover:border-primary/40',
+                      )}>
+                      {fa ? 'Full Access' : 'Custom'}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-[#7a6b5c] mt-1">
+                  {fullAccess ? 'All permissions granted — can be customised later' : 'Basic read-only defaults — edit permissions after adding'}
+                </p>
+              </div>
+            )}
+            <div>
+              <label className="text-xs font-semibold text-[#1c1410] mb-1 block">Profile Image</label>
+              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
+              <button type="button" onClick={() => fileRef.current?.click()}
+                className="w-full h-[38px] rounded-xl border-2 border-dashed border-[#e8ddd4] bg-white hover:border-primary/50 hover:bg-[#f5ede3] transition-all flex items-center justify-center gap-1.5 text-xs text-[#7a6b5c]">
+                {avatarUrl
+                  ? <img src={avatarUrl} className="w-6 h-6 rounded-full object-cover" />
+                  : <><Upload className="w-3.5 h-3.5" /> Upload photo</>}
+              </button>
+            </div>
           </div>
-          <p className="text-[11px] text-[#7a6b5c]">After creating the role, you can configure its specific permissions in the Roles & Permissions tab.</p>
         </div>
-        <div className="flex justify-end gap-2 px-5 py-4 border-t border-black/5">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleCreate}><Plus className="w-4 h-4 mr-1" /> Create Role</Button>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 px-5 py-3.5 bg-white border-t border-[#ede6dd]">
+          <button type="button" onClick={onClose}
+            className="px-5 py-2 rounded-xl text-xs font-semibold text-[#7a6b5c] bg-[#f0ebe5] hover:bg-[#e8ddd4] transition-colors uppercase tracking-wide">
+            Cancel
+          </button>
+          <button type="button" onClick={handleSave}
+            className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-semibold text-white bg-primary hover:bg-primary/90 transition-colors uppercase tracking-wide">
+            <User className="w-3.5 h-3.5" />
+            {isEdit ? 'Save Changes' : 'Add'}
+          </button>
         </div>
       </div>
     </div>
@@ -175,23 +374,298 @@ function DeactivateDialog({ member, onClose, onConfirm }: { member: StaffMember;
   );
 }
 
+// ── Permissions Modal ──────────────────────────────────────────────────────────
+
+function PermissionsModal({ member, onClose }: { member: StaffMember; onClose: () => void }) {
+  const blankPerms = () => Object.fromEntries(getAllPermKeys().map((k) => [k, false]));
+  const [permissions, setPermissions] = useState<Record<string, boolean>>(blankPerms);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+
+  React.useEffect(() => {
+    setLoading(true);
+    api.get<{ permissions: Record<string, boolean> }>(`/api/settings/staff/${member.id}/permissions`)
+      .then((data) => setPermissions({ ...blankPerms(), ...(data.permissions ?? {}) }))
+      .catch(() => setPermissions(blankPerms()))
+      .finally(() => setLoading(false));
+  }, [member.id, member.role]);
+
+  const togglePerm = (key: string) => {
+    setPermissions((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      // Mutual exclusion: only_assigned and leads:view_all cannot both be true.
+      // Turning ON only_assigned → force view_all OFF (restriction wins over broad access).
+      // Turning ON leads:view_all → force only_assigned OFF.
+      if (key === ONLY_ASSIGNED_KEY && next[ONLY_ASSIGNED_KEY]) {
+        next['leads:view_all'] = false;
+      }
+      if (key === 'leads:view_all' && next['leads:view_all']) {
+        next[ONLY_ASSIGNED_KEY] = false;
+      }
+      return next;
+    });
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/api/settings/staff/${member.id}/permissions`, { permissions });
+      toast.success('Permissions saved');
+      onClose();
+    } catch {
+      toast.error('Failed to save permissions');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-[#f9f5f0] rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3.5 bg-white border-b border-[#ede6dd] shrink-0">
+          <div className="flex items-center gap-3">
+            <div className={cn(
+              'w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0',
+              member.status === 'active' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
+            )}>
+              {member.avatar}
+            </div>
+            <div>
+              <h3 className="font-headline font-bold text-[#1c1410] text-[15px] leading-tight">{member.name}</h3>
+              <p className="text-[11px] text-[#7a6b5c]">{member.email} · Permissions</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f5ede3] transition-colors">
+            <X className="w-4 h-4 text-[#7a6b5c]" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-24">
+              <div className="animate-spin w-6 h-6 rounded-full border-2 border-primary border-t-transparent" />
+            </div>
+          ) : (
+            <div className="bg-white m-4 rounded-2xl border border-[#ede8e2] divide-y divide-[#f2ede8] overflow-hidden">
+
+              {/* Only Assigned Leads + extras */}
+              <div className="p-5 space-y-4">
+                <div
+                  onClick={() => togglePerm(ONLY_ASSIGNED_KEY)}
+                  className={cn(
+                    'flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all select-none',
+                    permissions[ONLY_ASSIGNED_KEY]
+                      ? 'bg-orange-50 border-orange-200'
+                      : 'bg-[#faf8f6] border-[#e8ddd4] hover:border-orange-200 hover:bg-orange-50/40',
+                  )}
+                >
+                  <PermCheckbox checked={permissions[ONLY_ASSIGNED_KEY] ?? false} onChange={() => togglePerm(ONLY_ASSIGNED_KEY)} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-semibold text-[#1c1410]">Only Assigned Leads</p>
+                    <p className="text-[11px] text-[#7a6b5c] mt-0.5 leading-relaxed">
+                      Staff can only view leads assigned to them — applies to Pipeline, Contacts &amp; Automation
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between px-1">
+                  <button type="button" onClick={() => togglePerm(MASK_PHONE_KEY)}
+                    className="flex items-center gap-2.5 cursor-pointer select-none group">
+                    <PermCheckbox checked={permissions[MASK_PHONE_KEY] ?? false} onChange={() => togglePerm(MASK_PHONE_KEY)} />
+                    <span className="text-[13px] text-[#1c1410] group-hover:text-primary transition-colors">Phone Number Masking</span>
+                    <span className="text-[11px] text-[#b09e8d]">— last digits hidden</span>
+                  </button>
+                  <button type="button"
+                    onClick={() => {
+                      const all = getAllPermKeys().every((k) => permissions[k]);
+                      setPermissions(Object.fromEntries(getAllPermKeys().map((k) => [k, !all])));
+                    }}
+                    className="flex items-center gap-2.5 cursor-pointer select-none group">
+                    <PermCheckbox
+                      checked={getAllPermKeys().every((k) => permissions[k])}
+                      onChange={() => {
+                        const all = getAllPermKeys().every((k) => permissions[k]);
+                        setPermissions(Object.fromEntries(getAllPermKeys().map((k) => [k, !all])));
+                      }}
+                    />
+                    <span className="text-[13px] font-semibold text-[#1c1410] group-hover:text-primary transition-colors">Select All</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Permission groups */}
+              {PERM_GROUPS.map((group) => {
+                const groupKeys  = getGroupKeys(group);
+                const allEnabled = groupKeys.length > 0 && groupKeys.every((k) => permissions[k]);
+                const toggleAll  = () => {
+                  const val = !allEnabled;
+                  setPermissions((prev) => ({ ...prev, ...Object.fromEntries(groupKeys.map((k) => [k, val])) }));
+                };
+                return (
+                  <div key={group.label} className="px-5 py-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-[11px] font-bold text-[#7a6b5c] uppercase tracking-widest">{group.label}</h4>
+                      <button type="button" onClick={toggleAll}
+                        className="flex items-center gap-2 cursor-pointer select-none group">
+                        <PermCheckbox checked={allEnabled} onChange={toggleAll} />
+                        <span className="text-[11px] text-[#7a6b5c] group-hover:text-primary transition-colors">All</span>
+                      </button>
+                    </div>
+
+                    {group.type === 'flat' && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-2.5 gap-x-4">
+                        {group.items.map((item) => (
+                          <button key={item.key} type="button" onClick={() => togglePerm(item.key)}
+                            className="flex items-center gap-2.5 cursor-pointer select-none group text-left">
+                            <PermCheckbox checked={permissions[item.key] ?? false} onChange={() => togglePerm(item.key)} />
+                            <span className="text-[13px] text-[#2c1f14] group-hover:text-primary transition-colors">{item.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {group.type === 'crud' && (
+                      <div className="overflow-x-auto -mx-1 px-1">
+                        <div style={{ minWidth: 420 }}>
+                          <div className="grid rounded-lg bg-[#f7f3ef] px-3 py-2 mb-1"
+                            style={{ gridTemplateColumns: '1fr 80px 80px 80px 80px' }}>
+                            <div />
+                            {group.columns.map((col) => (
+                              <div key={col} className="text-center text-[10px] font-bold text-[#9c8f84] uppercase tracking-widest">{col}</div>
+                            ))}
+                          </div>
+                          {group.rows.map((row, i) => (
+                            <div key={row.label}
+                              className={cn('grid items-center px-3 py-2.5 rounded-lg transition-colors hover:bg-[#faf8f6]', i % 2 === 1 && 'bg-[#fdfcfb]')}
+                              style={{ gridTemplateColumns: '1fr 80px 80px 80px 80px' }}>
+                              <span className="text-[13px] font-medium text-[#1c1410]">{row.label}</span>
+                              {row.keys.map((key, j) => (
+                                <div key={j} className="flex justify-center">
+                                  {key
+                                    ? <PermCheckbox checked={permissions[key] ?? false} onChange={() => togglePerm(key)} />
+                                    : <span className="text-[#ddd4cc] text-sm leading-none">—</span>
+                                  }
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                          {(group.simpleRows ?? []).length > 0 && (
+                            <div className="mt-1 pt-2 border-t border-[#f0ebe5] space-y-0.5">
+                              {group.simpleRows!.map((row, i) => (
+                                <div key={row.label}
+                                  className={cn('flex items-center px-3 py-2.5 rounded-lg transition-colors hover:bg-[#faf8f6]', i % 2 === 1 && 'bg-[#fdfcfb]')}>
+                                  <span className="text-[13px] font-medium text-[#1c1410] flex-1">{row.label}</span>
+                                  <div className="flex items-center gap-6">
+                                    {row.keys.map(({ key, label }) => (
+                                      <button key={key} type="button" onClick={() => togglePerm(key)}
+                                        className="flex items-center gap-2 cursor-pointer select-none group">
+                                        <PermCheckbox checked={permissions[key] ?? false} onChange={() => togglePerm(key)} />
+                                        <span className="text-[12px] text-[#7a6b5c] group-hover:text-primary transition-colors">{label}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-2 px-5 py-3.5 bg-white border-t border-[#ede6dd] shrink-0">
+          <button type="button" disabled={saving || loading}
+            onClick={async () => {
+              if (!confirm('Grant full access? All permissions will be set to ON for this member.')) return;
+              setSaving(true);
+              try {
+                await api.delete(`/api/settings/staff/${member.id}/permissions`);
+                const data = await api.get<{ permissions: Record<string, boolean> }>(`/api/settings/staff/${member.id}/permissions`);
+                setPermissions({ ...blankPerms(), ...(data.permissions ?? {}) });
+                toast.success('Full access granted');
+              } catch { toast.error('Failed to update permissions'); }
+              finally { setSaving(false); }
+            }}
+            className="px-4 py-2 rounded-xl text-xs font-semibold text-[#9c8f84] bg-transparent hover:bg-orange-50 hover:text-[#c2410c] transition-colors uppercase tracking-wide disabled:opacity-40">
+            Grant Full Access
+          </button>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={onClose}
+              className="px-5 py-2 rounded-xl text-xs font-semibold text-[#7a6b5c] bg-[#f0ebe5] hover:bg-[#e8ddd4] transition-colors uppercase tracking-wide">
+              Cancel
+            </button>
+            <button type="button" onClick={handleSave} disabled={saving || loading}
+              className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-semibold text-white bg-primary hover:bg-primary/90 disabled:opacity-50 transition-colors uppercase tracking-wide">
+              <Check className="w-3.5 h-3.5" />
+              {saving ? 'Saving…' : 'Save Permissions'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 
+function mapApiStaff(r: any): StaffMember {
+  return {
+    id: r.id,
+    name: r.name,
+    email: r.email,
+    role: r.role === 'admin' ? 'admin' : 'staff',
+    status: r.is_active ? 'active' : 'inactive',
+    leadsAssigned: r.leads_assigned ?? 0,
+    lastActive: r.last_active ?? r.created_at ?? new Date().toISOString(),
+    avatar: r.avatar_url ?? r.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase(),
+  };
+}
+
+// ── Custom styled checkbox ────────────────────────────────────────────────────
+function PermCheckbox({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+  return (
+    <span
+      role="checkbox"
+      aria-checked={checked}
+      onClick={(e) => { e.stopPropagation(); onChange(); }}
+      className={cn(
+        'w-[17px] h-[17px] rounded border-[1.5px] inline-flex items-center justify-center transition-all shrink-0 cursor-pointer',
+        checked ? 'bg-[#c2410c] border-[#c2410c]' : 'border-[#c9bdb6] bg-white hover:border-[#c2410c]',
+      )}
+    >
+      {checked && <Check className="w-[9px] h-[9px] text-white" strokeWidth={3.5} />}
+    </span>
+  );
+}
+
 export default function StaffPage() {
-  const { staff, addStaff, updateStaff, deactivateStaff } = useCrmStore();
+  const { staff: storeStaff, addStaff, updateStaff, deactivateStaff } = useCrmStore();
+  const [staff, setStaff] = useState<StaffMember[]>(storeStaff);
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const tab = (searchParams.get('tab') ?? 'team') as 'team' | 'roles' | 'performance';
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [editMember, setEditMember] = useState<StaffMember | null>(null);
+  const canManageStaff = usePermission('staff:manage');
+
+  React.useEffect(() => {
+    api.get<any[]>('/api/settings/staff')
+      .then((rows) => setStaff(rows.map(mapApiStaff)))
+      .catch(() => {});
+  }, []);
+
+  const [editMember,       setEditMember]       = useState<StaffMember | null>(null);
   const [deactivateMember, setDeactivateMember] = useState<StaffMember | null>(null);
-  const [showCustomRoleModal, setShowCustomRoleModal] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<string>('admin');
-  const [permissions, setPermissions] = useState<Record<string, Record<string, Record<string, boolean>>>>({
-    admin: defaultPerms('admin'),
-    manager: defaultPerms('manager'),
-    agent: defaultPerms('agent'),
-  });
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [permsMember,      setPermsMember]      = useState<StaffMember | null>(null);
+  const [openMenuId,       setOpenMenuId]       = useState<string | null>(null);
 
   // Stable performance data — no Math.random() in render
   const perfData = useMemo(() => {
@@ -206,68 +680,65 @@ export default function StaffPage() {
     }));
   }, [staff]);
 
-  const handleInvite = async (data: { name: string; email: string; role: StaffMember['role'] }) => {
+  const handleInvite = async (data: { name: string; email: string; full_access: boolean; password?: string }) => {
     try {
       const res = await api.post<{ id: string; name: string; email: string; role: string }>('/api/settings/staff', {
-        name: data.name, email: data.email, role: data.role, password: 'Welcome@123',
+        name: data.name, email: data.email, full_access: data.full_access, password: data.password,
       });
       const initials = data.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
-      addStaff({
-        id: res.id,
-        name: res.name,
-        email: res.email,
-        role: data.role,
-        status: 'active',
-        leadsAssigned: 0,
-        lastActive: new Date().toISOString(),
-        avatar: initials,
-      });
+      const newMember: StaffMember = {
+        id: res.id, name: res.name, email: res.email, role: 'staff',
+        status: 'active', leadsAssigned: 0, lastActive: new Date().toISOString(), avatar: initials,
+      };
+      setStaff((prev) => [...prev, newMember]);
+      addStaff(newMember);
       setShowInviteModal(false);
-      toast.success(`${data.name} added. Temporary password: Welcome@123`);
+      toast.success(`${data.name} added${!data.full_access ? ' — customise their permissions below' : ''}`);
+      if (!data.full_access) navigate('/staff?tab=roles');
     } catch (err: any) {
       toast.error(err.message ?? 'Failed to add staff');
     }
   };
 
-  const handleEdit = (data: { name: string; email: string; role: StaffMember['role'] }) => {
+  const handleEdit = async (data: { name: string; email: string; full_access: boolean; password?: string }) => {
     if (!editMember) return;
     const initials = data.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
-    updateStaff(editMember.id, { name: data.name, email: data.email, role: data.role, avatar: initials });
+    const updates = { name: data.name, email: data.email, avatar: initials };
+    try {
+      await api.patch(`/api/settings/staff/${editMember.id}`, {
+        name: data.name, email: data.email,
+        ...(data.password ? { password: data.password } : {}),
+      });
+      setStaff((prev) => prev.map((m) => m.id === editMember.id ? { ...m, ...updates } : m));
+      updateStaff(editMember.id, updates);
+      toast.success('Staff member updated');
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to update staff');
+    }
     setEditMember(null);
-    toast.success('Staff member updated');
   };
 
-  const handleDeactivate = () => {
+  const handleDeactivate = async () => {
     if (!deactivateMember) return;
-    if (deactivateMember.status === 'active') {
-      deactivateStaff(deactivateMember.id);
-      toast.success(`${deactivateMember.name} deactivated`);
-    } else {
-      updateStaff(deactivateMember.id, { status: 'active' });
-      toast.success(`${deactivateMember.name} reactivated`);
+    const newActive = deactivateMember.status !== 'active';
+    try {
+      await api.patch(`/api/settings/staff/${deactivateMember.id}`, { is_active: newActive });
+      const newStatus = newActive ? 'active' : 'inactive';
+      setStaff((prev) => prev.map((m) => m.id === deactivateMember.id ? { ...m, status: newStatus } : m));
+      if (!newActive) { deactivateStaff(deactivateMember.id); toast.success(`${deactivateMember.name} deactivated`); }
+      else { updateStaff(deactivateMember.id, { status: 'active' }); toast.success(`${deactivateMember.name} reactivated`); }
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to update staff');
     }
     setDeactivateMember(null);
   };
 
-  const togglePerm = (module: string, perm: string) => {
-    setPermissions((prev) => ({
-      ...prev,
-      [selectedRole]: {
-        ...prev[selectedRole],
-        [module]: {
-          ...prev[selectedRole]?.[module],
-          [perm]: !prev[selectedRole]?.[module]?.[perm],
-        },
-      },
-    }));
-  };
-
   return (
     <div className="space-y-8">
-      {tab === 'team' && (
+      {tab === 'team' && canManageStaff && (
         <div className="flex justify-end">
           <Button className="btn-hover" onClick={() => setShowInviteModal(true)}>
-            <Plus className="w-4 h-4 mr-1" /> Invite Staff
+            <Plus className="w-4 h-4 mr-1" /> New Staff
           </Button>
         </div>
       )}
@@ -279,7 +750,7 @@ export default function StaffPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-black/5 bg-[#faf8f6]">
-                  {['Member', 'Role', 'Status', 'Leads', 'Last Active', 'Actions'].map((h) => (
+                  {['Member', 'Status', 'Leads', 'Last Active', 'Actions'].map((h) => (
                     <th key={h} className="text-left text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] px-4 py-3 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -299,9 +770,6 @@ export default function StaffPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge className={cn('border-0 text-xs', roleBadge[s.role])}>{s.role}</Badge>
-                    </td>
-                    <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className={cn('w-2 h-2 rounded-full shrink-0', s.status === 'active' ? 'bg-green-500' : 'bg-muted-foreground')} />
                         <span className="text-sm text-foreground capitalize">{s.status}</span>
@@ -311,36 +779,61 @@ export default function StaffPage() {
                     <td className="px-4 py-3 text-[13px] text-[#7a6b5c] whitespace-nowrap">{formatDistanceToNow(new Date(s.lastActive), { addSuffix: true })}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 relative">
-                        <button
-                          onClick={() => setEditMember(s)}
-                          className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-colors"
-                          title="Edit"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <div className="relative">
+                        {canManageStaff && (
                           <button
-                            onClick={() => setOpenMenuId(openMenuId === s.id ? null : s.id)}
-                            className="p-1.5 rounded-md hover:bg-[#f5ede3] text-muted-foreground hover:text-foreground transition-colors"
-                            title="More actions"
+                            onClick={() => setEditMember(s)}
+                            className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-colors"
+                            title="Edit member"
                           >
-                            <MoreHorizontal className="w-4 h-4" />
+                            <Pencil className="w-4 h-4" />
                           </button>
-                          {openMenuId === s.id && (
-                            <>
-                              <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
-                              <div className="absolute right-0 top-9 bg-card border border-black/5 rounded-xl shadow-xl z-50 w-44 py-1">
-                                <button
-                                  onClick={() => { setDeactivateMember(s); setOpenMenuId(null); }}
-                                  className={cn('w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors', s.status === 'active' ? 'hover:bg-red-50 text-destructive' : 'hover:bg-green-50 text-green-700')}
-                                >
-                                  {s.status === 'active' ? <UserMinus className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
-                                  {s.status === 'active' ? 'Deactivate' : 'Reactivate'}
-                                </button>
-                              </div>
-                            </>
-                          )}
-                        </div>
+                        )}
+                        {canManageStaff && (
+                          <button
+                            onClick={() => setPermsMember(s)}
+                            className="p-1.5 rounded-md hover:bg-orange-50 text-muted-foreground hover:text-[#c2410c] transition-colors"
+                            title="Edit permissions"
+                          >
+                            <ShieldCheck className="w-4 h-4" />
+                          </button>
+                        )}
+                        {canManageStaff && (
+                          <div className="relative">
+                            <button
+                              onClick={() => setOpenMenuId(openMenuId === s.id ? null : s.id)}
+                              className="p-1.5 rounded-md hover:bg-[#f5ede3] text-muted-foreground hover:text-foreground transition-colors"
+                              title="More actions"
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </button>
+                            {openMenuId === s.id && (
+                              <>
+                                <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
+                                <div className="absolute right-0 top-9 bg-card border border-black/5 rounded-xl shadow-xl z-50 w-48 py-1">
+                                  <button
+                                    onClick={() => {
+                                      api.post(`/api/settings/staff/${s.id}/resend-invite`, {})
+                                        .then(() => toast.success(`Invite resent to ${s.email}`))
+                                        .catch(() => toast.error('Failed to resend invite'));
+                                      setOpenMenuId(null);
+                                    }}
+                                    className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-[#f5ede3] transition-colors text-foreground"
+                                  >
+                                    <Mail className="w-4 h-4" />
+                                    Resend Invite
+                                  </button>
+                                  <button
+                                    onClick={() => { setDeactivateMember(s); setOpenMenuId(null); }}
+                                    className={cn('w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors', s.status === 'active' ? 'hover:bg-red-50 text-destructive' : 'hover:bg-green-50 text-green-700')}
+                                  >
+                                    {s.status === 'active' ? <UserMinus className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
+                                    {s.status === 'active' ? 'Deactivate' : 'Reactivate'}
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -356,54 +849,51 @@ export default function StaffPage() {
 
       {/* Roles & Permissions Tab */}
       {tab === 'roles' && (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          <div className="bg-white rounded-2xl border border-black/5 card-shadow p-4 space-y-1">
-            {['admin', 'manager', 'agent'].map((role) => {
-              const Icon = role === 'admin' ? ShieldCheck : role === 'manager' ? Shield : User;
-              const count = staff.filter((s) => s.role === role && s.status === 'active').length;
-              return (
-                <button
-                  key={role}
-                  onClick={() => setSelectedRole(role)}
-                  className={cn('w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors', selectedRole === role ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-[#f5ede3]')}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span className="flex-1 text-left capitalize">{role}</span>
-                  <span className="text-xs bg-muted px-1.5 py-0.5 rounded-full">{count}</span>
-                </button>
-              );
-            })}
-            <Button variant="outline" size="sm" className="w-full mt-2" onClick={() => setShowCustomRoleModal(true)}>
-              <Plus className="w-4 h-4 mr-1" /> Custom Role
-            </Button>
+        <div className="space-y-5">
+          <div>
+            <h3 className="font-headline text-[17px] font-bold text-[#1c1410]">Roles &amp; Permissions</h3>
+            <p className="text-[12px] text-[#7a6b5c] mt-0.5">Click a staff member to edit their individual access</p>
           </div>
 
-          <div className="lg:col-span-3 bg-white rounded-2xl border border-black/5 card-shadow p-6">
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="font-headline font-bold text-[#1c1410] capitalize">{selectedRole} Permissions</h3>
-              <Button size="sm" onClick={() => toast.success('Permissions saved')}>
-                <Check className="w-4 h-4 mr-1" /> Save
-              </Button>
+          {staff.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-[#ede8e2] flex flex-col items-center justify-center py-20 gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-[#f5ede3] flex items-center justify-center">
+                <ShieldCheck className="w-6 h-6 text-[#c2410c]" />
+              </div>
+              <p className="text-[14px] font-bold text-[#1c1410]">No staff yet</p>
+              <p className="text-[12px] text-[#7a6b5c]">Add team members first to configure their permissions</p>
             </div>
-            <div className="space-y-8">
-              {Object.entries(basePermissions).map(([module, perms]) => (
-                <div key={module}>
-                  <h4 className="text-sm font-headline font-bold text-[#1c1410] mb-3">{module}</h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {perms.map((perm) => (
-                      <div key={perm} className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-[#faf8f6] border border-black/5/50">
-                        <span className="text-xs text-foreground">{perm.replace(/_/g, ' ')}</span>
-                        <Switch
-                          checked={permissions[selectedRole]?.[module]?.[perm] ?? false}
-                          onCheckedChange={() => togglePerm(module, perm)}
-                        />
-                      </div>
-                    ))}
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {staff.map((s) => (
+                <div key={s.id}
+                  className="bg-white rounded-2xl border border-[#ede8e2] p-5 flex items-center gap-4 hover:border-[#c2410c]/30 hover:shadow-sm transition-all group">
+                  <div className={cn(
+                    'w-11 h-11 rounded-full flex items-center justify-center text-[13px] font-bold shrink-0',
+                    s.status === 'active' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
+                  )}>
+                    {s.avatar}
                   </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-semibold text-[#1c1410] truncate">{s.name}</p>
+                    <p className="text-[11px] text-[#7a6b5c] truncate">{s.email}</p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className={cn('w-1.5 h-1.5 rounded-full', s.status === 'active' ? 'bg-green-500' : 'bg-gray-300')} />
+                      <span className="text-[10px] text-[#9c8f84] capitalize">{s.status}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPermsMember(s)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold text-[#c2410c] bg-orange-50 border border-orange-100 hover:bg-orange-100 transition-colors shrink-0 group-hover:border-[#c2410c]/40"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    Permissions
+                  </button>
                 </div>
               ))}
             </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -451,7 +941,7 @@ export default function StaffPage() {
       {showInviteModal && <StaffModal onClose={() => setShowInviteModal(false)} onSave={handleInvite} />}
       {editMember && <StaffModal initial={editMember} onClose={() => setEditMember(null)} onSave={handleEdit} />}
       {deactivateMember && <DeactivateDialog member={deactivateMember} onClose={() => setDeactivateMember(null)} onConfirm={handleDeactivate} />}
-      {showCustomRoleModal && <CustomRoleModal onClose={() => setShowCustomRoleModal(false)} />}
+      {permsMember && <PermissionsModal member={permsMember} onClose={() => setPermsMember(null)} />}
     </div>
   );
 }

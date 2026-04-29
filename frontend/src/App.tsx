@@ -3,15 +3,13 @@ import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { AuthGuard } from "@/components/auth/AuthGuard";
 
 import DashboardPage from "./pages/DashboardPage";
 import LeadGenerationPage from "./pages/LeadGenerationPage";
 import MetaFormsPage from "./pages/MetaFormsPage";
 import CustomFormsPage from "./pages/CustomFormsPage";
 import CustomFormDetailPage from "./pages/CustomFormDetailPage";
-import LandingPagesPage from "./pages/LandingPagesPage";
-import LandingPageBuilderPage from "./pages/LandingPageBuilderPage";
-import WhatsAppSetupPage from "./pages/WhatsAppSetupPage";
 import LeadManagementOverviewPage from "./pages/LeadManagementOverviewPage";
 import LeadsPage from "./pages/LeadsPage";
 import ContactsPage from "./pages/ContactsPage";
@@ -19,12 +17,10 @@ import ContactGroupPage from "./pages/ContactGroupPage";
 import AutomationOverviewPage from "./pages/AutomationOverviewPage";
 import AutomationPage from "./pages/AutomationPage";
 import AutomationTemplatesPage from "./pages/AutomationTemplatesPage";
-import WhatsAppAutomationPage from "./pages/WhatsAppAutomationPage";
 import WorkflowEditorPage from "./pages/WorkflowEditorPage";
+import WorkflowAnalyticsPage from "./pages/WorkflowAnalyticsPage";
 import InboxPage from "./pages/InboxPage";
 import FieldsPage from "./pages/FieldsPage";
-import CalendarPage from "./pages/CalendarPage";
-import CalendarEditPage from "./pages/CalendarEditPage";
 import StaffPage from "./pages/StaffPage";
 import SettingsPage from "./pages/SettingsPage";
 import CompanyDetailsPage from "./pages/CompanyDetailsPage";
@@ -32,8 +28,15 @@ import NotificationsPage from "./pages/NotificationsPage";
 import AssignmentRulesPage from "./pages/AssignmentRulesPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import LoginPage from "./pages/LoginPage";
+import AcceptInvitePage from "./pages/AcceptInvitePage";
+import PublicFormPage from "./pages/PublicFormPage";
 import SuperAdminPage from "./pages/SuperAdminPage";
 import CreateBusinessPage from "./pages/CreateBusinessPage";
+import ImpersonationBanner from "./components/ImpersonationBanner";
+import FollowUpsPage from "./pages/FollowUpsPage";
+import CalendarPage from "./pages/CalendarPage";
+import CalendarEditPage from "./pages/CalendarEditPage";
+import PublicBookingPage from "./pages/PublicBookingPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -42,13 +45,18 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Sonner />
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <ImpersonationBanner />
         <Routes>
           {/* Public routes */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/accept-invite" element={<AcceptInvitePage />} />
+          <Route path="/f/:slug" element={<PublicFormPage />} />
+          <Route path="/book/:slug" element={<PublicBookingPage />} />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
           {/* App routes */}
+          <Route element={<AuthGuard />}>
           <Route element={<AppLayout />}>
             <Route path="/dashboard" element={<DashboardPage />} />
 
@@ -57,12 +65,11 @@ const App = () => (
             <Route path="/lead-generation/meta-forms" element={<MetaFormsPage />} />
             <Route path="/lead-generation/custom-forms" element={<CustomFormsPage />} />
             <Route path="/lead-generation/custom-forms/:id" element={<CustomFormDetailPage />} />
-            <Route path="/lead-generation/landing-pages" element={<LandingPagesPage />} />
-            <Route path="/lead-generation/whatsapp" element={<WhatsAppSetupPage />} />
 
             {/* Lead Management */}
             <Route path="/lead-management" element={<LeadManagementOverviewPage />} />
             <Route path="/leads" element={<LeadsPage />} />
+            <Route path="/lead-management/followups" element={<FollowUpsPage />} />
             <Route path="/lead-management/contacts" element={<ContactsPage />} />
             <Route path="/lead-management/contact-groups" element={<ContactGroupPage />} />
 
@@ -70,12 +77,13 @@ const App = () => (
             <Route path="/automation" element={<AutomationOverviewPage />} />
             <Route path="/automation/workflows" element={<AutomationPage />} />
             <Route path="/automation/templates" element={<AutomationTemplatesPage />} />
-            <Route path="/automation/whatsapp" element={<WhatsAppAutomationPage />} />
+
+            {/* Calendar */}
+            <Route path="/calendar" element={<CalendarPage />} />
+            <Route path="/calendar/edit/:id" element={<CalendarEditPage />} />
 
             <Route path="/inbox" element={<InboxPage />} />
             <Route path="/fields" element={<FieldsPage />} />
-            <Route path="/calendar" element={<CalendarPage />} />
-            <Route path="/calendar/edit/:id" element={<CalendarEditPage />} />
             <Route path="/staff" element={<StaffPage />} />
 
             {/* Settings */}
@@ -90,9 +98,10 @@ const App = () => (
             <Route path="/admin/create" element={<CreateBusinessPage />} />
           </Route>
 
-          {/* Full-screen editors — outside AppLayout */}
+          {/* Full-screen editors — outside AppLayout but still protected */}
           <Route path="/automation/editor/:id" element={<WorkflowEditorPage />} />
-          <Route path="/lead-generation/landing-pages/builder" element={<LandingPageBuilderPage />} />
+          <Route path="/automation/analytics/:id" element={<WorkflowAnalyticsPage />} />
+          </Route>{/* closes AuthGuard */}
 
           <Route path="*" element={<NotFound />} />
         </Routes>

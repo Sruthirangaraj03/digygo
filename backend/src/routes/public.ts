@@ -1,0 +1,468 @@
+import { Router, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
+import { query, pool } from '../db';
+import { triggerWorkflows } from './workflows';
+import { upsertContact } from '../utils/contacts';
+import { emitToTenant } from '../socket';
+import { sendNewLeadNotification } from '../utils/notifications';
+
+// FIX D: Rate limiter for all public booking-link endpoints (30 req / 15 min per IP)
+const bookingLimiter = rateLimit({
+  windowMs: 15 * 60_000,
+  max: process.env.NODE_ENV === 'production' ? 30 : 500,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+});
+
+const router = Router();
+
+// GET /api/public/forms/:slug — return form definition for public render (no auth)
+router.get('/forms/:slug', async (req: Request, res: Response) => {
+  try {
+    const result = await query(
+      `SELECT id, name, fields, submit_label, redirect_url, thank_you_message,
+              btn_color, btn_text_color, form_bg_color, form_text_color,
+              declaration_enabled, declaration_title, declaration_link
+       FROM custom_forms WHERE slug=$1 AND is_active=TRUE`,
+      [req.params.slug]
+    );
+    if (!result.rows[0]) { res.status(404).json({ error: 'Form not found' }); return; }
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// POST /api/public/forms/:slug/submit — public form submission (no auth)
+router.post('/forms/:slug/submit', async (req: Request, res: Response) => {
+  const data: Record<string, string> = req.body?.data ?? req.body ?? {};
+  try {
+    const formRes = await query(
+      `SELECT * FROM custom_forms WHERE slug=$1 AND is_active=TRUE`,
+      [req.params.slug]
+    );
+    const form = formRes.rows[0];
+    if (!form) { res.status(404).json({ error: 'Form not found or inactive' }); return; }
+
+    // Extract lead fields from submitted data using field mapTo mappings
+    const fields: Array<{ mapTo: string; label: string }> = form.fields ?? [];
+    let firstName = '';
+    let lastName  = '';
+    let name  = '';
+    let email = '';
+    let phone = '';
+    const customFieldsData: Record<string, string> = {};
+
+    for (const field of fields) {
+      const value = data[field.label] ?? data[field.mapTo] ?? '';
+      if (!value) continue;
+      if (field.mapTo === 'first_name') {
+        firstName = value;
+      } else if (field.mapTo === 'last_name') {
+        lastName = value;
+      } else if (field.mapTo === 'name' || field.mapTo === 'full_name') {
+        name = value;
+      } else if (field.mapTo === 'email') {
+        email = value.toLowerCase().trim();
+      } else if (field.mapTo === 'phone') {
+        phone = value.trim();
+      } else if (field.mapTo) {
+        customFieldsData[field.mapTo] = value;
+      }
+    }
+
+    // Compose name from parts
+    if (!name && (firstName || lastName)) {
+      name = [firstName, lastName].filter(Boolean).join(' ');
+    }
+
+    // Fallback: try common top-level keys
+    if (!name)  name  = data.name ?? data.full_name ?? data['Full Name'] ?? '';
+    if (!email) email = (data.email ?? data.Email ?? '').toLowerCase().trim();
+    if (!phone) phone = data.phone ?? data.Phone ?? '';
+
+    // Duplicate check — look up by email OR phone (not requiring both)
+    const dupRows: Array<{ id: string }> = [];
+    if (email) {
+      const r = await query(
+        `SELECT id FROM leads WHERE LOWER(email)=$1 AND tenant_id=$2 AND is_deleted=FALSE LIMIT 1`,
+        [email, form.tenant_id]
+      );
+      if (r.rows[0]) dupRows.push(r.rows[0]);
+    }
+    if (!dupRows.length && phone) {
+      const r = await query(
+        `SELECT id FROM leads WHERE phone=$1 AND tenant_id=$2 AND is_deleted=FALSE LIMIT 1`,
+        [phone, form.tenant_id]
+      );
+      if (r.rows[0]) dupRows.push(r.rows[0]);
+    }
+
+    let leadId: string;
+
+    if (dupRows[0]) {
+      // Existing lead — update name/email/phone if missing, then fire re-submission triggers
+      leadId = dupRows[0].id;
+      await query(
+        `UPDATE leads SET
+           name  = CASE WHEN name  IS NULL OR name  = ''  THEN $2 ELSE name  END,
+           email = CASE WHEN email IS NULL OR email = ''  THEN $3 ELSE email END,
+           phone = CASE WHEN phone IS NULL OR phone = ''  THEN $4 ELSE phone END,
+           updated_at = NOW()
+         WHERE id=$1`,
+        [leadId, name || 'Unknown', email, phone]
+      ).catch(() => null);
+
+      const fullLead = (await query('SELECT * FROM leads WHERE id=$1', [leadId])).rows[0] ?? { id: leadId };
+      const leadWithForm = { ...fullLead, form_id: form.id, form_name: form.name };
+
+      if (Object.keys(customFieldsData).length > 0) {
+        await storeCustomFieldValues(leadId, form.tenant_id, customFieldsData);
+      }
+
+      emitToTenant(form.tenant_id, 'lead:updated', fullLead);
+      setImmediate(() => triggerWorkflows('opt_in_form', leadWithForm, form.tenant_id, 'system').catch((e) => console.error('[trigger opt_in_form re-sub]', e)));
+    } else {
+      // New lead
+      const leadRes = await query(
+        `INSERT INTO leads (tenant_id, name, email, phone, source, pipeline_id, stage_id)
+         VALUES ($1,$2,$3,$4,'Custom Form',$5,$6) RETURNING *`,
+        [form.tenant_id, name || 'Unknown', email, phone, form.pipeline_id ?? null, form.stage_id ?? null]
+      );
+      const lead = leadRes.rows[0];
+      leadId = lead.id;
+
+      if (Object.keys(customFieldsData).length > 0) {
+        await storeCustomFieldValues(leadId, form.tenant_id, customFieldsData);
+      }
+
+      emitToTenant(form.tenant_id, 'lead:created', lead);
+      sendNewLeadNotification(form.tenant_id, lead, null).catch(() => null);
+      const leadWithForm = { ...lead, form_id: form.id, form_name: form.name };
+      setImmediate(async () => {
+        const { isNew } = await upsertContact(form.tenant_id, lead.name, lead.email, lead.phone, lead.id).catch(() => ({ isNew: false }));
+        triggerWorkflows('opt_in_form', leadWithForm, form.tenant_id, 'system').catch((e) => console.error('[trigger opt_in_form new]', e));
+        triggerWorkflows('lead_created', leadWithForm, form.tenant_id, 'system').catch((e) => console.error('[trigger lead_created form new]', e));
+        if (isNew) triggerWorkflows('contact_created', leadWithForm, form.tenant_id, 'system').catch(() => null);
+      });
+    }
+
+    // Insert submission record
+    await query(
+      `INSERT INTO form_submissions (form_id, tenant_id, data) VALUES ($1,$2,$3)`,
+      [form.id, form.tenant_id, JSON.stringify(data)]
+    );
+
+    const redirectUrl = form.redirect_url;
+    const thankYou = form.thank_you_message ?? 'Thank you for your submission!';
+    res.json({ success: true, message: thankYou, redirectUrl: redirectUrl || null });
+  } catch (err) {
+    console.error('[public form submit]', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+async function storeCustomFieldValues(leadId: string, tenantId: string, customFieldsData: Record<string, string>) {
+  for (const [slug, value] of Object.entries(customFieldsData)) {
+    if (!value) continue;
+    try {
+      let cfRes = await query('SELECT id FROM custom_fields WHERE tenant_id=$1 AND slug=$2 LIMIT 1', [tenantId, slug]);
+      if (!cfRes.rows[0]) {
+        const fieldName = slug.split(/[_\-]+/).map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        try {
+          cfRes = await query(
+            `INSERT INTO custom_fields (tenant_id, name, type, slug, required) VALUES ($1,$2,'Single Line',$3,false) RETURNING id`,
+            [tenantId, fieldName, slug]
+          );
+        } catch {
+          cfRes = await query('SELECT id FROM custom_fields WHERE tenant_id=$1 AND slug=$2 LIMIT 1', [tenantId, slug]);
+        }
+      }
+      if (cfRes.rows[0]?.id) {
+        await query(
+          `INSERT INTO lead_field_values (lead_id, tenant_id, field_id, value)
+           VALUES ($1,$2,$3,$4) ON CONFLICT (lead_id, field_id) DO UPDATE SET value=$4, updated_at=NOW()`,
+          [leadId, tenantId, cfRes.rows[0].id, value]
+        );
+      }
+    } catch (err) {
+      console.error('[storeCustomFieldValues]', slug, err);
+    }
+  }
+}
+
+// ── Public Booking Helpers ──────────────────────────────────────────────────
+
+function isValidDate(d: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+  const dt = new Date(d + 'T12:00:00');
+  return !isNaN(dt.getTime());
+}
+
+function isValidTime(t: string): boolean {
+  if (!/^\d{2}:\d{2}$/.test(t)) return false;
+  const [h, m] = t.split(':').map(Number);
+  return h >= 0 && h <= 23 && m >= 0 && m <= 59;
+}
+
+// ── Public Booking ─────────────────────────────────────────────────────────────
+
+// GET /api/public/book/:slug — return booking link info
+router.get('/book/:slug', bookingLimiter, async (req: Request, res: Response) => {
+  try {
+    const result = await query(
+      `SELECT id, name, duration_mins, buffer_mins, max_per_day, location, description, availability
+       FROM booking_links WHERE slug=$1 AND is_active=TRUE`,
+      [req.params.slug]
+    );
+    if (!result.rows[0]) { res.status(404).json({ error: 'Booking link not found' }); return; }
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// GET /api/public/book/:slug/slots?date=YYYY-MM-DD — available slots
+router.get('/book/:slug/slots', bookingLimiter, async (req: Request, res: Response) => {
+  const { date } = req.query as { date: string };
+  if (!date) { res.status(400).json({ error: 'date query param required' }); return; }
+  if (!isValidDate(date)) { res.status(400).json({ error: 'Invalid date format, expected YYYY-MM-DD' }); return; }
+
+  // FIX A: Reject past dates — no slots for yesterday or earlier
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (new Date(date + 'T00:00:00') < today) {
+    res.json({ slots: [] }); return;
+  }
+
+  try {
+    const linkRes = await query(
+      `SELECT * FROM booking_links WHERE slug=$1 AND is_active=TRUE`,
+      [req.params.slug]
+    );
+    const link = linkRes.rows[0];
+    if (!link) { res.status(404).json({ error: 'Booking link not found' }); return; }
+
+    const dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+    // Use noon local time to avoid midnight DST edge-cases flipping the day
+    const dayName = dayNames[new Date(date + 'T12:00:00').getDay()];
+    const dayAvail = link.availability?.[dayName];
+    if (!dayAvail?.enabled) { res.json({ slots: [] }); return; }
+
+    // Generate all candidate slots
+    const slots: string[] = [];
+    const [startH, startM] = (dayAvail.start ?? '09:00').split(':').map(Number);
+    const [endH,   endM]   = (dayAvail.end   ?? '17:00').split(':').map(Number);
+    const durationMins = link.duration_mins ?? 30;
+    const stepMins = durationMins + (link.buffer_mins ?? 0);
+    let cur = startH * 60 + startM;
+    const end = endH * 60 + endM;
+    const nowMins = today.getDate() === new Date(date + 'T00:00:00').getDate()
+      ? new Date().getHours() * 60 + new Date().getMinutes()
+      : -1;
+
+    // FIX C: Only active (non-cancelled, non-no-show, non-deleted) bookings block a slot
+    const activeBookingsRes = await query(
+      `SELECT start_time FROM calendar_events
+       WHERE tenant_id=$1 AND DATE(start_time)=$2
+         AND status NOT IN ('cancelled','no-show') AND is_deleted=FALSE`,
+      [link.tenant_id, date]
+    );
+    const bookedTimes = new Set(
+      activeBookingsRes.rows.map((r: any) => {
+        const d = new Date(r.start_time);
+        return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      })
+    );
+
+    while (cur + durationMins <= end) {
+      const hh = String(Math.floor(cur / 60)).padStart(2, '0');
+      const mm = String(cur % 60).padStart(2, '0');
+      const time = `${hh}:${mm}`;
+      // FIX A: For today, skip slots that have already passed
+      if (cur > nowMins && !bookedTimes.has(time)) slots.push(time);
+      cur += stepMins;
+    }
+
+    // FIX C: max_per_day — count only scheduled/rescheduled, exclude deleted
+    if (link.max_per_day) {
+      const dayCountRes = await query(
+        `SELECT COUNT(*) AS cnt FROM calendar_events
+         WHERE tenant_id=$1 AND DATE(start_time)=$2
+           AND status IN ('scheduled','rescheduled') AND is_deleted=FALSE`,
+        [link.tenant_id, date]
+      );
+      const dayCount = parseInt(dayCountRes.rows[0]?.cnt ?? '0', 10);
+      const available = Math.max(0, link.max_per_day - dayCount);
+      res.json({ slots: slots.slice(0, available) });
+    } else {
+      res.json({ slots });
+    }
+  } catch (err) {
+    console.error('[public book slots]', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/public/book/:slug — submit a booking
+router.post('/book/:slug', bookingLimiter, async (req: Request, res: Response) => {
+  const { name, date, time, notes } = req.body;
+  // Normalize email at parse time — FIX #10
+  const email: string = ((req.body.email ?? '') as string).toLowerCase().trim();
+  const phone: string = ((req.body.phone ?? '') as string).trim();
+
+  if (!name || !date || !time) {
+    res.status(400).json({ error: 'name, date, time required' }); return;
+  }
+  // FIX #3: Validate input formats before hitting the DB
+  if (!isValidDate(date)) {
+    res.status(400).json({ error: 'Invalid date format, expected YYYY-MM-DD' }); return;
+  }
+  if (!isValidTime(time)) {
+    res.status(400).json({ error: 'Invalid time format, expected HH:MM' }); return;
+  }
+
+  const startTime = new Date(`${date}T${time}:00`);
+  if (isNaN(startTime.getTime())) {
+    res.status(400).json({ error: 'Invalid date/time combination' }); return;
+  }
+
+  // FIX A: Reject past bookings
+  if (startTime.getTime() <= Date.now()) {
+    res.status(400).json({ error: 'Cannot book a slot in the past' }); return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Lock the booking_link row — serializes all concurrent bookings for this link (FIX #1/#2)
+    const linkRes = await client.query(
+      `SELECT * FROM booking_links WHERE slug=$1 AND is_active=TRUE FOR UPDATE`,
+      [req.params.slug]
+    );
+    const link = linkRes.rows[0];
+    if (!link) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ error: 'Booking link not found' }); return;
+    }
+
+    const durationMins = link.duration_mins ?? 30;
+    const endTime = new Date(startTime.getTime() + durationMins * 60000);
+
+    // FIX B: Enforce availability window — same rules the slots endpoint uses
+    const dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+    const dayName = dayNames[new Date(date + 'T12:00:00').getDay()];
+    const dayAvail = link.availability?.[dayName];
+    if (!dayAvail?.enabled) {
+      await client.query('ROLLBACK');
+      res.status(400).json({ error: `No availability on ${dayName}` }); return;
+    }
+    const [startH, startM] = (dayAvail.start ?? '09:00').split(':').map(Number);
+    const [endH,   endM]   = (dayAvail.end   ?? '17:00').split(':').map(Number);
+    const [reqH,   reqM]   = time.split(':').map(Number);
+    const reqMins   = reqH * 60 + reqM;
+    const winStart  = startH * 60 + startM;
+    const winEnd    = endH * 60 + endM;
+    if (reqMins < winStart || reqMins + durationMins > winEnd) {
+      await client.query('ROLLBACK');
+      res.status(400).json({ error: `Requested time is outside available hours (${dayAvail.start}–${dayAvail.end})` }); return;
+    }
+
+    // FIX #1/#2: Slot conflict check inside the transaction
+    // FIX C: Exclude soft-deleted events
+    const conflict = await client.query(
+      `SELECT id FROM calendar_events
+       WHERE tenant_id=$1 AND status NOT IN ('cancelled','no-show') AND is_deleted=FALSE
+         AND start_time < $2 AND end_time > $3`,
+      [link.tenant_id, endTime.toISOString(), startTime.toISOString()]
+    );
+    if (conflict.rows.length > 0) {
+      await client.query('ROLLBACK');
+      res.status(409).json({ error: 'This slot is no longer available' }); return;
+    }
+
+    // FIX #14 + FIX C: max_per_day — only count scheduled/rescheduled, exclude deleted
+    if (link.max_per_day) {
+      const dayCountRes = await client.query(
+        `SELECT COUNT(*) AS cnt FROM calendar_events
+         WHERE tenant_id=$1 AND DATE(start_time)=$2
+           AND status IN ('scheduled','rescheduled') AND is_deleted=FALSE`,
+        [link.tenant_id, date]
+      );
+      const dayCount = parseInt(dayCountRes.rows[0]?.cnt ?? '0', 10);
+      if (dayCount >= link.max_per_day) {
+        await client.query('ROLLBACK');
+        res.status(409).json({ error: 'No more bookings available for this day' }); return;
+      }
+    }
+
+    // FIX #9: Lead upsert inside transaction — atomic dedup with email normalization
+    let leadId: string | null = null;
+    let isNewLead = false;
+    if (email || phone) {
+      const dupCheck = await client.query(
+        `SELECT id FROM leads WHERE tenant_id=$1 AND is_deleted=FALSE
+         AND (($2::text <> '' AND LOWER(email)=$2) OR ($3::text <> '' AND phone=$3))
+         LIMIT 1`,
+        [link.tenant_id, email, phone]
+      );
+      if (dupCheck.rows[0]) {
+        leadId = dupCheck.rows[0].id;
+      } else {
+        try {
+          const leadRes = await client.query(
+            `INSERT INTO leads (tenant_id, name, email, phone, source) VALUES ($1,$2,$3,$4,'Booking') RETURNING id`,
+            [link.tenant_id, name, email, phone]
+          );
+          leadId = leadRes.rows[0].id;
+          isNewLead = true;
+          sendNewLeadNotification(link.tenant_id, leadRes.rows[0], null).catch(() => null);
+        } catch {
+          // Race: another request inserted the same lead between dedup check and insert
+          const retryRes = await client.query(
+            `SELECT id FROM leads WHERE tenant_id=$1 AND is_deleted=FALSE
+             AND (($2::text <> '' AND LOWER(email)=$2) OR ($3::text <> '' AND phone=$3))
+             LIMIT 1`,
+            [link.tenant_id, email, phone]
+          );
+          leadId = retryRes.rows[0]?.id ?? null;
+        }
+      }
+    }
+
+    // Insert calendar event with explicit 'scheduled' status
+    const eventRes = await client.query(
+      `INSERT INTO calendar_events (tenant_id, title, description, start_time, end_time, type, lead_id, created_by, status)
+       VALUES ($1,$2,$3,$4,$5,'booking',$6,'system','scheduled') RETURNING id`,
+      [link.tenant_id, `Booking: ${name}`, notes ?? '', startTime.toISOString(), endTime.toISOString(), leadId]
+    );
+    const eventId = eventRes.rows[0].id;
+
+    await client.query('COMMIT');
+
+    // Async side effects — fire after commit so they never roll back with us
+    if (leadId) {
+      const capturedLeadId = leadId;
+      const capturedName = name;
+      const tenantId = link.tenant_id;
+      const newLead = isNewLead;
+      setImmediate(async () => {
+        try {
+          await upsertContact(tenantId, capturedName, email, phone, capturedLeadId).catch(() => null);
+          if (newLead) {
+            triggerWorkflows('lead_created', { id: capturedLeadId, name: capturedName }, tenantId, 'system').catch(() => null);
+          }
+          triggerWorkflows('appointment_booked', { id: capturedLeadId, name: capturedName }, tenantId, 'system').catch(() => null);
+        } catch {}
+      });
+    }
+
+    res.status(201).json({ success: true, event_id: eventId });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => null);
+    console.error('[public book submit]', err);
+    res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
+export default router;

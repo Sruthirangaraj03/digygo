@@ -7,6 +7,7 @@ import {
 import { useCrmStore } from '@/store/crmStore';
 import { Pipeline, PipelineStage } from '@/data/mockData';
 import { toast } from 'sonner';
+import { useAuthStore } from '@/store/authStore';
 import { cn } from '@/lib/utils';
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragEndEvent,
@@ -85,17 +86,21 @@ function PipelineModal({ pipeline, onClose }: { pipeline?: Pipeline; onClose: ()
   const removeStage = (id: string) =>
     setStages((prev) => prev.filter((s) => s.id !== id));
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim()) { toast.error('Pipeline name is required'); return; }
     if (stages.some((s) => !s.name.trim())) { toast.error('All stages must have a name'); return; }
-    if (isEdit) {
-      updatePipeline(pipeline!.id, { name: name.trim(), stages });
-      toast.success('Pipeline updated');
-    } else {
-      addPipeline({ id: `pipeline-${Date.now()}`, name: name.trim(), stages });
-      toast.success('Pipeline created');
+    try {
+      if (isEdit) {
+        await updatePipeline(pipeline!.id, { name: name.trim(), stages });
+        toast.success('Pipeline updated');
+      } else {
+        await addPipeline({ id: '', name: name.trim(), stages });
+        toast.success('Pipeline created');
+      }
+      onClose();
+    } catch {
+      toast.error('Failed to save pipeline. Please try again.');
     }
-    onClose();
   };
 
   return (
@@ -221,12 +226,13 @@ function AllStagesModal({ pipeline, totalLeads, stageStats, onClose, onOpen }: {
 }
 
 // ─── Pipeline Card ─────────────────────────────────────────────────────────────
-function PipelineCard({ pipeline, onEdit, onClone, onDelete, onView }: {
+function PipelineCard({ pipeline, onEdit, onClone, onDelete, onView, canManage }: {
   pipeline: Pipeline;
   onEdit: () => void;
   onClone: () => void;
   onDelete: () => void;
   onView: () => void;
+  canManage: boolean;
 }) {
   const { leads } = useCrmStore();
   const [showAllStages, setShowAllStages] = useState(false);
@@ -261,35 +267,37 @@ function PipelineCard({ pipeline, onEdit, onClone, onDelete, onView }: {
               </p>
             </div>
 
-            {/* ⋯ menu — always visible */}
-            <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
-              <button
-                onClick={() => setShowMenu((v) => !v)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-[#b09e8d] hover:bg-[#faf0e8] hover:text-primary transition-colors"
-              >
-                <MoreHorizontal className="w-4 h-4" />
-              </button>
-              {showMenu && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
-                  <div className="absolute right-0 top-8 z-50 w-44 bg-white rounded-xl border border-black/5 shadow-xl overflow-hidden py-1">
-                    <button onClick={() => { setShowMenu(false); onView(); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors text-left">
-                      <Eye className="w-3.5 h-3.5 text-[#7a6b5c]" /> Open Pipeline
-                    </button>
-                    <button onClick={() => { setShowMenu(false); onEdit(); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors text-left">
-                      <Pencil className="w-3.5 h-3.5 text-[#7a6b5c]" /> Edit
-                    </button>
-                    <button onClick={() => { setShowMenu(false); onClone(); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors text-left">
-                      <Copy className="w-3.5 h-3.5 text-[#7a6b5c]" /> Clone
-                    </button>
-                    <div className="border-t border-black/5 my-1" />
-                    <button onClick={() => { setShowMenu(false); onDelete(); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-red-500 hover:bg-red-50 transition-colors text-left">
-                      <Trash2 className="w-3.5 h-3.5" /> Delete
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
+            {/* ⋯ menu — only visible when user can manage pipelines */}
+            {canManage && (
+              <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={() => setShowMenu((v) => !v)}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-[#b09e8d] hover:bg-[#faf0e8] hover:text-primary transition-colors"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+                {showMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
+                    <div className="absolute right-0 top-8 z-50 w-44 bg-white rounded-xl border border-black/5 shadow-xl overflow-hidden py-1">
+                      <button onClick={() => { setShowMenu(false); onView(); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors text-left">
+                        <Eye className="w-3.5 h-3.5 text-[#7a6b5c]" /> Open Pipeline
+                      </button>
+                      <button onClick={() => { setShowMenu(false); onEdit(); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors text-left">
+                        <Pencil className="w-3.5 h-3.5 text-[#7a6b5c]" /> Edit
+                      </button>
+                      <button onClick={() => { setShowMenu(false); onClone(); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors text-left">
+                        <Copy className="w-3.5 h-3.5 text-[#7a6b5c]" /> Clone
+                      </button>
+                      <div className="border-t border-black/5 my-1" />
+                      <button onClick={() => { setShowMenu(false); onDelete(); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-red-500 hover:bg-red-50 transition-colors text-left">
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -355,6 +363,9 @@ export default function LeadManagementOverviewPage() {
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [editPipeline, setEditPipeline] = useState<Pipeline | null>(null);
+  const permissions = useAuthStore((s) => s.permissions);
+  const permAll = useAuthStore((s) => s.permAll);
+  const canManage = permAll || permissions['pipeline:manage'] === true;
 
   const filtered = pipelines.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
@@ -395,14 +406,16 @@ export default function LeadManagementOverviewPage() {
 
         <div className="flex-1" />
 
-        {/* New Pipeline */}
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white transition-all hover:shadow-lg hover:-translate-y-0.5 shrink-0"
-          style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 12px rgba(234,88,12,0.3)' }}
-        >
-          <Plus className="w-4 h-4" /> New Pipeline
-        </button>
+        {/* New Pipeline — only for users with pipeline:manage */}
+        {canManage && (
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white transition-all hover:shadow-lg hover:-translate-y-0.5 shrink-0"
+            style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 12px rgba(234,88,12,0.3)' }}
+          >
+            <Plus className="w-4 h-4" /> New Pipeline
+          </button>
+        )}
       </div>
 
       {/* Pipeline cards grid */}
@@ -412,13 +425,15 @@ export default function LeadManagementOverviewPage() {
             <PipelineCard
               key={p.id}
               pipeline={p}
-              onView={() => navigate('/leads')}
+              canManage={canManage}
+              onView={() => navigate(`/leads?pipeline=${p.id}`)}
               onEdit={() => setEditPipeline(p)}
               onClone={() => { clonePipeline(p.id); toast.success('Pipeline cloned'); }}
               onDelete={() => {
                 if (window.confirm(`Delete "${p.name}"? This cannot be undone.`)) {
-                  deletePipeline(p.id);
-                  toast.success('Pipeline deleted');
+                  deletePipeline(p.id)
+                    .then(() => toast.success('Pipeline deleted'))
+                    .catch(() => toast.error('Failed to delete pipeline'));
                 }
               }}
             />
@@ -429,15 +444,24 @@ export default function LeadManagementOverviewPage() {
           <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
             <Layers className="w-7 h-7 text-primary" />
           </div>
-          <p className="font-semibold text-[#1c1410] text-[15px]">No pipelines yet</p>
-          <p className="text-[13px] text-[#7a6b5c] max-w-xs">Create your first pipeline to start organising leads by stage</p>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="mt-2 flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-white"
-            style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}
-          >
-            <Plus className="w-4 h-4" /> Create Pipeline
-          </button>
+          {canManage ? (
+            <>
+              <p className="font-semibold text-[#1c1410] text-[15px]">No pipelines yet</p>
+              <p className="text-[13px] text-[#7a6b5c] max-w-xs">Create your first pipeline to start organising leads by stage</p>
+              <button
+                onClick={() => setShowCreate(true)}
+                className="mt-2 flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-white"
+                style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}
+              >
+                <Plus className="w-4 h-4" /> Create Pipeline
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="font-semibold text-[#1c1410] text-[15px]">No pipelines assigned to you</p>
+              <p className="text-[13px] text-[#7a6b5c] max-w-xs">You can only view pipelines where leads are assigned to you</p>
+            </>
+          )}
         </div>
       )}
 

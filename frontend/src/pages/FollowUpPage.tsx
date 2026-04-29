@@ -9,6 +9,7 @@ import { staff } from '@/data/mockData';
 import { cn } from '@/lib/utils';
 import { format, isPast, isToday, isFuture, parseISO } from 'date-fns';
 import { toast } from 'sonner';
+import { api } from '@/lib/api';
 
 // ─── Add Follow-Up Modal ───────────────────────────────────────────────────────
 function AddFollowUpModal({ onClose }: { onClose: () => void }) {
@@ -19,21 +20,31 @@ function AddFollowUpModal({ onClose }: { onClose: () => void }) {
   const [dueAt, setDueAt] = useState('');
   const [assignedTo, setAssignedTo] = useState('');
 
-  const submit = () => {
+  const submit = async () => {
     if (!leadId) { toast.error('Please select a contact'); return; }
     if (!title.trim()) { toast.error('Title is required'); return; }
     if (!dueAt) { toast.error('Please set a due date'); return; }
-    addFollowUp({
-      id: `fu-${Date.now()}`,
-      leadId,
-      note: title.trim() + (description.trim() ? `\n${description.trim()}` : ''),
-      dueAt: new Date(dueAt).toISOString(),
-      completed: false,
-      assignedTo: assignedTo || undefined,
-      createdAt: new Date().toISOString(),
-    });
-    toast.success('Follow-up scheduled');
-    onClose();
+    try {
+      const created = await api.post<any>(`/api/leads/${leadId}/followups`, {
+        title: title.trim(),
+        description: description.trim() || undefined,
+        due_at: new Date(dueAt).toISOString(),
+        assigned_to: assignedTo || undefined,
+      });
+      addFollowUp({
+        id: created.id,
+        leadId,
+        note: title.trim() + (description.trim() ? `\n${description.trim()}` : ''),
+        dueAt: created.due_at ?? new Date(dueAt).toISOString(),
+        completed: false,
+        assignedTo: assignedTo || undefined,
+        createdAt: created.created_at ?? new Date().toISOString(),
+      });
+      toast.success('Follow-up scheduled');
+      onClose();
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to schedule follow-up');
+    }
   };
 
   const inputCls = 'w-full border border-gray-200 rounded-xl px-4 py-2.5 text-[13px] text-[#1c1410] outline-none focus:border-primary/40 placeholder:text-gray-300';
@@ -344,7 +355,7 @@ export default function FollowUpPage() {
                     {/* Status */}
                     <td className="px-3 py-4">
                       <button
-                        onClick={() => { if (!fu.completed) { completeFollowUp(fu.id); toast.success('Marked complete'); } }}
+                        onClick={() => { if (!fu.completed) { completeFollowUp(fu.id, fu.leadId); toast.success('Marked complete'); } }}
                         disabled={fu.completed}
                         className={cn(
                           'w-7 h-7 rounded-lg border-2 flex items-center justify-center transition-all',
@@ -390,7 +401,7 @@ export default function FollowUpPage() {
                             <div className="absolute right-0 top-8 z-40 bg-white rounded-xl border border-black/5 shadow-2xl w-36 py-1 overflow-hidden">
                               {!fu.completed && (
                                 <button
-                                  onClick={() => { completeFollowUp(fu.id); toast.success('Marked complete'); setOpenMenu(null); }}
+                                  onClick={() => { completeFollowUp(fu.id, fu.leadId); toast.success('Marked complete'); setOpenMenu(null); }}
                                   className="w-full flex items-center gap-2 px-4 py-2.5 text-[12px] text-[#1c1410] hover:bg-[#faf8f6]"
                                 >
                                   <Check className="w-3.5 h-3.5 text-green-500" /> Complete

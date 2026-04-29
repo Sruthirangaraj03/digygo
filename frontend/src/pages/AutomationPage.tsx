@@ -1,571 +1,617 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCrmStore } from '@/store/crmStore';
+import { usePermission } from '@/hooks/usePermission';
 import {
-  Search, Plus, Zap, MoreVertical, FileText, X, CheckCircle2,
-  Clock, Users, Activity, Pencil, Copy, Trash2, ChevronDown, ToggleLeft,
-  Folder, FolderOpen, ChevronRight, Layout, FolderInput, PowerOff,
+  Search, Plus, Zap, MoreVertical, X, CheckCircle2, Clock,
+  Users, Activity, Pencil, Copy, Trash2, ChevronRight,
+  ToggleRight, ToggleLeft, SkipForward, Loader2, User, TrendingUp,
+  ChevronDown, ChevronUp, Play, RefreshCw, AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { api } from '@/lib/api';
+import { format } from 'date-fns';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 
-// ── Types ──────────────────────────────────────────────────────────────────────
-export interface WFFolder {
-  id: string;
-  name: string;
-  workflowIds: string[];
-}
+export type { WFFolder, WFNode, WFRecord } from '@/types/workflow';
 
-export interface WFNode {
-  id: string;
-  type: 'trigger' | 'action' | 'condition' | 'delay';
-  actionType: string;
-  label: string;
-  config: Record<string, string | string[] | boolean>;
-  branches?: {
-    yes: WFNode[];
-    no: WFNode[];
+// ── Contact Sidebar ────────────────────────────────────────────────────────────
+type SidebarFilter = 'all' | 'completed' | 'completed_with_errors' | 'failed' | 'pending' | 'skipped';
+
+function ContactSidebar({
+  workflow, filterStatus, onClose,
+}: { workflow: WFRecord; filterStatus: SidebarFilter; onClose: () => void }) {
+  const [logs, setLogs]           = useState<any[]>([]);
+  const [allLogs, setAllLogs]     = useState<any[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [expanded, setExpanded]   = useState<string | null>(null);
+  const [selected, setSelected]   = useState<Set<string>>(new Set());
+  const [rerunning, setRerunning] = useState(false);
+  // per-row re-run status: 'running' | 'done' | 'error'
+  const [rowStatus, setRowStatus] = useState<Record<string, 'running' | 'done' | 'error'>>({});
+
+  const loadLogs = useCallback(() => {
+    setLoading(true);
+    api.get<any[]>(`/api/workflows/${workflow.id}/logs`)
+      .then((data) => {
+        const raw = data ?? [];
+        setAllLogs(raw);
+        // Deduplicate by lead_id — keep only the latest execution per contact
+        // (backend returns DESC order so first occurrence = newest).
+        // Null-lead_id rows (test-modal runs) are kept individually by execution id.
+        const seen = new Set<string>();
+        const deduped = raw.filter((log: any) => {
+          const key = log.lead_id ?? `_exec_${log.id}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        setLogs(deduped);
+      })
+      .catch(() => { setLogs([]); setAllLogs([]); })
+      .finally(() => setLoading(false));
+  }, [workflow.id]);
+
+  useEffect(() => { loadLogs(); }, [loadLogs]);
+
+  // Done: all completed executions across all runs (no dedup — every run counts)
+  // Errors: all completed_with_errors executions across all runs (same rationale)
+  // Skipped: latest execution per lead is still skipped (once retried & done, it moves to Done)
+  // All others: use deduped list (latest per lead)
+  const filtered = filterStatus === 'completed'
+    ? allLogs.filter((l) => l.status === 'completed')
+    : filterStatus === 'completed_with_errors'
+    ? allLogs.filter((l) => l.status === 'completed_with_errors')
+    : logs.filter((l) => {
+        if (filterStatus === 'all')     return true;
+        if (filterStatus === 'failed')  return l.status === 'failed';
+        if (filterStatus === 'pending') return l.status === 'running';
+        if (filterStatus === 'skipped') return l.status === 'skipped';
+        return false;
+      });
+
+  // ── Selection helpers ────────────────────────────────────────────────────────
+  const allIds      = filtered.map((l) => l.id as string);
+  const allChecked  = allIds.length > 0 && allIds.every((id) => selected.has(id));
+  const someChecked = allIds.some((id) => selected.has(id)) && !allChecked;
+
+  const toggleAll = () => {
+    if (allChecked) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(allIds));
+    }
   };
-}
 
-export interface WFRecord {
-  id: string;
-  name: string;
-  description: string;
-  allowReentry: boolean;
-  totalContacts: number;
-  completed: number;
-  completedNodes: number;
-  lastUpdated: string;
-  status: 'active' | 'inactive';
-  nodes: WFNode[];
-}
+  const toggleOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
 
-interface LogRow {
-  id: string;
-  contactName: string;
-  outcome: string;
-  enrolledAt: string;
-  appointmentDate?: string;
-  completedAction: string;
-  completedAt: string;
-  nextAction: string;
-}
+  // ── Re-execute selected leads ────────────────────────────────────────────────
+  const handleRerun = async () => {
+    const targets = filtered.filter((l) => selected.has(l.id));
+    if (!targets.length) return;
 
-// ── Mock Data ──────────────────────────────────────────────────────────────────
-const initialWorkflows: WFRecord[] = [
-  {
-    id: 'wf-1', name: 'Show Up Automation',
-    description: 'Trigger fired when an appointment is shown up',
-    allowReentry: false, totalContacts: 3, completed: 3, completedNodes: 2,
-    lastUpdated: '3 months ago', status: 'active',
-    nodes: [
-      { id: 'n1', type: 'trigger', actionType: 'appointment_booked', label: 'Appointment Booked', config: {} },
-      { id: 'n2', type: 'action', actionType: 'add_to_crm', label: 'Add/Update to CRM', config: {} },
-    ],
-  },
-  {
-    id: 'wf-2', name: 'Stage Change Notifier',
-    description: "Triggers when a contact's stage changes in selected pipeline",
-    allowReentry: false, totalContacts: 1, completed: 1, completedNodes: 2,
-    lastUpdated: '3 months ago', status: 'active',
-    nodes: [
-      { id: 'n1', type: 'trigger', actionType: 'stage_changed', label: 'Stage Changed', config: {} },
-      { id: 'n2', type: 'action', actionType: 'send_whatsapp', label: 'Send WhatsApp', config: {} },
-    ],
-  },
-  {
-    id: 'wf-3', name: 'Manual Staff Assignment',
-    description: "Assigns staff when a contact's stage is updated",
-    allowReentry: false, totalContacts: 1, completed: 1, completedNodes: 1,
-    lastUpdated: '3 months ago', status: 'inactive',
-    nodes: [
-      { id: 'n1', type: 'trigger', actionType: 'stage_changed', label: 'Stage Changed', config: {} },
-      { id: 'n2', type: 'action', actionType: 'assign_staff', label: 'Assign To Staff', config: {} },
-    ],
-  },
-  {
-    id: 'wf-4', name: 'New Lead Welcome',
-    description: 'Fires when a contact is added to the selected pipeline',
-    allowReentry: false, totalContacts: 12, completed: 10, completedNodes: 2,
-    lastUpdated: '1 week ago', status: 'active',
-    nodes: [
-      { id: 'n1', type: 'trigger', actionType: 'lead_created', label: 'Lead Created', config: {} },
-      { id: 'n2', type: 'action', actionType: 'add_to_crm', label: 'Add/Update to CRM', config: {} },
-      { id: 'n3', type: 'action', actionType: 'send_whatsapp', label: 'Send WhatsApp', config: {} },
-    ],
-  },
-];
+    setRerunning(true);
+    // Mark all selected as 'running' immediately for visual feedback
+    setRowStatus((prev) => {
+      const next = { ...prev };
+      targets.forEach((l) => { next[l.id] = 'running'; });
+      return next;
+    });
 
-const mockLogs: LogRow[] = [
-  { id: 'l1', contactName: '!!Possibly Deleted!!', outcome: 'Appointment Confirmed', enrolledAt: 'Dec 30th, 2025, 07:34:24 pm', appointmentDate: 'Dec 31st, 2025, 09:00 am', completedAction: 'Add/Update to CRM', completedAt: 'Dec 30th, 2025, 07:37:16 pm', nextAction: 'Completed on Dec 30th, 2025, 07:37:16 pm' },
-  { id: 'l2', contactName: '!!Possibly Deleted!!', outcome: 'Appointment Confirmed', enrolledAt: 'Dec 30th, 2025, 07:32:40 pm', appointmentDate: 'Dec 31st, 2025, 09:00 am', completedAction: 'Add/Update to CRM', completedAt: 'Dec 30th, 2025, 07:35:38 pm', nextAction: 'Completed on Dec 30th, 2025, 07:35:38 pm' },
-  { id: 'l3', contactName: '!!Possibly Deleted!!', outcome: 'Appointment Confirmed', enrolledAt: 'Dec 30th, 2025, 07:32:26 pm', appointmentDate: 'Dec 31st, 2025, 09:00 am', completedAction: 'Add/Update to CRM', completedAt: 'Dec 30th, 2025, 07:35:43 pm', nextAction: 'Completed on Dec 30th, 2025, 07:35:43 pm' },
-];
+    let successCount = 0;
+    let failCount = 0;
 
-const NODE_TYPE_COLORS: Record<string, string> = {
-  trigger:   'bg-purple-100 text-purple-700',
-  action:    'bg-blue-100 text-blue-700',
-  condition: 'bg-amber-100 text-amber-700',
-  delay:     'bg-gray-100 text-gray-600',
-};
+    for (const log of targets) {
+      try {
+        await api.post(`/api/workflows/${workflow.id}/test`, {
+          ...(log.lead_id
+            ? { lead_id: log.lead_id }
+            : { name: log.lead_name ?? 'Unknown Contact' }),
+        });
+        setRowStatus((prev) => ({ ...prev, [log.id]: 'done' }));
+        successCount++;
+      } catch {
+        setRowStatus((prev) => ({ ...prev, [log.id]: 'error' }));
+        failCount++;
+      }
+    }
 
-// ── Logs Modal ─────────────────────────────────────────────────────────────────
-function LogsModal({ workflow, onClose }: { workflow: WFRecord; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl w-full max-w-5xl shadow-2xl flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-black/5 shrink-0">
-          <div>
-            <h3 className="font-headline font-bold text-[#1c1410] text-[16px]">
-              Execution Logs — <span className="text-primary">{workflow.name}</span>
-            </h3>
-            <p className="text-[12px] text-[#7a6b5c] mt-0.5">{mockLogs.length} execution records</p>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="flex-1 overflow-auto">
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="border-b border-black/5 bg-[#faf8f6]">
-                <th className="w-10 px-4 py-3"><input type="checkbox" className="w-4 h-4 accent-primary" /></th>
-                <th className="text-left text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] px-4 py-3">Contact</th>
-                <th className="text-left text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] px-4 py-3">Completed Action / Time</th>
-                <th className="text-left text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] px-4 py-3">Next Action</th>
-                <th className="text-left text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] px-4 py-3">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-black/[0.04]">
-              {mockLogs.map((log) => (
-                <tr key={log.id} className="hover:bg-[#faf8f6] transition-colors align-top">
-                  <td className="px-4 py-4"><input type="checkbox" className="w-4 h-4 accent-primary mt-1" /></td>
-                  <td className="px-4 py-4 space-y-1">
-                    <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700">Completed</span>
-                    <p className="font-semibold text-red-500">{log.contactName}</p>
-                    <p className="text-[11px] text-[#7a6b5c]"><span className="font-medium text-[#1c1410]">Enrolled:</span> {log.enrolledAt}</p>
-                    <p className="text-[11px] text-[#7a6b5c]"><span className="font-medium text-[#1c1410]">Outcome:</span> {log.outcome}</p>
-                    {log.appointmentDate && (
-                      <p className="text-[11px] text-[#7a6b5c] flex items-center gap-1">
-                        <Clock className="w-3 h-3" /> {log.appointmentDate}
-                      </p>
-                    )}
-                  </td>
-                  <td className="px-4 py-4">
-                    <p className="font-medium text-[#1c1410]">{log.completedAction}</p>
-                    <p className="text-[11px] text-[#7a6b5c] mt-0.5">{log.completedAt}</p>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className="inline-block px-2.5 py-1 rounded-lg text-[11px] font-medium bg-green-50 text-green-700 max-w-[180px] leading-snug">{log.nextAction}</span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-1.5 bg-gray-100 text-[#7a6b5c] text-[11px] font-bold px-3 py-1.5 rounded-lg w-fit">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> COMPLETED
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="flex items-center justify-between px-6 py-3 border-t border-black/5 bg-[#faf8f6] shrink-0">
-          <div className="flex items-center gap-2">
-            <select className="border border-gray-200 rounded-lg px-2 py-1 text-[12px] outline-none bg-white">
-              <option>10</option><option>25</option><option>50</option>
-            </select>
-            <span className="text-[11px] text-[#7a6b5c]">rows per page</span>
-          </div>
-          <p className="text-[11px] text-[#7a6b5c]">Showing 1–{mockLogs.length} of {mockLogs.length} records</p>
-        </div>
+    setRerunning(false);
+    setSelected(new Set());
+
+    if (failCount === 0) {
+      toast.success(`Re-executed for ${successCount} contact${successCount !== 1 ? 's' : ''}`);
+    } else {
+      toast.error(`${successCount} succeeded, ${failCount} failed`);
+    }
+
+    // Refresh logs after a short delay so new executions show up
+    setTimeout(() => { loadLogs(); setRowStatus({}); }, 1500);
+  };
+
+  // ── UI helpers ───────────────────────────────────────────────────────────────
+  const actionNodes = workflow.nodes.filter((n) => n.type !== 'trigger');
+
+  const bgPalette = ['#fde8d8','#dbeafe','#dcfce7','#ede9fe','#fce7f3'];
+  const fgPalette = ['#c2410c','#1d4ed8','#15803d','#7c3aed','#be185d'];
+
+  const labelConfig: Record<SidebarFilter, { label: string; dot: string }> = {
+    all:                    { label: 'All Contacts',            dot: 'bg-gray-400' },
+    completed:              { label: 'Done',                    dot: 'bg-emerald-400' },
+    completed_with_errors:  { label: 'Done with Errors',        dot: 'bg-amber-400' },
+    failed:                 { label: 'Failed',                  dot: 'bg-red-400' },
+    pending:                { label: 'Pending',                 dot: 'bg-blue-400' },
+    skipped:                { label: 'Skipped / Reentry Blocked', dot: 'bg-amber-400' },
+  };
+
+  const execStatusBadge = (log: any) => {
+    const { status, steps } = log;
+    const skippedCount = (steps ?? []).filter((s: any) => s.status === 'skipped').length;
+    return (
+      <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+        {status === 'completed' && (
+          <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
+            <CheckCircle2 className="w-3 h-3" /> Done
+          </span>
+        )}
+        {status === 'completed_with_errors' && (
+          <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">
+            <AlertTriangle className="w-3 h-3" /> Done w/ Errors
+          </span>
+        )}
+        {status === 'failed' && (
+          <span className="flex items-center gap-1 text-[10px] font-semibold text-red-500 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full">
+            <X className="w-3 h-3" /> Failed
+          </span>
+        )}
+        {status === 'running' && (
+          <span className="flex items-center gap-1 text-[10px] font-semibold text-blue-600 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full">
+            <Clock className="w-3 h-3" /> Pending
+          </span>
+        )}
+        {status === 'skipped' && (
+          <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">
+            <SkipForward className="w-3 h-3" /> Reentry blocked
+          </span>
+        )}
+        {status !== 'skipped' && skippedCount > 0 && (
+          <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">
+            <SkipForward className="w-3 h-3" /> {skippedCount} skipped
+          </span>
+        )}
       </div>
-    </div>
-  );
-}
-
-// ── Create Folder Modal ────────────────────────────────────────────────────────
-function CreateFolderModal({
-  workflows,
-  onClose,
-  onConfirm,
-}: {
-  workflows: WFRecord[];
-  onClose: () => void;
-  onConfirm: (name: string, workflowIds: string[]) => void;
-}) {
-  const [name, setName] = useState('');
-  const [selected, setSelected] = useState<string[]>([]);
-
-  const toggleWF = (id: string) =>
-    setSelected((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
-
-  const handleConfirm = () => {
-    if (!name.trim()) { toast.error('Folder name is required'); return; }
-    onConfirm(name.trim(), selected);
+    );
   };
 
-  const gradientStyle = { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' };
+  const selectedCount = selected.size;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 z-40 flex justify-end" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/30" />
+      <div
+        className="relative z-50 w-full max-w-[420px] bg-white h-full flex flex-col shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="flex items-start justify-between px-6 py-5 border-b border-black/5 shrink-0">
-          <div>
-            <h3 className="font-headline font-bold text-[#1c1410] text-[17px]">Create Folder</h3>
-            <p className="text-[12px] text-[#7a6b5c] mt-0.5">Folder will help to organize Automation</p>
+        <div className="shrink-0 px-5 py-4 border-b border-black/5 flex items-center gap-3">
+          <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center shrink-0">
+            <Activity className="w-4 h-4 text-primary" />
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-[#7a6b5c] transition-colors mt-0.5">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-bold text-[#1c1410] text-[15px] truncate">{workflow.name}</h3>
+            <p className="text-[11px] text-[#7a6b5c] mt-0.5 flex items-center gap-1.5">
+              <span className={cn('w-2 h-2 rounded-full inline-block', labelConfig[filterStatus].dot)} />
+              {labelConfig[filterStatus].label}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors shrink-0"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          {/* Folder Name */}
-          <div>
-            <label className="text-[12px] font-semibold text-[#7a6b5c] mb-1.5 block">
-              Folder Name <span className="text-red-400">*</span>
-            </label>
-            <input
-              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-[14px] text-[#1c1410] outline-none focus:border-primary/40 placeholder:text-gray-300 transition-colors"
-              placeholder="Folder Name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoFocus
-            />
+        {/* Stats + select-all bar */}
+        <div className="shrink-0 px-5 py-2.5 bg-[#faf8f6] border-b border-black/5 flex items-center gap-3">
+          {/* Select-all checkbox */}
+          {filtered.length > 0 && (
+            <button
+              onClick={toggleAll}
+              className={cn(
+                'w-4.5 h-4.5 rounded border-2 flex items-center justify-center shrink-0 transition-colors',
+                allChecked
+                  ? 'bg-primary border-primary'
+                  : someChecked
+                    ? 'bg-primary/30 border-primary'
+                    : 'border-gray-300 bg-white hover:border-primary/60'
+              )}
+              style={{ width: 18, height: 18 }}
+              title="Select all"
+            >
+              {(allChecked || someChecked) && (
+                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 10" stroke="currentColor" strokeWidth={2}>
+                  {allChecked
+                    ? <path d="M1.5 5l2.5 2.5 4.5-4.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    : <path d="M2 5h6" strokeLinecap="round"/>}
+                </svg>
+              )}
+            </button>
+          )}
+          <div className="flex items-center gap-1.5 flex-1">
+            <Users className="w-3.5 h-3.5 text-[#7a6b5c]" />
+            <span className="text-[12px] font-semibold text-[#1c1410]">
+              {filtered.length} contact{filtered.length !== 1 ? 's' : ''}
+            </span>
+            {selectedCount > 0 && (
+              <span className="text-[11px] text-primary font-semibold ml-1">
+                · {selectedCount} selected
+              </span>
+            )}
           </div>
+          {/* Refresh button */}
+          <button
+            onClick={loadLogs}
+            className="p-1.5 rounded-lg text-[#b09e8d] hover:text-primary hover:bg-[#f5ede3] transition-colors"
+            title="Refresh"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+        </div>
 
-          {/* Assign Workflows (optional) */}
-          {workflows.length > 0 && (
+        {/* List */}
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="py-16 text-center text-[13px] text-[#7a6b5c] flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="py-16 text-center px-6">
+              <div className="w-12 h-12 bg-[#f5ede3] rounded-2xl flex items-center justify-center mx-auto mb-3">
+                <Users className="w-6 h-6 text-primary" />
+              </div>
+              <p className="text-[14px] font-semibold text-[#1c1410] mb-1">No contacts yet</p>
+              <p className="text-[12px] text-[#7a6b5c]">No one in this status yet.</p>
+            </div>
+          ) : (
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-[12px] font-semibold text-[#7a6b5c]">
-                  Add Workflows <span className="text-[#b09e8d] font-normal">(optional)</span>
-                </label>
-                {selected.length > 0 && (
-                  <span className="text-[11px] text-primary font-semibold">{selected.length} selected</span>
-                )}
-              </div>
-              <div className="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100 max-h-48 overflow-y-auto">
-                {workflows.map((wf) => (
-                  <label key={wf.id} className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-[#faf8f6] transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={selected.includes(wf.id)}
-                      onChange={() => toggleWF(wf.id)}
-                      className="w-4 h-4 accent-primary shrink-0"
-                    />
-                    <div className="min-w-0">
-                      <p className="text-[13px] font-semibold text-[#1c1410] truncate">{wf.name}</p>
-                      <p className="text-[11px] text-[#7a6b5c] truncate">{wf.description}</p>
+              {filtered.map((log, idx) => {
+                const name       = (log.lead_name && log.lead_name.trim()) ? log.lead_name : '(deleted lead)';
+                const phone      = log.lead_phone ?? '—';
+                const enrolledAt = log.enrolled_at ? format(new Date(log.enrolled_at), 'dd MMM yyyy, h:mm a') : '';
+                const initial    = (name as string).charAt(0)?.toUpperCase() || '?';
+                const ci         = idx % bgPalette.length;
+                const isOpen     = expanded === log.id;
+                const isChecked  = selected.has(log.id);
+                const rStatus    = rowStatus[log.id];
+
+                const stepStatusMap: Record<string, { status: string; message: string }> = {};
+                (log.steps ?? []).forEach((s: any) => {
+                  if (s.node_id) stepStatusMap[s.node_id] = { status: s.status, message: s.message ?? '' };
+                });
+
+                return (
+                  <div
+                    key={log.id}
+                    className={cn(
+                      'border-b border-black/5 last:border-0 transition-colors',
+                      isChecked && 'bg-primary/[0.03]',
+                      rStatus === 'done'    && 'bg-emerald-50/60',
+                      rStatus === 'error'   && 'bg-red-50/60',
+                      rStatus === 'running' && 'bg-blue-50/40',
+                    )}
+                  >
+                    <div className="flex items-center gap-3 px-4 py-3.5 hover:bg-[#faf8f6] transition-colors">
+                      {/* Checkbox */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleOne(log.id); }}
+                        className={cn(
+                          'rounded border-2 flex items-center justify-center shrink-0 transition-all',
+                          isChecked
+                            ? 'bg-primary border-primary'
+                            : 'border-gray-300 bg-white hover:border-primary/60'
+                        )}
+                        style={{ width: 18, height: 18 }}
+                      >
+                        {isChecked && (
+                          <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 10" stroke="currentColor" strokeWidth={2.5}>
+                            <path d="M1.5 5l2.5 2.5 4.5-4.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        )}
+                      </button>
+
+                      {/* Avatar */}
+                      <div
+                        className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-[12px] font-bold"
+                        style={{ background: bgPalette[ci], color: fgPalette[ci] }}
+                      >
+                        {rStatus === 'running'
+                          ? <Loader2 className="w-4 h-4 animate-spin" style={{ color: fgPalette[ci] }} />
+                          : rStatus === 'done'
+                            ? <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            : rStatus === 'error'
+                              ? <X className="w-4 h-4 text-red-500" />
+                              : initial}
+                      </div>
+
+                      {/* Info */}
+                      <div
+                        className="flex-1 min-w-0 cursor-pointer"
+                        onClick={() => setExpanded(isOpen ? null : log.id)}
+                      >
+                        <p className="text-[13px] font-semibold text-[#1c1410] truncate">{name}</p>
+                        <p className="text-[11px] text-[#7a6b5c]">{phone}{enrolledAt ? ` · ${enrolledAt}` : ''}</p>
+                      </div>
+
+                      {/* Right side */}
+                      <div
+                        className="flex items-center gap-2 shrink-0 cursor-pointer"
+                        onClick={() => setExpanded(isOpen ? null : log.id)}
+                      >
+                        {filterStatus === 'all' && execStatusBadge(log)}
+                        {isOpen
+                          ? <ChevronUp className="w-3.5 h-3.5 text-[#b09e8d]" />
+                          : <ChevronDown className="w-3.5 h-3.5 text-[#b09e8d]" />}
+                      </div>
                     </div>
-                    <span className={cn('ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0', wf.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500')}>
-                      {wf.status}
-                    </span>
-                  </label>
-                ))}
-              </div>
+
+                    {/* Steps expanded */}
+                    {isOpen && (
+                      <div className="px-5 pb-3 pt-1 space-y-2 bg-[#faf8f6]">
+                        {/* Execution-level error — shown when the whole run crashed */}
+                        {log.error && (
+                          <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-1">
+                            <X className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
+                            <p className="text-[11px] text-red-700 font-mono break-all select-text">{log.error}</p>
+                          </div>
+                        )}
+                        {actionNodes.length === 0 ? (
+                          <p className="text-[11px] text-[#b09e8d] py-2">No steps configured.</p>
+                        ) : (
+                          actionNodes.map((node, ni) => {
+                            const step     = stepStatusMap[node.id];
+                            const isDone   = step?.status === 'completed';
+                            const isFailed = step?.status === 'failed';
+                            const isSkip   = step?.status === 'skipped';
+                            return (
+                              <div key={node.id} className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-5 h-5 rounded-full bg-gray-100 text-gray-400 text-[9px] flex items-center justify-center font-bold shrink-0">
+                                    {ni + 1}
+                                  </span>
+                                  <div className="min-w-0">
+                                    <span className="text-[12px] text-[#1c1410] truncate block">{node.label}</span>
+                                    {(isFailed || isSkip) && step?.message && (
+                                      <span className={`text-[10px] break-all block select-text font-mono ${isFailed ? 'text-red-600' : 'text-[#b09e8d]'}`}>
+                                        {step.message}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                {isDone ? (
+                                  <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full shrink-0">
+                                    <CheckCircle2 className="w-3 h-3" /> Done
+                                  </span>
+                                ) : isFailed ? (
+                                  <span className="flex items-center gap-1 text-[10px] font-semibold text-red-500 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full shrink-0">
+                                    <X className="w-3 h-3" /> Failed
+                                  </span>
+                                ) : isSkip ? (
+                                  <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full shrink-0">
+                                    <SkipForward className="w-3 h-3" /> Skipped
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full shrink-0">
+                                    Pending
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-black/5 shrink-0">
-          <button
-            onClick={onClose}
-            className="px-5 py-2 rounded-xl text-[13px] font-semibold text-[#7a6b5c] hover:bg-gray-100 transition-colors border border-gray-200"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleConfirm}
-            className="px-6 py-2 rounded-xl text-[13px] font-bold text-white transition-all hover:-translate-y-0.5"
-            style={{ ...gradientStyle, boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}
-          >
-            CONFIRM
-          </button>
-        </div>
+        {/* ── Re-execute footer — shown when contacts are selected ── */}
+        {selectedCount > 0 && (
+          <div className="shrink-0 px-4 py-3 border-t border-black/5 bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
+            <div className="flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-bold text-[#1c1410]">
+                  {selectedCount} contact{selectedCount !== 1 ? 's' : ''} selected
+                </p>
+                <p className="text-[11px] text-[#7a6b5c]">Workflow will restart from step 1</p>
+              </div>
+              <button
+                onClick={() => setSelected(new Set())}
+                className="px-3 py-2 rounded-xl text-[12px] font-semibold text-[#7a6b5c] hover:bg-gray-100 transition-colors shrink-0"
+              >
+                Clear
+              </button>
+              <button
+                onClick={handleRerun}
+                disabled={rerunning}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-bold text-white transition-all disabled:opacity-60 shrink-0"
+                style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)', boxShadow: '0 3px 10px rgba(194,65,12,0.3)' }}
+              >
+                {rerunning
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Running…</>
+                  : <><Play className="w-3.5 h-3.5" /> Re-execute</>}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-// ── Toggle Switch ──────────────────────────────────────────────────────────────
+// ── Toggle ─────────────────────────────────────────────────────────────────────
 function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
-    <button
-      onClick={onChange}
-      className={cn('relative w-10 h-5.5 rounded-full transition-all duration-200 shrink-0', checked ? 'bg-emerald-400' : 'bg-gray-200')}
-      style={{ height: '22px' }}
+    <button onClick={(e) => { e.stopPropagation(); onChange(); }}
+      className={cn('relative w-9 h-5 rounded-full transition-all duration-200 shrink-0', checked ? 'bg-emerald-400' : 'bg-gray-200')}
     >
-      <span
-        className={cn('absolute top-0.5 w-4.5 h-4.5 rounded-full bg-white shadow transition-all duration-200', checked ? 'left-[calc(100%-20px)]' : 'left-0.5')}
-        style={{ width: '18px', height: '18px' }}
-      />
+      <span className={cn('absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all duration-200', checked ? 'left-[18px]' : 'left-0.5')} />
     </button>
   );
 }
 
-// ── Main Page ──────────────────────────────────────────────────────────────────
-export default function AutomationPage() {
-  const navigate = useNavigate();
-
-  // ── Zustand store (persists across navigation) ──
-  const { wfRecords: storedWFs, wfFolders: folders, addWfRecord, updateWfRecord, deleteWfRecord, addWfFolder, deleteWfFolder, moveWfToFolder } = useCrmStore();
-
-  // Merge mock initial workflows with any user-created ones from the store
-  const workflows = useMemo(() => {
-    const storeIds = new Set(storedWFs.map((w) => w.id));
-    const base = initialWorkflows.filter((w) => !storeIds.has(w.id));
-    return [...storedWFs, ...base];
-  }, [storedWFs]);
-
-  const [expandedFolders, setExpandedFolders] = useState<string[]>([]);
-  const [showFolderModal, setShowFolderModal] = useState(false);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [logsWorkflow, setLogsWorkflow] = useState<WFRecord | null>(null);
-  const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string[]>([]);
-
-  const filtered = useMemo(() => {
-    let list = [...workflows];
-    if (search) list = list.filter((w) => w.name.toLowerCase().includes(search.toLowerCase()) || w.description.toLowerCase().includes(search.toLowerCase()));
-    if (statusFilter === 'Active') list = list.filter((w) => w.status === 'active');
-    if (statusFilter === 'Inactive') list = list.filter((w) => w.status === 'inactive');
-    return list;
-  }, [workflows, search, statusFilter]);
-
-  const stats = useMemo(() => ({
-    total: workflows.length,
-    active: workflows.filter((w) => w.status === 'active').length,
-    inactive: workflows.filter((w) => w.status === 'inactive').length,
-    contacts: workflows.reduce((s, w) => s + w.totalContacts, 0),
-  }), [workflows]);
-
-  const toggleStatus = (id: string) => {
-    const wf = workflows.find((w) => w.id === id);
-    if (!wf) return;
-    const newStatus = wf.status === 'active' ? 'inactive' as const : 'active' as const;
-    if (storedWFs.find((w) => w.id === id)) {
-      updateWfRecord(id, { status: newStatus });
-    } else {
-      addWfRecord({ ...wf, status: newStatus });
-    }
-  };
-
-  const deleteWorkflow = (id: string) => {
-    const wf = workflows.find((w) => w.id === id);
-    deleteWfRecord(id);
-    toast.success(`"${wf?.name}" deleted`);
-    setOpenMenu(null);
-  };
-
-  const duplicateWorkflow = (wf: WFRecord) => {
-    const copy: WFRecord = { ...wf, id: `wf-${Date.now()}`, name: `${wf.name} (Copy)`, totalContacts: 0, completed: 0, completedNodes: 0, status: 'inactive' };
-    addWfRecord(copy);
-    toast.success('Workflow duplicated');
-    setOpenMenu(null);
-  };
-
-  const setWorkflowsLocal = (updater: (prev: WFRecord[]) => WFRecord[]) => {
-    // Used for inline checkbox changes (allowReentry) — update store
-    const updated = updater(workflows);
-    updated.forEach((w) => {
-      const orig = workflows.find((o) => o.id === w.id);
-      if (orig && JSON.stringify(orig) !== JSON.stringify(w)) {
-        updateWfRecord(w.id, w);
-        if (!storedWFs.find((s) => s.id === w.id)) addWfRecord(w);
-      }
-    });
-  };
-
-  const toggleSelect = (id: string) => setSelected((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
-  const toggleSelectAll = () => setSelected(selected.length === filtered.length ? [] : filtered.map((w) => w.id));
-
-  const createFolder = (name: string, workflowIds: string[]) => {
-    const newFolder: WFFolder = { id: `folder-${Date.now()}`, name, workflowIds };
-    addWfFolder(newFolder);
-    setExpandedFolders((prev) => [...prev, newFolder.id]);
-    setShowFolderModal(false);
-    toast.success(`Folder "${name}" created`);
-  };
-
-  const toggleFolder = (id: string) =>
-    setExpandedFolders((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
-
-  const deleteFolder = (id: string) => {
-    const folder = folders.find((f) => f.id === id);
-    deleteWfFolder(id);
-    toast.success(`Folder "${folder?.name}" deleted`);
-  };
-
-  // Workflows NOT inside any folder
-  const folderWorkflowIds = new Set(folders.flatMap((f) => f.workflowIds));
-  const standaloneFiltered = filtered.filter((w) => !folderWorkflowIds.has(w.id));
-
-  const handleNew = () => {
-    const id = `wf-${Date.now()}`;
-    const newWF: WFRecord = {
-      id, name: 'Untitled Automation', description: 'New workflow',
-      allowReentry: false, totalContacts: 0, completed: 0, completedNodes: 0,
-      lastUpdated: 'just now', status: 'inactive',
-      nodes: [{ id: 'n1', type: 'trigger', actionType: '', label: 'Select Trigger', config: {} }],
-    };
-    addWfRecord(newWF);
-    navigate(`/automation/editor/${id}`, { state: { workflow: newWF } });
-  };
-
-  const gradientStyle = { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' };
-  const shadowStyle = { ...gradientStyle, boxShadow: '0 4px 14px rgba(234,88,12,0.3)' };
-
-  const statCards = [
-    { label: 'Total Workflows', value: stats.total, icon: Zap, accent: false },
-    { label: 'Active', value: stats.active, icon: Activity, accent: false },
-    { label: 'Inactive', value: stats.inactive, icon: ToggleLeft, accent: false },
-    { label: 'Contacts Enrolled', value: stats.contacts, icon: Users, accent: true },
-  ];
-
-  return (
-    <div className="flex flex-col flex-1 animate-fade-in">
-
-      {/* ── Action ── */}
-      <div className="flex justify-end pb-3">
-        <button
-          onClick={handleNew}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white transition-all hover:-translate-y-0.5 shrink-0"
-          style={shadowStyle}
-        >
-          <Plus className="w-4 h-4" /> Create Workflow
-        </button>
-      </div>
-
-      {/* ── Toolbar ── */}
-      <div className="flex items-center gap-3 pb-5 flex-wrap">
-        {/* Search */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#b09e8d]" />
-          <input
-            className="w-full pl-9 pr-4 py-2.5 text-[13px] bg-white border border-black/10 rounded-xl outline-none focus:border-primary/40 placeholder:text-gray-400 transition-all"
-            style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
-            placeholder="Search workflows..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-
-        {/* Status pills */}
-        <div className="flex items-center bg-white rounded-xl border border-black/10 p-1 gap-0.5" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-          {(['All', 'Active', 'Inactive'] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className={cn('px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors',
-                statusFilter === s ? 'bg-primary text-white shadow-sm' : 'text-[#7a6b5c] hover:text-[#1c1410]'
-              )}
-            >
-              {s === 'Inactive' ? 'Paused' : s}
-              <span className={cn('ml-1.5 text-[10px]', statusFilter === s ? 'opacity-75' : 'opacity-50')}>
-                {s === 'All' ? workflows.length : s === 'Active' ? stats.active : stats.inactive}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Workflow grid ── */}
-      {filtered.length === 0 ? (
-        /* Empty state */
-        <div className="flex-1 flex flex-col items-center justify-center py-20 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
-            <Zap className="w-7 h-7 text-primary" />
-          </div>
-          <h3 className="text-[16px] font-bold text-[#1c1410] mb-1.5">
-            {search ? 'No workflows match your search' : 'No workflows yet'}
-          </h3>
-          <p className="text-[13px] text-[#7a6b5c] mb-5 max-w-sm">
-            {search ? 'Try a different search or clear the filters.' : 'Create your first workflow to automate actions on leads.'}
-          </p>
-          {!search && (
-            <button onClick={handleNew} className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-white" style={shadowStyle}>
-              <Plus className="w-4 h-4" /> Create your first workflow
-            </button>
-          )}
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-black/[0.06] overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-          {filtered.map((wf) => (
-            <WorkflowCard
-              key={wf.id}
-              wf={wf}
-              onOpen={() => navigate(`/automation/editor/${wf.id}`, { state: { workflow: wf } })}
-              onToggle={() => toggleStatus(wf.id)}
-              onDuplicate={() => duplicateWorkflow(wf)}
-              onDelete={() => { if (window.confirm(`Delete "${wf.name}"? This cannot be undone.`)) deleteWorkflow(wf.id); }}
-              onLogs={() => setLogsWorkflow(wf)}
-              menuOpen={openMenu === wf.id}
-              onToggleMenu={() => setOpenMenu(openMenu === wf.id ? null : wf.id)}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* ── Logs Modal ── */}
-      {logsWorkflow && <LogsModal workflow={logsWorkflow} onClose={() => setLogsWorkflow(null)} />}
-    </div>
-  );
-}
-
-// ─── Workflow Row (simple one-liner) ──────────────────────────────────────────
-function WorkflowCard({ wf, onOpen, onToggle, onDuplicate, onDelete, onLogs, menuOpen, onToggleMenu }: {
-  wf: WFRecord;
-  onOpen: () => void;
-  onToggle: () => void;
-  onDuplicate: () => void;
-  onDelete: () => void;
-  onLogs: () => void;
-  menuOpen: boolean;
-  onToggleMenu: () => void;
+// ── Workflow Row ───────────────────────────────────────────────────────────────
+function WorkflowRow({ wf, onOpen, onToggle, onDuplicate, onDelete, menuOpen, onToggleMenu, onContactPanel, onAnalytics, onRetry, onRetryErrors, onToggleReentry, selected, onSelect }: {
+  wf: WFRecord; onOpen: () => void; onToggle: () => void; onDuplicate: () => void;
+  onDelete: () => void; menuOpen: boolean; onToggleMenu: () => void;
+  onContactPanel: (status: SidebarFilter) => void;
+  onAnalytics: () => void;
+  onRetry: () => void;
+  onRetryErrors: () => void;
+  onToggleReentry: () => void;
+  selected: boolean;
+  onSelect: () => void;
 }) {
+  const canManageAutomation = usePermission('automation:manage');
   const stop = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); };
+
+  const triggerNode = wf.nodes.find((n) => n.type === 'trigger');
+  const triggerDesc = triggerNode?.actionType
+    ? triggerNode.actionType === 'lead_created' ? 'Trigger will fire when a new lead is created'
+    : triggerNode.actionType === 'meta_form'    ? 'Trigger will fire when selected facebook form is submitted'
+    : triggerNode.actionType === 'appointment_booked' ? 'When an appointment is booked automation will trigger'
+    : triggerNode.actionType === 'pipeline_stage_change' ? 'When a contact is added to selected pipeline automation will trigger'
+    : triggerNode.label && triggerNode.label !== 'Select Trigger' ? triggerNode.label
+    : 'No trigger configured'
+    : 'No trigger configured';
 
   return (
     <div
       onClick={onOpen}
-      className="group flex items-center gap-3 px-4 py-3 bg-white border-b border-black/[0.04] hover:bg-[#faf8f6] cursor-pointer transition-colors"
+      className={cn(
+        'group flex items-center border-b border-black/[0.04] hover:bg-[#faf8f6] cursor-pointer transition-colors',
+        selected && 'bg-orange-50/40'
+      )}
     >
-      {/* Status dot */}
-      <div className={cn('w-2 h-2 rounded-full shrink-0', wf.status === 'active' ? 'bg-green-500' : 'bg-gray-300')} />
+      {/* Row selection checkbox */}
+      <div className="w-10 flex items-center justify-center shrink-0 py-4" onClick={(e) => e.stopPropagation()}>
+        <button
+          onClick={onSelect}
+          className={cn(
+            'w-4 h-4 rounded border-2 flex items-center justify-center transition-all',
+            selected ? 'bg-primary border-primary' : 'border-gray-300 bg-white hover:border-primary/60'
+          )}
+        >
+          {selected && (
+            <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 10" stroke="currentColor" strokeWidth={2.5}>
+              <path d="M1.5 5l2.5 2.5 4.5-4.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          )}
+        </button>
+      </div>
 
-      {/* Name */}
-      <p className="font-semibold text-[14px] text-[#1c1410] flex-1 min-w-0 truncate">{wf.name}</p>
+      {/* Automation Name */}
+      <div className="flex-1 min-w-0 py-4 pr-4">
+        <div className="flex items-center gap-2">
+          <p className="font-semibold text-[13px] text-[#1c1410] truncate">{wf.name}</p>
+          {wf.status === 'inactive' && (
+            <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200 leading-none">
+              Draft
+            </span>
+          )}
+          {wf.completedWithErrors > 0 && (
+            <span className="shrink-0 flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200 leading-none">
+              <AlertTriangle className="w-2.5 h-2.5" /> {wf.completedWithErrors} errors
+            </span>
+          )}
+        </div>
+        <p className="text-[11px] text-[#7a6b5c] mt-0.5 truncate">
+          {wf.status === 'inactive'
+            ? 'Not published — toggle to activate'
+            : triggerDesc}
+        </p>
+      </div>
 
-      {/* Enrolled count */}
-      <span className="text-[12px] text-[#7a6b5c] shrink-0 hidden sm:inline">
-        <span className="font-semibold text-[#1c1410]">{wf.totalContacts}</span> enrolled
-      </span>
+      {/* Allow Re-entry checkbox */}
+      <div className="w-32 flex items-center justify-center shrink-0 py-4" onClick={(e) => e.stopPropagation()}>
+        <button
+          onClick={onToggleReentry}
+          title={wf.allowReentry ? 'Re-entry allowed — click to disable' : 'Re-entry blocked — click to allow'}
+          className={cn(
+            'w-4 h-4 rounded border-2 flex items-center justify-center transition-all',
+            wf.allowReentry ? 'bg-primary border-primary' : 'border-gray-300 bg-white hover:border-primary/60'
+          )}
+        >
+          {wf.allowReentry && (
+            <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 10" stroke="currentColor" strokeWidth={2.5}>
+              <path d="M1.5 5l2.5 2.5 4.5-4.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          )}
+        </button>
+      </div>
+
+      {/* Done */}
+      <div className="w-20 shrink-0 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+        <button onClick={() => onContactPanel('completed')} className="w-full text-center hover:opacity-70 transition-opacity">
+          <p className="text-[14px] font-bold text-[#1c1410]">{wf.completed}</p>
+          <p className="text-[11px] text-[#7a6b5c]">Done</p>
+        </button>
+      </div>
+
+      {/* Errors */}
+      <div className="w-20 shrink-0 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+        <button onClick={() => onContactPanel('completed_with_errors')} className="w-full text-center hover:opacity-70 transition-opacity">
+          <p className={cn('text-[14px] font-bold', wf.completedWithErrors > 0 ? 'text-amber-500' : 'text-[#1c1410]')}>
+            {wf.completedWithErrors}
+          </p>
+          <p className="text-[11px] text-[#7a6b5c]">Errors</p>
+        </button>
+      </div>
+
+      {/* Skipped */}
+      <div className="w-20 shrink-0 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+        <button onClick={() => onContactPanel('skipped')} className="w-full text-center hover:opacity-70 transition-opacity">
+          <p className="text-[14px] font-bold text-[#1c1410]">{wf.skipped}</p>
+          <p className="text-[11px] text-[#7a6b5c]">Skipped</p>
+        </button>
+      </div>
+
+      {/* Contacts */}
+      <div className="w-24 shrink-0 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+        <button onClick={() => onContactPanel('all')} className="w-full text-center hover:opacity-70 transition-opacity">
+          <p className="text-[14px] font-bold text-[#1c1410]">{wf.totalContacts}</p>
+          <p className="text-[11px] text-[#7a6b5c]">Contacts</p>
+        </button>
+      </div>
+
+      {/* Failed */}
+      <div className="w-20 shrink-0 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+        <button onClick={() => onContactPanel('failed')} className="w-full text-center hover:opacity-70 transition-opacity">
+          <p className="text-[14px] font-bold text-[#1c1410]">{wf.failed}</p>
+          <p className="text-[11px] text-[#7a6b5c]">Failed</p>
+        </button>
+      </div>
 
       {/* Status toggle */}
-      <button
-        onClick={stop(onToggle)}
-        title={wf.status === 'active' ? 'Pause' : 'Activate'}
-        className={cn(
-          'relative w-9 h-5 rounded-full transition-colors shrink-0',
-          wf.status === 'active' ? 'bg-primary' : 'bg-gray-200'
-        )}
-      >
-        <div className={cn('absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform',
-          wf.status === 'active' ? 'translate-x-[18px]' : 'translate-x-0.5'
-        )} />
-      </button>
+      <div className="w-20 flex items-center justify-center shrink-0 py-4" onClick={(e) => e.stopPropagation()}>
+        <Toggle checked={wf.status === 'active'} onChange={onToggle} />
+      </div>
 
-      {/* More menu */}
-      <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+      {/* 3-dot menu */}
+      <div className="w-10 relative shrink-0 flex items-center justify-center py-4" onClick={(e) => e.stopPropagation()}>
         <button
           onClick={stop(onToggleMenu)}
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-[#7a6b5c] hover:bg-white hover:text-primary transition-colors"
-          title="More"
+          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#7a6b5c] hover:bg-white hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
         >
           <MoreVertical className="w-4 h-4" />
         </button>
@@ -573,23 +619,438 @@ function WorkflowCard({ wf, onOpen, onToggle, onDuplicate, onDelete, onLogs, men
           <>
             <div className="fixed inset-0 z-30" onClick={stop(onToggleMenu)} />
             <div className="absolute right-0 top-9 z-40 w-44 bg-white rounded-xl border border-black/5 shadow-xl py-1 overflow-hidden">
-              <button onClick={stop(onOpen)} className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors text-left">
-                <Pencil className="w-3.5 h-3.5 text-[#7a6b5c]" /> Edit
+              {canManageAutomation && (
+                <button onClick={stop(onOpen)} className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors text-left">
+                  <Pencil className="w-3.5 h-3.5 text-[#7a6b5c]" /> Edit
+                </button>
+              )}
+              <button onClick={stop(onAnalytics)} className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors text-left">
+                <TrendingUp className="w-3.5 h-3.5 text-[#7a6b5c]" /> Analytics
               </button>
-              <button onClick={stop(onLogs)} className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors text-left">
-                <Activity className="w-3.5 h-3.5 text-[#7a6b5c]" /> Execution Logs
-              </button>
-              <button onClick={stop(onDuplicate)} className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors text-left">
-                <Copy className="w-3.5 h-3.5 text-[#7a6b5c]" /> Duplicate
-              </button>
-              <div className="border-t border-black/5 my-1" />
-              <button onClick={stop(onDelete)} className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-red-500 hover:bg-red-50 transition-colors text-left">
-                <Trash2 className="w-3.5 h-3.5" /> Delete
-              </button>
+              {canManageAutomation && (
+                <button onClick={stop(onDuplicate)} className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors text-left">
+                  <Copy className="w-3.5 h-3.5 text-[#7a6b5c]" /> Duplicate
+                </button>
+              )}
+              {canManageAutomation && (
+                <button onClick={stop(onRetry)} className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#c2410c] hover:bg-orange-50 transition-colors text-left">
+                  <RefreshCw className="w-3.5 h-3.5" /> Retry skipped
+                </button>
+              )}
+              {canManageAutomation && wf.completedWithErrors > 0 && (
+                <button onClick={stop(onRetryErrors)} className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-amber-600 hover:bg-amber-50 transition-colors text-left">
+                  <AlertTriangle className="w-3.5 h-3.5" /> Retry {wf.completedWithErrors} error{wf.completedWithErrors !== 1 ? 's' : ''}
+                </button>
+              )}
+              {canManageAutomation && (
+                <>
+                  <div className="border-t border-black/5 my-1" />
+                  <button onClick={stop(onDelete)} className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-red-500 hover:bg-red-50 transition-colors text-left">
+                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                  </button>
+                </>
+              )}
             </div>
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Main Page ──────────────────────────────────────────────────────────────────
+export default function AutomationPage() {
+  const navigate = useNavigate();
+  const { wfFolders: storeFolders } = useCrmStore();
+  const canManageAutomation = usePermission('automation:manage');
+
+  const [workflows, setWorkflows] = useState<WFRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [noTriggerPopup, setNoTriggerPopup] = useState(false);
+  const [contactPanel, setContactPanel] = useState<{ wf: WFRecord; status: SidebarFilter } | null>(null);
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+
+  const fetchWorkflows = () => {
+    api.get<any[]>('/api/workflows')
+      .then((rows) => {
+        const mapped: WFRecord[] = (rows ?? []).map((r) => {
+          const total               = r.total_contacts        ?? 0;
+          const completed           = r.completed             ?? 0;
+          const completedWithErrors = r.completed_with_errors ?? 0;
+          const failed              = r.failed                ?? 0;
+          const skipped             = r.skipped               ?? 0;
+          return {
+            id: r.id,
+            name: r.name,
+            description: r.description ?? '',
+            allowReentry: r.allow_reentry ?? false,
+            totalContacts: total,
+            completed,
+            completedWithErrors,
+            failed,
+            skipped,
+            pending: Math.max(0, total - completed - completedWithErrors - failed),
+            completedNodes: r.nodes?.filter((n: any) => n.type !== 'trigger').length ?? 0,
+            lastUpdated: r.updated_at ? format(new Date(r.updated_at), 'dd MMM') : '—',
+            status: r.status as 'active' | 'inactive',
+            nodes: r.nodes ?? [],
+          };
+        });
+        setWorkflows(mapped);
+      })
+      .catch(() => null)
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { fetchWorkflows(); }, []);
+
+  const filtered = useMemo(() => {
+    let list = [...workflows];
+    if (search) list = list.filter((w) => w.name.toLowerCase().includes(search.toLowerCase()) || w.description.toLowerCase().includes(search.toLowerCase()));
+    if (statusFilter === 'Active') list = list.filter((w) => w.status === 'active');
+    if (statusFilter === 'Paused') list = list.filter((w) => w.status === 'inactive');
+    return list;
+  }, [workflows, search, statusFilter]);
+
+  const stats = useMemo(() => ({
+    total: workflows.length,
+    active: workflows.filter((w) => w.status === 'active').length,
+    paused: workflows.filter((w) => w.status === 'inactive').length,
+    contacts: workflows.reduce((s, w) => s + w.totalContacts, 0),
+    completed: workflows.reduce((s, w) => s + w.completed, 0),
+  }), [workflows]);
+
+  const FORM_TRIGGERS = ['opt_in_form', 'meta_form', 'product_enquired'];
+
+  const toggleStatus = async (id: string) => {
+    const wf = workflows.find((w) => w.id === id);
+    if (!wf) return;
+    const newStatus = wf.status === 'active' ? 'inactive' : 'active';
+    if (newStatus === 'active') {
+      const triggerNode = wf.nodes.find((n) => n.type === 'trigger' && n.actionType);
+      if (!triggerNode) { setNoTriggerPopup(true); return; }
+      // Form triggers require at least one form — blank = must stay inactive
+      if (FORM_TRIGGERS.includes(triggerNode.actionType)) {
+        const forms = triggerNode.config?.forms as string[] | undefined;
+        if (!forms || forms.length === 0) {
+          toast.error('Select at least one form before activating this workflow.');
+          return;
+        }
+      }
+    }
+    setWorkflows((prev) => prev.map((w) => w.id === id ? { ...w, status: newStatus as 'active' | 'inactive' } : w));
+    await api.patch(`/api/workflows/${id}`, { status: newStatus }).catch(() => null);
+    toast.success(newStatus === 'active' ? 'Workflow activated' : 'Workflow paused');
+  };
+
+  const deleteWorkflow = async (id: string) => {
+    const wf = workflows.find((w) => w.id === id);
+    try {
+      await api.delete(`/api/workflows/${id}`);
+      setWorkflows((prev) => prev.filter((w) => w.id !== id));
+      toast.success(`"${wf?.name}" deleted`);
+    } catch {
+      toast.error('Failed to delete workflow');
+    }
+    setDeleteConfirmId(null);
+    setOpenMenu(null);
+  };
+
+  const retryErrors = async (wf: WFRecord) => {
+    try {
+      const logs = await api.get<any[]>(`/api/workflows/${wf.id}/logs`);
+      const seen = new Set<string>();
+      const errorLeadIds: string[] = [];
+      for (const log of logs ?? []) {
+        if (log.status === 'completed_with_errors' && log.lead_id && !seen.has(log.lead_id)) {
+          seen.add(log.lead_id);
+          errorLeadIds.push(log.lead_id);
+        }
+      }
+      if (errorLeadIds.length === 0) {
+        toast.info('No error contacts to retry');
+        return;
+      }
+      await api.post(`/api/workflows/${wf.id}/bulk-trigger`, { lead_ids: errorLeadIds, force: true });
+      toast.success(`Retrying ${errorLeadIds.length} contact${errorLeadIds.length !== 1 ? 's' : ''} with errors`);
+      setTimeout(fetchWorkflows, 1500);
+    } catch {
+      toast.error('Failed to retry error contacts');
+    }
+    setOpenMenu(null);
+  };
+
+  const retrySkipped = async (wf: WFRecord) => {
+    try {
+      const logs = await api.get<any[]>(`/api/workflows/${wf.id}/logs`);
+      const seen = new Set<string>();
+      const skippedLeadIds: string[] = [];
+      for (const log of logs ?? []) {
+        if (log.status === 'skipped' && log.lead_id && !seen.has(log.lead_id)) {
+          seen.add(log.lead_id);
+          skippedLeadIds.push(log.lead_id);
+        }
+      }
+      if (skippedLeadIds.length === 0) {
+        toast.info('No skipped contacts to retry');
+        return;
+      }
+      await api.post(`/api/workflows/${wf.id}/bulk-trigger`, { lead_ids: skippedLeadIds, force: true });
+      toast.success(`Retrying ${skippedLeadIds.length} skipped contact${skippedLeadIds.length !== 1 ? 's' : ''}`);
+      setTimeout(fetchWorkflows, 1500);
+    } catch {
+      toast.error('Failed to retry skipped contacts');
+    }
+    setOpenMenu(null);
+  };
+
+  const toggleReentry = async (wf: WFRecord) => {
+    const newVal = !wf.allowReentry;
+    setWorkflows((prev) => prev.map((w) => w.id === wf.id ? { ...w, allowReentry: newVal } : w));
+    await api.patch(`/api/workflows/${wf.id}`, { allow_reentry: newVal }).catch(() => null);
+    toast.success(newVal ? 'Re-entry enabled' : 'Re-entry disabled');
+  };
+
+  const duplicateWorkflow = async (wf: WFRecord) => {
+    try {
+      const created = await api.post<any>('/api/workflows', {
+        name: `${wf.name} (Copy)`, description: wf.description,
+        nodes: wf.nodes, status: 'inactive', allow_reentry: wf.allowReentry,
+      });
+      setWorkflows((prev) => [{
+        ...wf, id: created.id, name: `${wf.name} (Copy)`,
+        totalContacts: 0, completed: 0, completedWithErrors: 0, failed: 0, skipped: 0, pending: 0,
+        status: 'inactive', lastUpdated: 'just now',
+      }, ...prev]);
+      toast.success('Workflow duplicated');
+    } catch { toast.error('Failed to duplicate'); }
+    setOpenMenu(null);
+  };
+
+  const handleNew = async () => {
+    try {
+      const created = await api.post<any>('/api/workflows', {
+        name: 'Untitled Automation', description: '',
+        nodes: [{ id: 'n1', type: 'trigger', actionType: '', label: 'Select Trigger', config: {} }],
+        status: 'inactive', allow_reentry: false,
+      });
+      const newWF: WFRecord = {
+        id: created.id, name: created.name, description: '',
+        allowReentry: false, totalContacts: 0, completed: 0, completedWithErrors: 0, failed: 0, skipped: 0, pending: 0,
+        completedNodes: 0, lastUpdated: 'just now', status: 'inactive',
+        nodes: created.nodes ?? [],
+      };
+      setWorkflows((prev) => [newWF, ...prev]);
+      navigate(`/automation/editor/${created.id}`, { state: { workflow: newWF } });
+    } catch { toast.error('Failed to create workflow'); }
+  };
+
+  const shadowStyle = { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' };
+
+  return (
+    <div className="flex flex-col flex-1 animate-fade-in min-h-0">
+
+      {/* ── Top bar ── */}
+      <div className="flex items-center justify-between pb-4">
+        {/* Filter cards */}
+        <div className="flex items-center gap-3">
+          {/* Total Workflows */}
+          <button
+            onClick={() => setStatusFilter('All')}
+            className={cn(
+              'flex items-center gap-2.5 px-4 py-2.5 rounded-xl border transition-all',
+              statusFilter === 'All'
+                ? 'bg-[#1c1410] border-[#1c1410] text-white shadow-sm'
+                : 'bg-white border-black/[0.07] text-[#1c1410] hover:border-black/20'
+            )}
+          >
+            <Zap className={cn('w-4 h-4', statusFilter === 'All' ? 'text-orange-300' : 'text-primary')} />
+            <div className="text-left">
+              <p className="text-[15px] font-bold leading-tight">{stats.total}</p>
+              <p className={cn('text-[10px]', statusFilter === 'All' ? 'text-white/60' : 'text-[#7a6b5c]')}>Total Workflows</p>
+            </div>
+          </button>
+
+          {/* Active */}
+          <button
+            onClick={() => setStatusFilter(statusFilter === 'Active' ? 'All' : 'Active')}
+            className={cn(
+              'flex items-center gap-2.5 px-4 py-2.5 rounded-xl border transition-all',
+              statusFilter === 'Active'
+                ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm'
+                : 'bg-white border-black/[0.07] text-[#1c1410] hover:border-emerald-200'
+            )}
+          >
+            <ToggleRight className={cn('w-4 h-4', statusFilter === 'Active' ? 'text-white' : 'text-emerald-500')} />
+            <div className="text-left">
+              <p className="text-[15px] font-bold leading-tight">{stats.active}</p>
+              <p className={cn('text-[10px]', statusFilter === 'Active' ? 'text-white/70' : 'text-[#7a6b5c]')}>Active</p>
+            </div>
+          </button>
+
+          {/* Inactive */}
+          <button
+            onClick={() => setStatusFilter(statusFilter === 'Paused' ? 'All' : 'Paused')}
+            className={cn(
+              'flex items-center gap-2.5 px-4 py-2.5 rounded-xl border transition-all',
+              statusFilter === 'Paused'
+                ? 'bg-gray-500 border-gray-500 text-white shadow-sm'
+                : 'bg-white border-black/[0.07] text-[#1c1410] hover:border-gray-300'
+            )}
+          >
+            <ToggleLeft className={cn('w-4 h-4', statusFilter === 'Paused' ? 'text-white' : 'text-gray-400')} />
+            <div className="text-left">
+              <p className="text-[15px] font-bold leading-tight">{stats.paused}</p>
+              <p className={cn('text-[10px]', statusFilter === 'Paused' ? 'text-white/70' : 'text-[#7a6b5c]')}>Inactive</p>
+            </div>
+          </button>
+        </div>
+
+        {canManageAutomation && (
+          <button onClick={handleNew} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white transition-all hover:-translate-y-0.5 shrink-0" style={shadowStyle}>
+            <Plus className="w-4 h-4" /> Create Workflow
+          </button>
+        )}
+      </div>
+
+      {/* ── Toolbar ── */}
+      <div className="flex items-center gap-3 pb-4">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#b09e8d]" />
+          <input
+            className="w-full pl-9 pr-4 h-10 text-[13px] bg-white border border-black/10 rounded-xl outline-none focus:border-primary/40 placeholder:text-[#b09e8d] transition-all"
+            placeholder="Search workflows..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {/* ── Main content ── */}
+      <div className="flex flex-1 min-h-0 rounded-2xl border border-black/[0.06] overflow-hidden bg-white" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+
+        {/* List */}
+        <div className="flex-1 min-w-0 overflow-y-auto">
+          {/* Column header */}
+          <div className="flex items-center border-b border-black/[0.06] bg-[#faf8f6] sticky top-0">
+            {/* Select-all checkbox */}
+            <div className="w-10 flex items-center justify-center shrink-0 py-2.5">
+              <button
+                onClick={() => {
+                  const allIds = filtered.map((w) => w.id);
+                  const allSelected = allIds.length > 0 && allIds.every((id) => selectedRows.has(id));
+                  setSelectedRows(allSelected ? new Set() : new Set(allIds));
+                }}
+                className={cn(
+                  'w-4 h-4 rounded border-2 flex items-center justify-center transition-all',
+                  filtered.length > 0 && filtered.every((w) => selectedRows.has(w.id))
+                    ? 'bg-primary border-primary'
+                    : filtered.some((w) => selectedRows.has(w.id))
+                      ? 'bg-primary/30 border-primary'
+                      : 'border-gray-300 bg-white hover:border-primary/60'
+                )}
+              >
+                {filtered.length > 0 && filtered.some((w) => selectedRows.has(w.id)) && (
+                  <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 10" stroke="currentColor" strokeWidth={2}>
+                    {filtered.every((w) => selectedRows.has(w.id))
+                      ? <path d="M1.5 5l2.5 2.5 4.5-4.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      : <path d="M2 5h6" strokeLinecap="round"/>}
+                  </svg>
+                )}
+              </button>
+            </div>
+            <p className="flex-1 text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] py-2.5">Automation Name</p>
+            <p className="w-32 text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] text-center shrink-0 py-2.5">Allow Re-entry</p>
+            <p className="w-20 text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] text-center shrink-0 py-2.5">Done</p>
+            <p className="w-20 text-[11px] font-bold uppercase tracking-wider text-amber-500 text-center shrink-0 py-2.5">Errors</p>
+            <p className="w-20 text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] text-center shrink-0 py-2.5">Skipped</p>
+            <p className="w-24 text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] text-center shrink-0 py-2.5">Contacts</p>
+            <p className="w-20 text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] text-center shrink-0 py-2.5">Failed</p>
+            <p className="w-20 text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] text-center shrink-0 py-2.5">Status</p>
+            <div className="w-10 shrink-0" />
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="w-5 h-5 text-primary animate-spin" />
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-3">
+                <Zap className="w-6 h-6 text-primary" />
+              </div>
+              <p className="text-[15px] font-bold text-[#1c1410] mb-1">{search ? 'No results' : 'No workflows yet'}</p>
+              <p className="text-[12px] text-[#7a6b5c] mb-4">{search ? 'Try a different search.' : 'Create your first workflow to start automating.'}</p>
+              {!search && canManageAutomation && (
+                <button onClick={handleNew} className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-bold text-white" style={shadowStyle}>
+                  <Plus className="w-4 h-4" /> Create Workflow
+                </button>
+              )}
+            </div>
+          ) : (
+            filtered.map((wf) => (
+              <WorkflowRow
+                key={wf.id} wf={wf}
+                onOpen={() => navigate(`/automation/editor/${wf.id}`, { state: { workflow: wf } })}
+                onToggle={() => toggleStatus(wf.id)}
+                onDuplicate={() => duplicateWorkflow(wf)}
+                onDelete={() => { setOpenMenu(null); setDeleteConfirmId(wf.id); }}
+                menuOpen={openMenu === wf.id}
+                onToggleMenu={() => setOpenMenu(openMenu === wf.id ? null : wf.id)}
+                onContactPanel={(status) => setContactPanel({ wf, status })}
+                onAnalytics={() => navigate(`/automation/analytics/${wf.id}`)}
+                onRetry={() => retrySkipped(wf)}
+                onRetryErrors={() => retryErrors(wf)}
+                onToggleReentry={() => toggleReentry(wf)}
+                selected={selectedRows.has(wf.id)}
+                onSelect={() => setSelectedRows((prev) => { const n = new Set(prev); n.has(wf.id) ? n.delete(wf.id) : n.add(wf.id); return n; })}
+              />
+            ))
+          )}
+        </div>
+      </div>
+
+      {contactPanel && (
+        <ContactSidebar
+          workflow={contactPanel.wf}
+          filterStatus={contactPanel.status}
+          onClose={() => setContactPanel(null)}
+        />
+      )}
+
+      {noTriggerPopup && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4" onClick={() => setNoTriggerPopup(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center mb-4">
+              <span className="text-amber-600 text-lg font-bold">!</span>
+            </div>
+            <h3 className="text-[15px] font-bold text-[#1c1410] mb-2">No Trigger Set</h3>
+            <p className="text-[13px] text-[#7a6b5c] mb-6">A workflow must have a trigger before it can be activated. Open the editor and choose a trigger first.</p>
+            <button
+              onClick={() => setNoTriggerPopup(false)}
+              className="w-full py-2.5 rounded-xl bg-[#c2410c] hover:bg-[#ea580c] text-white text-[13px] font-bold transition-colors"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+      {deleteConfirmId && (() => {
+        const wf = workflows.find((w) => w.id === deleteConfirmId);
+        return (
+          <ConfirmModal
+            title="Delete Workflow?"
+            message={<>Delete <span className="font-semibold text-[#1c1410]">"{wf?.name}"</span>? All execution history will be lost. This cannot be undone.</>}
+            confirmLabel="Yes, Delete"
+            onConfirm={() => deleteWorkflow(deleteConfirmId)}
+            onClose={() => setDeleteConfirmId(null)}
+          />
+        );
+      })()}
     </div>
   );
 }

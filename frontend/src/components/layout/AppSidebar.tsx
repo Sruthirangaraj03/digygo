@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Users, MessageSquare, Zap, Inbox, Settings, Calendar,
-  UserCog, SlidersHorizontal, ChevronDown, ChevronRight, X, Database, ShieldCheck,
+  LayoutDashboard, Users, MessageSquare, Zap, Inbox, Settings,
+  UserCog, SlidersHorizontal, ChevronDown, ChevronRight, X, Database, ShieldCheck, CalendarDays,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useCompanyStore } from '@/store/companyStore';
 import { useAuthStore } from '@/store/authStore';
 
 interface NavItem {
@@ -13,26 +12,44 @@ interface NavItem {
   icon: React.ElementType;
   path?: string;
   children?: { label: string; path: string }[];
+  /** Single key — item visible if this permission is true */
+  permKey?: string;
+  /** Any-of keys — item visible if at least one of these is true */
+  anyOf?: string[];
 }
 
 const navItems: NavItem[] = [
-  { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-  { label: 'Lead Generation', icon: Database, path: '/lead-generation' },
-  { label: 'Lead Management', icon: Users, path: '/lead-management' },
-  { label: 'Automation', icon: Zap, path: '/automation' },
-  { label: 'Inbox', icon: Inbox, path: '/inbox' },
-  { label: 'Fields', icon: SlidersHorizontal, path: '/fields' },
-  { label: 'Calendar', icon: Calendar, path: '/calendar' },
-  { label: 'Staff', icon: UserCog, path: '/staff' },
-  { label: 'Settings', icon: Settings, path: '/settings' },
+  { label: 'Dashboard',       icon: LayoutDashboard,   path: '/dashboard' },
+  {
+    label: 'Lead Generation', icon: Database,           path: '/lead-generation',
+    anyOf: ['meta_forms:read', 'custom_forms:read', 'landing_pages:read', 'whatsapp_setup:read'],
+  },
+  {
+    label: 'Lead Management', icon: Users,              path: '/lead-management',
+    anyOf: ['leads:view_all', 'leads:view_own', 'contacts:read'],
+  },
+  { label: 'Automation',      icon: Zap,               path: '/automation',      permKey: 'automation:view' },
+  { label: 'Calendar',        icon: CalendarDays,       path: '/calendar' },
+  { label: 'Inbox',           icon: Inbox,              path: '/inbox',           permKey: 'inbox:view_all' },
+  { label: 'Fields',          icon: SlidersHorizontal,  path: '/fields',          permKey: 'fields:view' },
+  { label: 'Staff',           icon: UserCog,            path: '/staff',           permKey: 'staff:view' },
+  { label: 'Settings',        icon: Settings,           path: '/settings',        permKey: 'settings:manage' },
 ];
 
 export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const location = useLocation();
   const [expanded, setExpanded] = useState<string[]>(['Lead Generation', 'Automation']);
-  const { logoUrl, companyName } = useCompanyStore();
   const currentUser = useAuthStore((s) => s.currentUser);
+  const permissions = useAuthStore((s) => s.permissions);
+  const permAll = useAuthStore((s) => s.permAll);
   const isSuperAdmin = currentUser?.role === 'super_admin';
+
+  const visibleNavItems = navItems.filter((item) => {
+    if (isSuperAdmin || permAll) return true;
+    if (item.anyOf) return item.anyOf.some((k) => permissions[k] === true);
+    if (item.permKey) return permissions[item.permKey] === true;
+    return true;
+  });
 
   const toggleExpand = (label: string) =>
     setExpanded((prev) => prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label]);
@@ -41,7 +58,7 @@ export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => vo
     if (!path) return false;
     const [p, q] = path.split('?');
     if (q) return location.pathname === p && location.search === `?${q}`;
-    return location.pathname === p && !location.search;
+    return location.pathname === p || location.pathname.startsWith(p + '/');
   };
 
   const isChildActive = (item: NavItem) => item.children?.some((c) => {
@@ -65,19 +82,19 @@ export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => vo
         open ? 'translate-x-0' : '-translate-x-full'
       )}>
 
-        {/* Logo */}
-        <div className="flex items-center gap-2.5 px-4 py-4 mb-1">
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center overflow-hidden shrink-0"
-            style={logoUrl ? { background: 'transparent' } : { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>
-            {logoUrl
-              ? <img src={logoUrl} alt="logo" className="w-full h-full object-contain" />
-              : <Zap className="w-5 h-5 text-white" />
-            }
-          </div>
-          <span className="font-headline text-[16px] font-bold text-[#1c1410] truncate">{companyName}</span>
+        {/* Logo — square image has ~25% whitespace on each side; crop it with overflow+margin */}
+        <div
+          className="relative flex justify-center border-b border-black/5 shrink-0 overflow-hidden"
+          style={{ height: '80px' }}
+        >
+          <img
+            src="/digygo-logo.png"
+            alt="DigyGo"
+            style={{ width: '160px', height: '160px', marginTop: '-36px', flexShrink: 0 }}
+          />
           <button
             onClick={onClose}
-            className="ml-auto md:hidden p-1.5 rounded-lg text-[#7a6b5c] hover:bg-[#f5ede3] transition-colors"
+            className="absolute right-2 top-1/2 -translate-y-1/2 md:hidden p-1.5 rounded-lg text-[#7a6b5c] hover:bg-[#f5ede3] transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -85,7 +102,7 @@ export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => vo
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto px-2.5 space-y-0.5">
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <div key={item.label}>
               {item.children ? (
                 <>

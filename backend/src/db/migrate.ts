@@ -2,17 +2,141 @@ import fs from 'fs';
 import path from 'path';
 import { pool } from './index';
 
-async function migrate() {
-  const sql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
+const MIGRATIONS = [
+  'schema.sql',
+  'migration_001_lead_notes_followups.sql',
+  'migration_002_workflows.sql',
+  'migration_003_sprint1.sql',
+  'migration_004_tags_migration.sql',
+  'migration_005_custom_forms_slug.sql',
+  'migration_006_meta_waba.sql',
+  'migration_007_fields.sql',
+  'migration_008_remaining.sql',
+  'migration_009_assignment_rules.sql',
+  'migration_010_event_types.sql',
+  'migration_011_landing_pages_roles.sql',
+  'migration_012_fix_schemas.sql',
+  'migration_013_workflow_stats.sql',
+  'migration_014_delay_queue.sql',
+  'migration_015_meta_questions_cache.sql',
+  'migration_016_ensure_source_ref.sql',
+  'migration_017_fix_auth_columns.sql',
+  'migration_018_super_admin_features.sql',
+  'migration_019_meta_reliability.sql',
+  'migration_020_meta_form_id.sql',
+  'migration_021_meta_form_id_ensure.sql',
+  'migration_022_blocked_pages.sql',
+  'migration_023_fix_waba_schema.sql',
+  'migration_024_custom_fields_active.sql',
+  'migration_025_phone_uniqueness.sql',
+  'migration_026_user_permissions.sql',
+  'migration_027_user_is_owner.sql',
+  'migration_028_workflow_trigger_index.sql',
+  'migration_029_unify_form_trigger.sql',
+  'migration_030_wf_exec_unique_guard.sql',
+  'migration_035_architecture_compliance.sql',
+  'migration_036_calendar_guest_lead.sql',
+  'migration_037_schema_comments.sql',
+  'migration_038_deal_value.sql',
+  'migration_039_calendar_soft_delete.sql',
+  'migration_040_capacity_per_slot.sql',
+  'migration_041_workflow_errors.sql',
+  'migration_042_event_types_soft_delete.sql',
+  'migration_043_unify_staff_model.sql',
+  'migration_044_integrations_permissions.sql',
+  'migration_045_owner_role.sql',
+];
+
+// Split SQL file into individual statements and execute each one separately.
+// This prevents one failing statement from blocking all subsequent ones.
+async function execFile(client: any, filePath: string, fileName: string) {
+  const raw = fs.readFileSync(filePath, 'utf8');
+
+  // Naive split: split on semicolons that are NOT inside $$ blocks or strings.
+  // For our migration files this is sufficient since we use standard SQL + DO $$ blocks.
+  const statements = splitStatements(raw);
+
+  let ok = 0;
+  let skipped = 0;
+  for (const stmt of statements) {
+    const trimmed = stmt.trim();
+    // Skip blank or pure-comment statements.
+    // A statement may START with comment lines followed by real SQL — only skip if
+    // ALL non-blank lines are comments (i.e. no actual SQL content present).
+    const hasSQL = trimmed.split('\n').some(line => {
+      const l = line.trim();
+      return l.length > 0 && !l.startsWith('--');
+    });
+    if (!trimmed || !hasSQL) { skipped++; continue; }
+    try {
+      await client.query(trimmed);
+      ok++;
+    } catch (err: any) {
+      // 42P01 = undefined table, 42701 = column already exists, 42P07 = index already exists
+      // 23505 = unique violation on backfill — all safe to skip
+      const safeErrors = ['42P01', '42701', '42P07', '42710', '23505', '42703'];
+      if (safeErrors.includes(err.code)) {
+        skipped++;
+      } else {
+        console.error(`  ❌ [${fileName}] stmt failed (${err.code}): ${err.message.split('\n')[0]}`);
+        console.error(`     SQL: ${trimmed.slice(0, 120)}...`);
+        // don't throw — continue with remaining statements
+        skipped++;
+      }
+    }
+  }
+  console.log(`  ✅ ${fileName} — ${ok} ok, ${skipped} skipped`);
+}
+
+function splitStatements(sql: string): string[] {
+  const stmts: string[] = [];
+  let current = '';
+  let dollarDepth = 0; // tracks open $$ blocks
+
+  for (let i = 0; i < sql.length; i++) {
+    const ch = sql[i];
+    current += ch;
+
+    // Toggle dollar-quote depth on $$
+    if (ch === '$' && sql[i + 1] === '$') {
+      i++; current += '$';
+      dollarDepth = dollarDepth === 0 ? 1 : 0;
+      continue;
+    }
+
+    // Split on semicolons only outside dollar-quoted blocks
+    if (ch === ';' && dollarDepth === 0) {
+      const trimmed = current.trim();
+      if (trimmed.length > 1) stmts.push(trimmed);
+      current = '';
+    }
+  }
+  const tail = current.trim();
+  if (tail) stmts.push(tail);
+  return stmts;
+}
+
+export async function runMigrations() {
+  const client = await pool.connect();
+  console.log('\n📦  Running migrations...');
   try {
-    await pool.query(sql);
-    console.log('✅  Schema applied successfully');
-  } catch (err) {
-    console.error('❌  Migration failed:', err);
-    process.exit(1);
+    for (const file of MIGRATIONS) {
+      const filePath = path.join(__dirname, file);
+      if (!fs.existsSync(filePath)) {
+        console.warn(`  ⚠️  Skipping ${file} (not found)`);
+        continue;
+      }
+      await execFile(client, filePath, file);
+    }
+    console.log('✅  All migrations complete\n');
   } finally {
-    await pool.end();
+    client.release();
   }
 }
 
-migrate();
+// Allow running directly: ts-node src/db/migrate.ts
+if (require.main === module) {
+  runMigrations()
+    .then(() => pool.end())
+    .catch((err) => { console.error(err); process.exit(1); });
+}

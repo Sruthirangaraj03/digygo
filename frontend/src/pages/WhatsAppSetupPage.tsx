@@ -1,48 +1,90 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, Check, Eye, EyeOff, RefreshCw, Copy, ExternalLink, AlertCircle, ArrowLeft } from 'lucide-react';
+import {
+  MessageCircle, Check, Eye, EyeOff, RefreshCw, Copy,
+  ExternalLink, AlertCircle, ArrowLeft, X,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { api } from '@/lib/api';
+
+interface WabaStatus {
+  connected: boolean;
+  phoneNumber?: string;
+  phoneNumberId?: string;
+  wabaId?: string;
+  isActive?: boolean;
+}
 
 export default function WhatsAppSetupPage() {
   const navigate = useNavigate();
-  const [phoneNumber, setPhoneNumber] = useState('+91 98765 43210');
-  const [accessToken, setAccessToken] = useState('EAABwzLixnjYBO3zJ2GtM0p...');
-  const [wabaId, setWabaId] = useState('234567891234567');
-  const [phoneNumberId, setPhoneNumberId] = useState('109876543210987');
-  const [webhookSecret, setWebhookSecret] = useState('whsec_8fKdm2xLpQnR3vT5yWzC');
+
+  const [status, setStatus] = useState<WabaStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [accessToken, setAccessToken] = useState('');
+  const [wabaId, setWabaId] = useState('');
+  const [phoneNumberId, setPhoneNumberId] = useState('');
   const [showToken, setShowToken] = useState(false);
-  const [showSecret, setShowSecret] = useState(false);
+
   const [autoAssign, setAutoAssign] = useState(true);
   const [autoReply, setAutoReply] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
 
-  const webhookUrl = 'https://digygocrm.com/webhooks/whatsapp/inbound';
+  const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
+  const webhookUrl = `${baseUrl}/api/webhooks/whatsapp`;
+  const verifyToken = import.meta.env.VITE_META_WEBHOOK_VERIFY_TOKEN ?? '(set META_WEBHOOK_VERIFY_TOKEN in env)';
 
-  const handleSave = () => {
-    if (!phoneNumber || !accessToken || !wabaId || !phoneNumberId) {
-      toast.error('Please fill in all required fields');
+  useEffect(() => {
+    api.get<WabaStatus>('/api/integrations/waba/status')
+      .then((s) => {
+        setStatus(s);
+        if (s.connected) {
+          setPhoneNumber(s.phoneNumber ?? '');
+          setPhoneNumberId(s.phoneNumberId ?? '');
+          setWabaId(s.wabaId ?? '');
+        }
+      })
+      .catch(() => toast.error('Failed to load WhatsApp status'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    if (!phoneNumberId || !wabaId || !accessToken) {
+      toast.error('Phone Number ID, WABA ID and Access Token are required');
       return;
     }
     setSaving(true);
-    setTimeout(() => {
+    try {
+      const result = await api.post<{ success: boolean; phoneNumber: string }>('/api/integrations/waba/setup', {
+        phone_number: phoneNumber || undefined,
+        phone_number_id: phoneNumberId,
+        waba_id: wabaId,
+        access_token: accessToken,
+      });
+      setStatus({
+        connected: true,
+        phoneNumber: result.phoneNumber,
+        phoneNumberId,
+        wabaId,
+        isActive: true,
+      });
+      setAccessToken('');
+      toast.success('WhatsApp Business connected successfully');
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Failed to save configuration');
+    } finally {
       setSaving(false);
-      toast.success('WhatsApp configuration saved');
-    }, 1200);
+    }
   };
 
-  const handleTest = () => {
-    setTesting(true);
-    setTimeout(() => {
-      setTesting(false);
-      toast.success('Test message sent successfully');
-    }, 1800);
-  };
+  if (loading) {
+    return <div className="text-center py-16 text-[13px] text-[#7a6b5c]">Loading…</div>;
+  }
 
   return (
     <div className="space-y-8 max-w-3xl">
@@ -53,52 +95,90 @@ export default function WhatsAppSetupPage() {
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
+        <div>
+          <h2 className="font-headline font-bold text-[#1c1410] text-[16px]">WhatsApp Setup</h2>
+          <p className="text-[12px] text-[#7a6b5c]">Connect your WhatsApp Business API account</p>
+        </div>
       </div>
 
       {/* Status Banner */}
-      <div className="flex items-center gap-3 p-4 rounded-xl bg-green-50 border border-green-200">
-        <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center shrink-0">
-          <MessageCircle className="w-5 h-5 text-green-600" />
+      {status?.connected ? (
+        <div className="flex items-center gap-3 p-4 rounded-xl bg-green-50 border border-green-200">
+          <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+            <MessageCircle className="w-5 h-5 text-green-600" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-green-800">WhatsApp Business Connected</p>
+            <p className="text-xs text-green-700 mt-0.5">{status.phoneNumber || status.phoneNumberId}</p>
+          </div>
+          <Badge className="bg-green-100 text-green-700 border-green-200 shrink-0">
+            <Check className="w-3 h-3 mr-1" /> Active
+          </Badge>
+          <button
+            onClick={() => { setStatus({ connected: false }); setAccessToken(''); }}
+            className="p-1.5 rounded-lg hover:bg-green-100 text-green-600 transition-colors"
+            title="Reconfigure"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
-        <div className="flex-1">
-          <p className="text-sm font-semibold text-green-800">WhatsApp Business Connected</p>
-          <p className="text-xs text-green-700 mt-0.5">{phoneNumber} · 234 leads captured this month</p>
+      ) : (
+        <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
+          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+          <p className="text-sm text-amber-800">WhatsApp is not connected. Fill in your WABA credentials below.</p>
         </div>
-        <Badge className="bg-green-100 text-green-700 border-green-200 shrink-0">
-          <Check className="w-3 h-3 mr-1" /> Active
-        </Badge>
-      </div>
+      )}
 
       {/* WABA Credentials */}
       <div className="bg-white rounded-2xl border border-black/5 card-shadow p-6 space-y-5">
         <div className="flex items-center justify-between">
           <h3 className="font-headline font-bold text-[#1c1410]">WABA Credentials</h3>
-          <Button variant="outline" size="sm" onClick={() => window.open('https://developers.facebook.com/docs/whatsapp', '_blank')}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => window.open('https://developers.facebook.com/docs/whatsapp/getting-started', '_blank')}
+          >
             <ExternalLink className="w-3 h-3 mr-1" /> Meta Docs
           </Button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="text-sm font-medium text-foreground mb-1.5 block">Phone Number *</label>
-            <Input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="+91 98765 43210" />
+            <label className="text-sm font-medium text-foreground mb-1.5 block">Phone Number</label>
+            <Input
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value)}
+              placeholder="+91 98765 43210"
+            />
           </div>
           <div>
             <label className="text-sm font-medium text-foreground mb-1.5 block">WABA ID *</label>
-            <Input value={wabaId} onChange={(e) => setWabaId(e.target.value)} placeholder="WhatsApp Business Account ID" className="font-mono text-sm" />
+            <Input
+              value={wabaId}
+              onChange={(e) => setWabaId(e.target.value)}
+              placeholder="WhatsApp Business Account ID"
+              className="font-mono text-sm"
+            />
           </div>
           <div>
             <label className="text-sm font-medium text-foreground mb-1.5 block">Phone Number ID *</label>
-            <Input value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} placeholder="Phone Number ID from Meta" className="font-mono text-sm" />
+            <Input
+              value={phoneNumberId}
+              onChange={(e) => setPhoneNumberId(e.target.value)}
+              placeholder="Phone Number ID from Meta"
+              className="font-mono text-sm"
+            />
           </div>
           <div>
-            <label className="text-sm font-medium text-foreground mb-1.5 block">Access Token *</label>
+            <label className="text-sm font-medium text-foreground mb-1.5 block">
+              Access Token *{status?.connected && <span className="text-[11px] text-[#b09e8d] ml-1">(leave blank to keep existing)</span>}
+            </label>
             <div className="relative">
               <Input
                 type={showToken ? 'text' : 'password'}
                 value={accessToken}
                 onChange={(e) => setAccessToken(e.target.value)}
-                placeholder="EAABwzLix..."
+                placeholder={status?.connected ? '••••••••' : 'EAABwzLix…'}
                 className="pr-10 font-mono text-sm"
               />
               <button
@@ -113,12 +193,14 @@ export default function WhatsAppSetupPage() {
         </div>
       </div>
 
-      {/* Webhook */}
+      {/* Webhook Configuration */}
       <div className="bg-white rounded-2xl border border-black/5 card-shadow p-6 space-y-4">
         <h3 className="font-headline font-bold text-[#1c1410]">Webhook Configuration</h3>
-        <div className="p-3 bg-muted/50 rounded-lg flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-yellow-600 shrink-0" />
-          <p className="text-[11px] text-[#7a6b5c]">Add this webhook URL in your Meta App Dashboard under WhatsApp → Configuration.</p>
+        <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-[#7a6b5c]">
+            Add these in your Meta App Dashboard under <strong>WhatsApp → Configuration</strong>.
+          </p>
         </div>
         <div>
           <label className="text-sm font-medium text-foreground mb-1.5 block">Inbound Webhook URL</label>
@@ -131,30 +213,11 @@ export default function WhatsAppSetupPage() {
         </div>
         <div>
           <label className="text-sm font-medium text-foreground mb-1.5 block">Webhook Verify Token</label>
-          <div className="relative">
-            <Input
-              type={showSecret ? 'text' : 'password'}
-              value={webhookSecret}
-              onChange={(e) => setWebhookSecret(e.target.value)}
-              placeholder="Verify token"
-              className="pr-20 font-mono text-sm"
-            />
-            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
-              <button
-                type="button"
-                onClick={() => { navigator.clipboard.writeText(webhookSecret); toast.success('Copied'); }}
-                className="p-1 text-muted-foreground hover:text-foreground"
-              >
-                <Copy className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowSecret(!showSecret)}
-                className="p-1 text-muted-foreground hover:text-foreground"
-              >
-                {showSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              </button>
-            </div>
+          <div className="flex gap-2">
+            <Input value={verifyToken} readOnly className="flex-1 font-mono text-sm bg-[#faf8f6]" />
+            <Button variant="outline" onClick={() => { navigator.clipboard.writeText(verifyToken); toast.success('Copied'); }}>
+              <Copy className="w-4 h-4" />
+            </Button>
           </div>
         </div>
       </div>
@@ -164,9 +227,24 @@ export default function WhatsAppSetupPage() {
         <h3 className="font-headline font-bold text-[#1c1410]">Automation Settings</h3>
         <div className="space-y-4">
           {[
-            { label: 'Auto-create Lead', description: 'Create a new lead in CRM for every new WhatsApp contact', value: true, onChange: () => toast.info('This is always enabled') },
-            { label: 'Auto-assign to Agent', description: 'Use assignment rules to route incoming WhatsApp leads', value: autoAssign, onChange: () => { setAutoAssign(!autoAssign); toast.success('Setting updated'); } },
-            { label: 'Auto-reply on First Contact', description: 'Send a welcome message when a new contact messages you', value: autoReply, onChange: () => { setAutoReply(!autoReply); toast.success('Setting updated'); } },
+            {
+              label: 'Auto-create Lead',
+              description: 'Create a new lead in CRM for every new WhatsApp contact',
+              value: true,
+              onChange: () => toast.info('Auto-lead creation is always enabled'),
+            },
+            {
+              label: 'Auto-assign to Agent',
+              description: 'Use assignment rules to route incoming WhatsApp leads',
+              value: autoAssign,
+              onChange: () => { setAutoAssign((v) => !v); toast.success('Setting updated'); },
+            },
+            {
+              label: 'Auto-reply on First Contact',
+              description: 'Send a welcome message when a new contact messages you',
+              value: autoReply,
+              onChange: () => { setAutoReply((v) => !v); toast.success('Setting updated'); },
+            },
           ].map((setting) => (
             <div key={setting.label} className="flex items-center justify-between py-3 border-b border-black/5 last:border-0">
               <div>
@@ -181,11 +259,11 @@ export default function WhatsAppSetupPage() {
 
       {/* Actions */}
       <div className="flex items-center gap-3">
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? <><RefreshCw className="w-4 h-4 mr-1 animate-spin" /> Saving…</> : <><Check className="w-4 h-4 mr-1" /> Save Configuration</>}
-        </Button>
-        <Button variant="outline" onClick={handleTest} disabled={testing}>
-          {testing ? <><RefreshCw className="w-4 h-4 mr-1 animate-spin" /> Testing…</> : 'Send Test Message'}
+        <Button onClick={handleSave} disabled={saving || (status?.connected && !accessToken && !phoneNumberId && !wabaId)}>
+          {saving
+            ? <><RefreshCw className="w-4 h-4 mr-1 animate-spin" /> Saving…</>
+            : <><Check className="w-4 h-4 mr-1" /> {status?.connected ? 'Update Configuration' : 'Save & Connect'}</>
+          }
         </Button>
       </div>
     </div>

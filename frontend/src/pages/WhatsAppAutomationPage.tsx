@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { api } from '@/lib/api';
 import { Plus, Trash2, X, Check, ChevronDown, ChevronRight, MessageCircle, GitBranch, Zap, Play, Pause, ArrowDown, MoreHorizontal, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -410,43 +411,89 @@ function FlowVisual({ flow }: { flow: BotFlow }) {
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────
+function mapFlow(r: any): BotFlow {
+  return {
+    id: r.id,
+    name: r.name,
+    trigger: r.trigger as TriggerType,
+    triggerValue: r.trigger_value ?? undefined,
+    isActive: r.is_active ?? false,
+    nodes: r.nodes ?? [],
+    rootNodeId: r.root_node_id ?? '',
+    executionCount: r.execution_count ?? 0,
+  };
+}
+
 export default function WhatsAppAutomationPage() {
   const navigate = useNavigate();
-  const [flows, setFlows] = useState<BotFlow[]>(defaultFlows);
+  const [flows, setFlows] = useState<BotFlow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editFlow, setEditFlow] = useState<BotFlow | null>(null);
-  const [selectedFlow, setSelectedFlow] = useState<BotFlow | null>(defaultFlows[0]);
+  const [selectedFlow, setSelectedFlow] = useState<BotFlow | null>(null);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
 
-  const handleCreate = (data: Omit<BotFlow, 'id' | 'executionCount'>) => {
-    const newFlow: BotFlow = { ...data, id: `flow-${Date.now()}`, executionCount: 0 };
-    setFlows([...flows, newFlow]);
-    setSelectedFlow(newFlow);
-    setShowModal(false);
-    toast.success(`Flow "${data.name}" created`);
+  useEffect(() => {
+    api.get<any[]>('/api/whatsapp-flows')
+      .then((rows) => {
+        const mapped = (rows ?? []).map(mapFlow);
+        setFlows(mapped);
+        if (mapped.length > 0) setSelectedFlow(mapped[0]);
+      })
+      .catch(() => { setFlows(defaultFlows); setSelectedFlow(defaultFlows[0]); })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleCreate = async (data: Omit<BotFlow, 'id' | 'executionCount'>) => {
+    try {
+      const created = await api.post<any>('/api/whatsapp-flows', {
+        name: data.name, trigger: data.trigger, trigger_value: data.triggerValue,
+        is_active: data.isActive, nodes: data.nodes, root_node_id: data.rootNodeId,
+      });
+      const newFlow = mapFlow(created);
+      setFlows((prev) => [newFlow, ...prev]);
+      setSelectedFlow(newFlow);
+      setShowModal(false);
+      toast.success(`Flow "${data.name}" created`);
+    } catch { toast.error('Failed to create flow'); }
   };
 
-  const handleEdit = (data: Omit<BotFlow, 'id' | 'executionCount'>) => {
+  const handleEdit = async (data: Omit<BotFlow, 'id' | 'executionCount'>) => {
     if (!editFlow) return;
-    const updated = { ...editFlow, ...data };
-    setFlows(flows.map((f) => f.id === editFlow.id ? updated : f));
-    if (selectedFlow?.id === editFlow.id) setSelectedFlow(updated);
-    setEditFlow(null);
-    toast.success('Flow updated');
+    try {
+      await api.patch(`/api/whatsapp-flows/${editFlow.id}`, {
+        name: data.name, trigger: data.trigger, trigger_value: data.triggerValue,
+        is_active: data.isActive, nodes: data.nodes, root_node_id: data.rootNodeId,
+      });
+      const updated = { ...editFlow, ...data };
+      setFlows((prev) => prev.map((f) => f.id === editFlow.id ? updated : f));
+      if (selectedFlow?.id === editFlow.id) setSelectedFlow(updated);
+      setEditFlow(null);
+      toast.success('Flow updated');
+    } catch { toast.error('Failed to update flow'); }
   };
 
-  const toggleFlow = (id: string) => {
-    const updated = flows.map((f) => f.id === id ? { ...f, isActive: !f.isActive } : f);
-    setFlows(updated);
-    if (selectedFlow?.id === id) setSelectedFlow(updated.find((f) => f.id === id)!);
-    toast.success('Flow status updated');
-  };
-
-  const deleteFlow = (id: string) => {
+  const toggleFlow = async (id: string) => {
     const flow = flows.find((f) => f.id === id);
-    setFlows(flows.filter((f) => f.id !== id));
-    if (selectedFlow?.id === id) setSelectedFlow(flows.find((f) => f.id !== id) ?? null);
-    toast.success(`"${flow?.name}" deleted`);
+    if (!flow) return;
+    const newActive = !flow.isActive;
+    try {
+      await api.patch(`/api/whatsapp-flows/${id}`, { is_active: newActive });
+      const updated = flows.map((f) => f.id === id ? { ...f, isActive: newActive } : f);
+      setFlows(updated);
+      if (selectedFlow?.id === id) setSelectedFlow(updated.find((f) => f.id === id)!);
+      toast.success('Flow status updated');
+    } catch { toast.error('Failed to update flow'); }
+  };
+
+  const deleteFlow = async (id: string) => {
+    const flow = flows.find((f) => f.id === id);
+    try {
+      await api.delete(`/api/whatsapp-flows/${id}`);
+      setFlows((prev) => prev.filter((f) => f.id !== id));
+      if (selectedFlow?.id === id) setSelectedFlow(flows.find((f) => f.id !== id) ?? null);
+      toast.success(`"${flow?.name}" deleted`);
+    } catch { toast.error('Failed to delete flow'); }
   };
 
   const triggerBadge: Record<TriggerType, string> = {

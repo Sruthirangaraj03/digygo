@@ -1,5 +1,7 @@
 import { useNavigate } from 'react-router-dom';
-import { Zap, LayoutTemplate, MessageCircle, ArrowRight, Activity, CheckCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Zap, LayoutTemplate, ArrowRight, Activity, CheckCircle, Users } from 'lucide-react';
+import { api } from '@/lib/api';
 import { useCrmStore } from '@/store/crmStore';
 import { cn } from '@/lib/utils';
 
@@ -20,29 +22,25 @@ const channels = [
     color: 'text-purple-500',
     bg: 'bg-purple-50',
   },
-  {
-    label: 'WhatsApp Flows',
-    description: 'Automate WhatsApp messages and responses for your leads',
-    icon: MessageCircle,
-    path: '/automation/whatsapp',
-    color: 'text-emerald-500',
-    bg: 'bg-emerald-50',
-  },
 ];
 
 export default function AutomationOverviewPage() {
   const navigate = useNavigate();
-  const { workflows } = useCrmStore();
+  const [workflows, setWorkflows] = useState<any[]>([]);
+  const { leads } = useCrmStore();
 
-  const totalWorkflows = workflows.length;
+  useEffect(() => {
+    api.get<any[]>('/api/workflows').then((rows) => setWorkflows(rows ?? [])).catch(() => null);
+  }, []);
+
+  const totalWorkflows  = workflows.length;
   const activeWorkflows = workflows.filter((w) => w.status === 'active').length;
-  const totalExecutions = workflows.reduce((s, w) => s + w.executions, 0);
 
   const statCards = [
-    { label: 'Total Workflows', value: totalWorkflows.toLocaleString(), icon: Zap, color: 'text-primary' },
-    { label: 'Active', value: activeWorkflows.toLocaleString(), icon: Activity, color: 'text-emerald-500' },
-    { label: 'Paused', value: (totalWorkflows - activeWorkflows).toLocaleString(), icon: CheckCircle, color: 'text-purple-500' },
-    { label: 'Total Executions', value: totalExecutions.toLocaleString(), icon: CheckCircle, color: 'text-primary' },
+    { label: 'Total Workflows', value: totalWorkflows.toLocaleString(),               icon: Zap,          color: 'text-primary' },
+    { label: 'Active',          value: activeWorkflows.toLocaleString(),              icon: Activity,     color: 'text-emerald-500' },
+    { label: 'Paused',          value: (totalWorkflows - activeWorkflows).toLocaleString(), icon: CheckCircle, color: 'text-purple-500' },
+    { label: 'Total Leads',     value: leads.length.toLocaleString(),                 icon: Users,        color: 'text-primary' },
   ];
 
   return (

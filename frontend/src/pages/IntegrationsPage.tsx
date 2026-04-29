@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowLeft, Check, X, RefreshCw, Plug } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { api } from '@/lib/api';
 
 type IntegStatus = 'connected' | 'available' | 'coming_soon';
 
@@ -38,10 +39,21 @@ function ConnectModal({ integ, onClose }: { integ: Integration; onClose: () => v
   const [apiKey, setApiKey] = useState('');
   const [connecting, setConnecting] = useState(false);
 
-  const handleConnect = () => {
+  const handleConnect = async () => {
     if (!apiKey.trim()) { toast.error(`${integ.apiKeyField ?? 'API Key'} is required`); return; }
     setConnecting(true);
-    setTimeout(() => { setConnecting(false); toast.success(`${integ.name} connected!`); onClose(); }, 1500);
+    try {
+      const payload = integ.apiKeyField === 'Webhook URL'
+        ? { webhook_url: apiKey.trim() }
+        : { api_key: apiKey.trim() };
+      await api.post(`/api/integrations/configs/${integ.id}`, payload);
+      toast.success(`${integ.name} connected!`);
+      onClose();
+    } catch {
+      toast.error(`Failed to connect ${integ.name}`);
+    } finally {
+      setConnecting(false);
+    }
   };
 
   return (
@@ -80,10 +92,34 @@ export default function IntegrationsPage() {
   const navigate = useNavigate();
   const [filter, setFilter] = useState('All');
   const [connectInteg, setConnectInteg] = useState<Integration | null>(null);
-  const [connected, setConnected] = useState<string[]>(['meta', 'whatsapp']);
+  const [connected, setConnected] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    // Load real connection status for Meta
+    api.get<{ connected: boolean }>('/api/integrations/meta/status')
+      .then((r) => {
+        setConnected((prev) => {
+          const next = new Set(prev);
+          if (r.connected) next.add('meta'); else next.delete('meta');
+          return next;
+        });
+      }).catch(() => {});
+
+    // Load generic integration configs
+    api.get<Record<string, { is_active: boolean }>>('/api/integrations/configs')
+      .then((configs) => {
+        setConnected((prev) => {
+          const next = new Set(prev);
+          Object.entries(configs).forEach(([id, cfg]) => {
+            if (cfg.is_active) next.add(id); else next.delete(id);
+          });
+          return next;
+        });
+      }).catch(() => {});
+  }, []);
 
   const filtered = integrations.filter((i) => filter === 'All' || i.category === filter);
-  const isConnected = (id: string) => connected.includes(id) || integrations.find((i) => i.id === id)?.status === 'connected';
+  const isConnected = (id: string) => connected.has(id);
 
   return (
     <div className="space-y-8">
@@ -143,11 +179,24 @@ export default function IntegrationsPage() {
                   <Button variant="outline" size="sm" disabled className="flex-1">Coming Soon</Button>
                 ) : conn ? (
                   <>
-                    <Button variant="outline" size="sm" className="flex-1" onClick={() => toast.info(`Configure ${integ.name}`)}>Configure</Button>
-                    <Button variant="outline" size="sm" className="text-destructive hover:bg-red-50" onClick={() => { setConnected(connected.filter((c) => c !== integ.id)); toast.success(`${integ.name} disconnected`); }}>Disconnect</Button>
+                    <Button variant="outline" size="sm" className="flex-1" onClick={() => {
+                      if (integ.id === 'meta') navigate('/lead-generation/meta-forms');
+                      else toast.info(`Configure ${integ.name}`);
+                    }}>Configure</Button>
+                    <Button variant="outline" size="sm" className="text-destructive hover:bg-red-50" onClick={async () => {
+                      try {
+                        if (integ.id === 'meta') await api.delete('/api/integrations/meta/disconnect');
+                        else await api.delete(`/api/integrations/configs/${integ.id}`);
+                        setConnected((prev) => { const next = new Set(prev); next.delete(integ.id); return next; });
+                        toast.success(`${integ.name} disconnected`);
+                      } catch { toast.error('Failed to disconnect'); }
+                    }}>Disconnect</Button>
                   </>
                 ) : (
-                  <Button size="sm" className="flex-1" onClick={() => setConnectInteg(integ)}>
+                  <Button size="sm" className="flex-1" onClick={() => {
+                    if (integ.id === 'meta') navigate('/lead-generation/meta-forms');
+                    else setConnectInteg(integ);
+                  }}>
                     <Plug className="w-3.5 h-3.5 mr-1" /> Connect
                   </Button>
                 )}
@@ -158,7 +207,10 @@ export default function IntegrationsPage() {
       </div>
 
       {connectInteg && (
-        <ConnectModal integ={connectInteg} onClose={() => { setConnected([...connected, connectInteg.id]); setConnectInteg(null); }} />
+        <ConnectModal integ={connectInteg} onClose={() => {
+          setConnected((prev) => { const next = new Set(prev); next.add(connectInteg.id); return next; });
+          setConnectInteg(null);
+        }} />
       )}
     </div>
   );

@@ -1,7 +1,11 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useCrmStore, LeadActivity } from '@/store/crmStore';
 import { useAuthStore } from '@/store/authStore';
-import { STAGES, PIPELINES, Lead, staff, bookingLinks } from '@/data/mockData';
+import { usePermission } from '@/hooks/usePermission';
+import { api } from '@/lib/api';
+import { getSocket } from '@/lib/socket';
+import { Lead, Pipeline } from '@/data/mockData';
 import {
   Search, Filter, Plus, GripVertical, Phone, X, MessageCircle, Calendar,
   FileText, User, Tag, DollarSign, ChevronDown, Trash2, Check,
@@ -12,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow, format, isPast } from 'date-fns';
 import {
@@ -23,12 +28,38 @@ import { useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { toast } from 'sonner';
 
+function getSourceLabel(lead: { source: string; meta_form_name?: string }) {
+  const s = lead.source ?? '';
+  if (s.startsWith('calendar:')) return s.slice(9);
+  if (s.startsWith('form:'))     return s.slice(5);
+  if (s === 'calendar_booking')  return 'Calendar Booking';
+  if (s === 'Custom Form')       return 'Custom Form';
+  if (s === 'meta_form') return lead.meta_form_name ? `Meta · ${lead.meta_form_name}` : 'Meta Form';
+  if (s === 'whatsapp' || s === 'WhatsApp') return 'WhatsApp';
+  if (s === 'Landing Page') return 'Landing Page';
+  return s || 'Manual';
+}
+
+function getSourceColor(source: string) {
+  const s = source ?? '';
+  if (s.startsWith('calendar:') || s === 'calendar_booking') return 'bg-teal-50 text-teal-600';
+  if (s.startsWith('form:') || s === 'Custom Form')          return 'bg-purple-50 text-purple-600';
+  if (s === 'meta_form')    return 'bg-blue-50 text-blue-600';
+  if (s === 'whatsapp' || s === 'WhatsApp') return 'bg-emerald-50 text-emerald-600';
+  if (s === 'Manual')       return 'bg-[#faf0e8] text-primary';
+  if (s === 'Landing Page') return 'bg-amber-50 text-amber-600';
+  return 'bg-gray-100 text-gray-500';
+}
+
 const SOURCE_COLORS: Record<string, string> = {
-  'Meta Forms':  'bg-blue-50 text-blue-600',
-  'WhatsApp':    'bg-emerald-50 text-emerald-600',
-  'Custom Form': 'bg-purple-50 text-purple-600',
-  'Manual':      'bg-[#faf0e8] text-primary',
-  'Landing Page':'bg-amber-50 text-amber-600',
+  'meta_form':        'bg-blue-50 text-blue-600',
+  'Meta Forms':       'bg-blue-50 text-blue-600',
+  'WhatsApp':         'bg-emerald-50 text-emerald-600',
+  'whatsapp':         'bg-emerald-50 text-emerald-600',
+  'Custom Form':      'bg-purple-50 text-purple-600',
+  'Manual':           'bg-[#faf0e8] text-primary',
+  'Landing Page':     'bg-amber-50 text-amber-600',
+  'calendar_booking': 'bg-teal-50 text-teal-600',
 };
 
 const TAG_COLORS: Record<string, string> = {
@@ -43,29 +74,48 @@ function AddLeadModal({ onClose }: { onClose: () => void }) {
   const { addLead, pipelines } = useCrmStore();
   const currentUser = useAuthStore((s) => s.currentUser);
   const now = new Date().toISOString();
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     firstName: '', lastName: '', email: '', phone: '+91 ',
     city: '', pipelineId: pipelines[0]?.id ?? '', stage: pipelines[0]?.stages[0]?.name ?? '',
     tags: [] as string[], tagInput: '', dealValue: 0, source: 'Manual',
-    assignedTo: currentUser?.id ?? 's1',
+    assignedTo: currentUser?.id ?? '',
   });
 
   const selectedPipeline = pipelines.find((p) => p.id === form.pipelineId);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.firstName.trim() || !form.phone.trim()) { toast.error('Name and phone are required'); return; }
-    addLead({
-      id: `lead-${Date.now()}`,
-      firstName: form.firstName, lastName: form.lastName,
-      email: form.email, phone: form.phone,
-      pipelineId: form.pipelineId, stage: form.stage,
-      source: form.source, dealValue: form.dealValue,
-      tags: form.tags, score: 0, notes: [],
-      assignedTo: form.assignedTo,
-      createdAt: now, lastActivity: now,
-    });
-    toast.success('Opportunity added');
-    onClose();
+    setSaving(true);
+    try {
+      const stageId = selectedPipeline?.stages.find((s) => s.name === form.stage)?.id;
+      const created = await api.post<any>('/api/leads', {
+        name: `${form.firstName} ${form.lastName}`.trim(),
+        email: form.email,
+        phone: form.phone,
+        source: form.source,
+        pipeline_id: form.pipelineId || undefined,
+        stage_id: stageId || undefined,
+        assigned_to: form.assignedTo || undefined,
+        tags: form.tags,
+      });
+      addLead({
+        id: created.id,
+        firstName: form.firstName, lastName: form.lastName,
+        email: form.email, phone: form.phone,
+        pipelineId: form.pipelineId, stage: form.stage,
+        source: form.source, dealValue: form.dealValue,
+        tags: form.tags, score: 0, notes: [],
+        assignedTo: form.assignedTo,
+        createdAt: created.created_at ?? now, lastActivity: created.created_at ?? now,
+      });
+      toast.success('Opportunity added');
+      onClose();
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to add lead');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2.5 text-[13px] text-[#1c1410] outline-none focus:border-gray-400 placeholder:text-gray-300';
@@ -168,7 +218,7 @@ function AddLeadModal({ onClose }: { onClose: () => void }) {
           <p className="text-[11px] text-gray-400">Created On: {format(new Date(now), 'dd/MM/yyyy HH:mm aa').toUpperCase()}</p>
           <div className="flex gap-2">
             <button onClick={onClose} className="px-5 py-2 rounded-xl text-[13px] font-bold text-white bg-red-500 hover:bg-red-600 transition-colors">CANCEL</button>
-            <button onClick={handleSave} className="px-5 py-2 rounded-xl text-[13px] font-bold text-white transition-all hover:-translate-y-0.5" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>SAVE</button>
+            <button onClick={handleSave} disabled={saving} className="px-5 py-2 rounded-xl text-[13px] font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-60" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>{saving ? 'Saving…' : 'SAVE'}</button>
           </div>
         </div>
       </div>
@@ -211,7 +261,7 @@ const FILTER_CATS = [
 ];
 
 function FilterPanel({ filters, onChange, onClose, stages }: { filters: FilterState; onChange: (f: FilterState) => void; onClose: () => void; stages: string[] }) {
-  const { tags: storeTags } = useCrmStore();
+  const { tags: storeTags, staff } = useCrmStore();
   const [local, setLocal] = useState<FilterState>(filters);
   const [subPanel, setSubPanel] = useState('');
   const [subSearch, setSubSearch] = useState('');
@@ -358,111 +408,6 @@ function FilterPanel({ filters, onChange, onClose, stages }: { filters: FilterSt
   );
 }
 
-// ─── Horizontal Filter Bar (inline, scrollable) ────────────────────────────────
-function FilterBar({ filters, onChange, stages }: {
-  filters: FilterState;
-  onChange: (f: FilterState) => void;
-  stages: string[];
-}) {
-  const { tags: storeTags } = useCrmStore();
-  const toggleArr = (k: keyof FilterState, v: string) => {
-    const a = filters[k] as string[];
-    onChange({ ...filters, [k]: a.includes(v) ? a.filter((x) => x !== v) : [...a, v] });
-  };
-  const setRadio = (k: keyof FilterState, v: string) => {
-    onChange({ ...filters, [k]: (filters[k] as string) === v ? '' : v });
-  };
-
-  const Group = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div className="flex items-center gap-1.5 shrink-0">
-      <span className="text-[10px] font-bold text-[#b09e8d] uppercase tracking-wider mr-0.5">{label}</span>
-      {children}
-    </div>
-  );
-
-  const Pill = ({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) => (
-    <button
-      onClick={onClick}
-      className={cn(
-        'px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-all shrink-0',
-        active
-          ? 'bg-primary text-white shadow-sm'
-          : 'bg-white border border-black/10 text-[#7a6b5c] hover:border-primary/40 hover:text-primary'
-      )}
-    >
-      {children}
-    </button>
-  );
-
-  const Divider = () => <div className="w-px h-5 bg-black/10 shrink-0 mx-1" />;
-
-  const totalActive = Object.values(filters).reduce<number>((n, v) => n + (Array.isArray(v) ? v.length : v ? 1 : 0), 0);
-
-  return (
-    <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
-
-      <Group label="Assignee">
-        <Pill active={filters.assignedTo.includes('none')} onClick={() => toggleArr('assignedTo', 'none')}>Unassigned</Pill>
-        {staff.slice(0, 5).map((s) => (
-          <Pill key={s.id} active={filters.assignedTo.includes(s.id)} onClick={() => toggleArr('assignedTo', s.id)}>{s.name.split(' ')[0]}</Pill>
-        ))}
-      </Group>
-
-      <Divider />
-
-      <Group label="Stage">
-        {stages.map((s) => (
-          <Pill key={s} active={filters.stage.includes(s)} onClick={() => toggleArr('stage', s)}>{s}</Pill>
-        ))}
-      </Group>
-
-      <Divider />
-
-      <Group label="Tags">
-        {storeTags.slice(0, 6).map((t) => (
-          <Pill key={t.id} active={filters.tags.includes(t.name)} onClick={() => toggleArr('tags', t.name)}>{t.name}</Pill>
-        ))}
-      </Group>
-
-      <Divider />
-
-      <Group label="Quality">
-        {LEAD_QUALITIES.slice(0, 3).map((q) => (
-          <Pill key={q} active={filters.leadQuality.includes(q)} onClick={() => toggleArr('leadQuality', q)}>{q}</Pill>
-        ))}
-      </Group>
-
-      <Divider />
-
-      <Group label="Created">
-        {['Today', 'This Week', 'This Month'].map((d) => (
-          <Pill key={d} active={filters.createdOn === d} onClick={() => setRadio('createdOn', d)}>{d}</Pill>
-        ))}
-      </Group>
-
-      <Divider />
-
-      <Group label="Value">
-        {OPP_VALUES.slice(0, 3).map((v) => (
-          <Pill key={v} active={filters.opportunityValue.includes(v)} onClick={() => toggleArr('opportunityValue', v)}>{v.replace('₹', '₹').replace(/\s/g, '')}</Pill>
-        ))}
-      </Group>
-
-      {totalActive > 0 && (
-        <>
-          <Divider />
-          <button
-            onClick={() => onChange({ ...emptyFilters })}
-            className="flex items-center gap-1 text-[11px] font-semibold text-red-500 hover:text-red-600 whitespace-nowrap shrink-0 px-2"
-          >
-            <X className="w-3 h-3" /> Clear all
-          </button>
-        </>
-      )}
-    </div>
-  );
-}
-
 // ─── Compact Filter Popover (kept for deep filter) ─────────────────────────────
 function FilterPopover({ filters, onChange, onClose, stages, anchorRef }: {
   filters: FilterState;
@@ -471,7 +416,7 @@ function FilterPopover({ filters, onChange, onClose, stages, anchorRef }: {
   stages: string[];
   anchorRef: React.RefObject<HTMLButtonElement>;
 }) {
-  const { tags: storeTags } = useCrmStore();
+  const { tags: storeTags, staff } = useCrmStore();
   const [expanded, setExpanded] = useState<string>('assignedTo');
   const [search, setSearch] = useState('');
   const ref = useRef<HTMLDivElement>(null);
@@ -606,39 +551,58 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
 }
 
 // ─── Workflow Modal ─────────────────────────────────────────────────────────────
-function WorkflowModal({ selectedCount, onClose }: { selectedCount: number; onClose: () => void }) {
+function WorkflowModal({ leadIds, onClose }: { leadIds: string[]; onClose: () => void }) {
   const { workflows } = useCrmStore();
+  const activeWorkflows = workflows.filter((w) => (w as any).status === 'active');
   const [selected, setSelected] = useState('');
-  const send = () => {
+  const [sending, setSending] = useState(false);
+
+  const send = async () => {
     if (!selected) { toast.error('Please select a workflow'); return; }
-    const wf = workflows.find((w) => w.id === selected);
-    toast.success(`Workflow "${wf?.name}" triggered for ${selectedCount} contact(s)`);
-    onClose();
+    const wf = activeWorkflows.find((w) => w.id === selected);
+    setSending(true);
+    try {
+      await api.post(`/api/workflows/${selected}/bulk-trigger`, { lead_ids: leadIds });
+      toast.success(`${leadIds.length} contact${leadIds.length !== 1 ? 's' : ''} pushed to "${wf?.name}" — automation is executing`);
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Failed to trigger workflow');
+    } finally {
+      setSending(false);
+    }
   };
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
         <div className="flex items-center justify-between px-6 py-5 border-b border-black/5">
-          <h3 className="font-bold text-[17px] text-[#1c1410]">Workflows</h3>
+          <h3 className="font-bold text-[17px] text-[#1c1410]">Trigger Workflow</h3>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"><X className="w-4 h-4 text-[#7a6b5c]" /></button>
         </div>
         <div className="px-6 py-5 space-y-3">
-          <label className="text-[13px] font-semibold text-[#1c1410] block">Select Workflows</label>
+          <label className="text-[13px] font-semibold text-[#1c1410] block">Select Active Workflow</label>
           <div className="relative">
             <select value={selected} onChange={(e) => setSelected(e.target.value)} className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-[13px] text-[#1c1410] outline-none focus:border-primary/40 bg-white appearance-none pr-10">
-              <option value="">Select a Automation Workflow</option>
-              {workflows.map((wf) => <option key={wf.id} value={wf.id}>{wf.name}</option>)}
+              <option value="">— Choose a workflow —</option>
+              {activeWorkflows.map((wf) => <option key={wf.id} value={wf.id}>{wf.name}</option>)}
             </select>
             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           </div>
+          {activeWorkflows.length === 0 && (
+            <p className="text-[12px] text-amber-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              No active workflows found. Set a workflow to Active in Automation first.
+            </p>
+          )}
           <p className="text-[12px] text-blue-500 flex items-start gap-1.5 pt-1">
             <Settings className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-            One contact may have multiple contact actions apply directly to contacts.{selectedCount > 0 && ` All ${selectedCount} contact(s) selected.`}
+            {leadIds.length} contact{leadIds.length !== 1 ? 's' : ''} selected — all will be pushed through the chosen workflow.
           </p>
         </div>
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-black/5">
           <button onClick={onClose} className="px-6 py-2 rounded-lg bg-gray-200 text-[13px] font-bold text-gray-600 hover:bg-gray-300 transition-colors uppercase tracking-wide">Close</button>
-          <button onClick={send} className="px-6 py-2 rounded-lg bg-green-500 text-[13px] font-bold text-white hover:bg-green-600 transition-colors uppercase tracking-wide">Send</button>
+          <button onClick={send} disabled={sending || !selected} className="px-6 py-2 rounded-lg bg-green-500 text-[13px] font-bold text-white hover:bg-green-600 disabled:opacity-50 transition-colors uppercase tracking-wide">
+            {sending ? 'Sending…' : 'Send'}
+          </button>
         </div>
       </div>
     </div>
@@ -655,7 +619,10 @@ function ImportModal({ onClose }: { onClose: () => void }) {
   const [importOption, setImportOption] = useState('Create New Opportunities Only');
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvRows, setCsvRows] = useState<string[][]>([]);
+  const [allCsvRows, setAllCsvRows] = useState<string[][]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [importResult, setImportResult] = useState<{ imported: number; errors: Array<{ row: number; reason: string }> } | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -667,9 +634,11 @@ function ImportModal({ onClose }: { onClose: () => void }) {
       const lines = (ev.target?.result as string).split('\n').filter((l) => l.trim());
       if (!lines.length) return;
       const headers = lines[0].split(',').map((h) => h.trim().replace(/"/g, ''));
-      const rows = lines.slice(1, 6).map((l) => l.split(',').map((c) => c.trim().replace(/"/g, '')));
+      const allRows = lines.slice(1).map((l) => l.split(',').map((c) => c.trim().replace(/"/g, '')));
+      const rows = allRows.slice(0, 5);
       setCsvHeaders(headers);
       setCsvRows(rows);
+      setAllCsvRows(allRows);
       const autoMap: Record<string, string> = {};
       headers.forEach((h) => {
         const lo = h.toLowerCase();
@@ -694,8 +663,45 @@ function ImportModal({ onClose }: { onClose: () => void }) {
     a.click();
   };
 
-  const next = () => {
+  const next = async () => {
     if (step === 1 && !file) { toast.error('Please upload a CSV file'); return; }
+    if (step === 3) {
+      // Actual import
+      setImporting(true);
+      try {
+        const reverseMap: Record<string, string> = {
+          'First Name': 'first_name', 'Last Name': 'last_name', 'Phone': 'phone',
+          'Email': 'email', 'Deal Value': 'deal_value', 'Stage': 'stage',
+          'Source': 'source', 'Tag': 'tag',
+        };
+        const rows = allCsvRows.map((row) => {
+          const obj: Record<string, string> = {};
+          csvHeaders.forEach((h, i) => {
+            const crmField = mapping[h];
+            if (crmField && crmField !== '-- Skip --') {
+              const key = reverseMap[crmField] ?? crmField.toLowerCase();
+              obj[key] = row[i] ?? '';
+            }
+          });
+          // Combine first+last as name
+          if (obj.first_name || obj.last_name) {
+            obj.name = `${obj.first_name ?? ''} ${obj.last_name ?? ''}`.trim();
+          }
+          return obj;
+        });
+        const result = await api.post<{ imported: number; errors: Array<{ row: number; reason: string }> }>(
+          '/api/leads/import',
+          { rows }
+        );
+        setImportResult(result);
+      } catch {
+        toast.error('Import failed');
+        setImporting(false);
+        return;
+      } finally {
+        setImporting(false);
+      }
+    }
     setStep((s) => Math.min(s + 1, 4));
   };
 
@@ -801,9 +807,14 @@ function ImportModal({ onClose }: { onClose: () => void }) {
               <h3 className="font-extrabold text-[20px] text-[#1c1410]">Import Complete!</h3>
               <p className="text-[13px] text-[#7a6b5c]">Your opportunities have been imported successfully.</p>
               <div className="flex gap-8 mt-2">
-                <div className="text-center"><p className="text-[28px] font-extrabold text-green-500">{csvRows.length}</p><p className="text-[12px] text-[#7a6b5c]">Records imported</p></div>
-                <div className="text-center"><p className="text-[28px] font-extrabold text-red-400">0</p><p className="text-[12px] text-[#7a6b5c]">Errors</p></div>
+                <div className="text-center"><p className="text-[28px] font-extrabold text-green-500">{importResult?.imported ?? allCsvRows.length}</p><p className="text-[12px] text-[#7a6b5c]">Records imported</p></div>
+                <div className="text-center"><p className="text-[28px] font-extrabold text-red-400">{importResult?.errors?.length ?? 0}</p><p className="text-[12px] text-[#7a6b5c]">Errors</p></div>
               </div>
+              {(importResult?.errors?.length ?? 0) > 0 && (
+                <div className="w-full max-h-32 overflow-y-auto text-[11px] text-red-600 space-y-1 border border-red-100 rounded-lg p-3">
+                  {importResult!.errors.slice(0, 10).map((e) => <div key={e.row}>Row {e.row}: {e.reason}</div>)}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -814,7 +825,7 @@ function ImportModal({ onClose }: { onClose: () => void }) {
             <button onClick={() => setStep((s) => s - 1)} className="px-5 py-2 rounded-xl border border-gray-200 text-[13px] font-semibold text-[#7a6b5c] hover:bg-gray-50 transition-colors">Back</button>
           )}
           {step < 4
-            ? <button onClick={next} className="px-6 py-2 rounded-xl text-[13px] font-bold text-white hover:-translate-y-0.5 transition-all" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}>Next</button>
+            ? <button onClick={next} disabled={importing} className="px-6 py-2 rounded-xl text-[13px] font-bold text-white hover:-translate-y-0.5 transition-all disabled:opacity-60" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}>{importing ? 'Importing…' : 'Next'}</button>
             : <button onClick={onClose} className="px-6 py-2 rounded-xl text-[13px] font-bold text-white" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 100%)' }}>Done</button>
           }
         </div>
@@ -824,18 +835,28 @@ function ImportModal({ onClose }: { onClose: () => void }) {
 }
 
 // ─── Note Modal ────────────────────────────────────────────────────────────────
-function NoteModal({ leadId, onClose }: { leadId: string; onClose: () => void }) {
+function NoteModal({ leadId, onClose, onCreated }: { leadId: string; onClose: () => void; onCreated?: (note: any) => void }) {
   const { addNote } = useCrmStore();
   const currentUser = useAuthStore((s) => s.currentUser);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [saving, setSaving] = useState(false);
   const inputCls = 'w-full border border-gray-200 rounded-xl px-4 py-2.5 text-[13px] text-[#1c1410] outline-none focus:border-primary/40 placeholder:text-gray-300';
-  const submit = () => {
+  const submit = async () => {
     if (!title.trim()) { toast.error('Title is required'); return; }
     if (!content.trim()) { toast.error('Note content is required'); return; }
-    addNote({ id: `note-${Date.now()}`, leadId, content: `[${title.trim()}] ${content.trim()}`, createdBy: currentUser?.id ?? 's1', createdAt: new Date().toISOString() });
-    toast.success('Note added');
-    onClose();
+    setSaving(true);
+    try {
+      const created = await api.post<any>(`/api/leads/${leadId}/notes`, { title: title.trim(), content: content.trim() });
+      addNote({ id: created.id, leadId, content: `[${title.trim()}] ${content.trim()}`, createdBy: currentUser?.id ?? '', createdAt: created.created_at ?? new Date().toISOString() });
+      onCreated?.(created);
+      toast.success('Note added');
+      onClose();
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to add note');
+    } finally {
+      setSaving(false);
+    }
   };
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40">
@@ -856,7 +877,7 @@ function NoteModal({ leadId, onClose }: { leadId: string; onClose: () => void })
         </div>
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-black/5">
           <button onClick={onClose} className="px-5 py-2 rounded-xl text-[13px] font-semibold text-[#7a6b5c] hover:bg-gray-100 transition-colors">Cancel</button>
-          <button onClick={submit} className="px-6 py-2 rounded-xl text-[13px] font-bold text-white hover:-translate-y-0.5 transition-all" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}>Save Note</button>
+          <button onClick={submit} disabled={saving} className="px-6 py-2 rounded-xl text-[13px] font-bold text-white hover:-translate-y-0.5 transition-all disabled:opacity-60" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}>{saving ? 'Saving…' : 'Save Note'}</button>
         </div>
       </div>
     </div>
@@ -864,27 +885,42 @@ function NoteModal({ leadId, onClose }: { leadId: string; onClose: () => void })
 }
 
 // ─── Follow-Up Modal ───────────────────────────────────────────────────────────
-function FollowUpModal({ leadId, onClose }: { leadId: string; onClose: () => void }) {
+function FollowUpModal({ leadId, onClose, onCreated }: { leadId: string; onClose: () => void; onCreated?: (fu: any) => void }) {
   const { addFollowUp } = useCrmStore();
   const currentUser = useAuthStore((s) => s.currentUser);
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [notes, setNotes] = useState('');
   const [dueAt, setDueAt] = useState('');
+  const [saving, setSaving] = useState(false);
   const inputCls = 'w-full border border-gray-200 rounded-xl px-4 py-2.5 text-[13px] text-[#1c1410] outline-none focus:border-primary/40 placeholder:text-gray-300';
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) { toast.error('Title is required'); return; }
-    if (!dueAt) { toast.error('Please select a due date'); return; }
-    addFollowUp({
-      id: `fu-${Date.now()}`, leadId,
-      dueAt: new Date(dueAt).toISOString(),
-      note: title.trim() + (description.trim() ? `\n${description.trim()}` : ''),
-      completed: false,
-      assignedTo: currentUser?.id ?? 's1',
-      createdAt: new Date().toISOString(),
-    });
-    toast.success('Follow-up scheduled');
-    onClose();
+    setSaving(true);
+    try {
+      const created = await api.post<any>(`/api/leads/${leadId}/followups`, {
+        title: title.trim(),
+        description: notes.trim() || undefined,
+        due_at: dueAt ? new Date(dueAt).toISOString() : undefined,
+        assigned_to: currentUser?.id,
+      });
+      const fu = {
+        id: created.id, leadId,
+        dueAt: created.due_at,
+        note: title.trim(),
+        completed: false,
+        assignedTo: currentUser?.id ?? '',
+        createdAt: created.created_at ?? new Date().toISOString(),
+      };
+      addFollowUp(fu);
+      onCreated?.(fu);
+      toast.success('Follow-up scheduled');
+      onClose();
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to schedule follow-up');
+    } finally {
+      setSaving(false);
+    }
   };
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40">
@@ -895,20 +931,20 @@ function FollowUpModal({ leadId, onClose }: { leadId: string; onClose: () => voi
         </div>
         <form onSubmit={submit} className="px-6 py-5 space-y-4">
           <div>
-            <label className="text-[12px] font-semibold text-[#7a6b5c] mb-1.5 block">Title <span className="text-red-400">*</span></label>
-            <input className={inputCls} placeholder="e.g. Call back" value={title} onChange={(e) => setTitle(e.target.value)} />
+            <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Title <span className="text-red-400">*</span></label>
+            <input className={inputCls} placeholder="e.g. Call back for pre-sales pitch" value={title} onChange={(e) => setTitle(e.target.value)} />
           </div>
           <div>
-            <label className="text-[12px] font-semibold text-[#7a6b5c] mb-1.5 block">Description</label>
-            <input className={inputCls} placeholder="e.g. Pre sales pitch" value={description} onChange={(e) => setDescription(e.target.value)} />
+            <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Notes</label>
+            <textarea className={inputCls + ' resize-none h-20'} placeholder="Add any notes..." value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
           <div>
-            <label className="text-[12px] font-semibold text-[#7a6b5c] mb-1.5 block">Due Date & Time <span className="text-red-400">*</span></label>
+            <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Due Date & Time</label>
             <input type="datetime-local" className={inputCls} value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
           </div>
           <div className="flex items-center justify-end gap-3 pt-1">
             <button type="button" onClick={onClose} className="px-5 py-2 rounded-xl text-[13px] font-semibold text-[#7a6b5c] hover:bg-gray-100 transition-colors">Cancel</button>
-            <button type="submit" className="px-6 py-2 rounded-xl text-[13px] font-bold text-white hover:-translate-y-0.5 transition-all" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}>Schedule</button>
+            <button type="submit" disabled={saving} className="px-6 py-2 rounded-xl text-[13px] font-bold text-white hover:-translate-y-0.5 transition-all disabled:opacity-60" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}>{saving ? 'Saving…' : 'Schedule'}</button>
           </div>
         </form>
       </div>
@@ -918,13 +954,22 @@ function FollowUpModal({ leadId, onClose }: { leadId: string; onClose: () => voi
 
 // ─── Assign Modal ──────────────────────────────────────────────────────────────
 function AssignModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
-  const { updateLead } = useCrmStore();
+  const { updateLead, staff } = useCrmStore();
   const [selected, setSelected] = useState(lead.assignedTo);
-  const submit = () => {
-    updateLead(lead.id, { assignedTo: selected });
-    const name = staff.find((s) => s.id === selected)?.name;
-    toast.success(`Lead assigned to ${name}`);
-    onClose();
+  const [saving, setSaving] = useState(false);
+  const submit = async () => {
+    setSaving(true);
+    try {
+      await api.patch(`/api/leads/${lead.id}`, { assigned_to: selected || null });
+      const name = staff.find((s) => s.id === selected)?.name ?? '';
+      updateLead(lead.id, { assignedTo: selected, assignedName: name });
+      toast.success(`Lead assigned to ${displayName}`);
+      onClose();
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to assign lead');
+    } finally {
+      setSaving(false);
+    }
   };
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40">
@@ -940,7 +985,7 @@ function AssignModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
               {selected === s.id && <Check className="w-4 h-4 text-primary ml-auto" />}
             </button>
           ))}
-          <div className="flex gap-2 pt-2"><Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button><Button className="flex-1" onClick={submit}>Assign</Button></div>
+          <div className="flex gap-2 pt-2"><Button variant="outline" className="flex-1" onClick={onClose} disabled={saving}>Cancel</Button><Button className="flex-1" onClick={submit} disabled={saving}>{saving ? 'Saving…' : 'Assign'}</Button></div>
         </div>
       </div>
     </div>
@@ -948,16 +993,33 @@ function AssignModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
 }
 
 // ─── Opportunity Modal ─────────────────────────────────────────────────────────
-function OpportunityModal({ leadId, onClose }: { leadId: string; onClose: () => void }) {
+function OpportunityModal({ leadId, onClose, onCreated }: { leadId: string; onClose: () => void; onCreated?: (opp: any) => void }) {
   const { addOpportunity } = useCrmStore();
   const currentUser = useAuthStore((s) => s.currentUser);
   const [form, setForm] = useState({ title: '', value: '', probability: '50', expectedCloseDate: '' });
-  const submit = (e: React.FormEvent) => {
+  const [saving, setSaving] = useState(false);
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.title || !form.value) { toast.error('Title and value are required'); return; }
-    addOpportunity({ id: `opp-${Date.now()}`, leadId, title: form.title, value: Number(form.value), status: 'open', probability: Number(form.probability), expectedCloseDate: form.expectedCloseDate, assignedTo: currentUser?.id ?? 's1', createdAt: new Date().toISOString() });
-    toast.success('Opportunity created');
-    onClose();
+    setSaving(true);
+    try {
+      const created = await api.post<any>('/api/opportunities', {
+        lead_id: leadId,
+        title: form.title,
+        value: Number(form.value),
+        probability: Number(form.probability),
+        expected_close_date: form.expectedCloseDate || undefined,
+        assigned_to: currentUser?.id,
+      });
+      addOpportunity({ id: created.id, leadId, title: form.title, value: Number(form.value), status: 'open', probability: Number(form.probability), expectedCloseDate: form.expectedCloseDate, assignedTo: currentUser?.id ?? '', createdAt: created.created_at ?? new Date().toISOString() });
+      toast.success('Opportunity created');
+      onCreated?.(created);
+      onClose();
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to create opportunity');
+    } finally {
+      setSaving(false);
+    }
   };
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40">
@@ -970,17 +1032,40 @@ function OpportunityModal({ leadId, onClose }: { leadId: string; onClose: () => 
           <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Deal Value (₹) *</label><Input type="number" placeholder="250000" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} /></div>
           <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Win Probability (%)</label><Input type="number" min="0" max="100" value={form.probability} onChange={(e) => setForm({ ...form, probability: e.target.value })} /></div>
           <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Expected Close Date</label><Input type="date" value={form.expectedCloseDate} onChange={(e) => setForm({ ...form, expectedCloseDate: e.target.value })} /></div>
-          <div className="flex gap-2"><Button type="button" variant="outline" className="flex-1" onClick={onClose}>Cancel</Button><Button type="submit" className="flex-1">Create</Button></div>
+          <div className="flex gap-2"><Button type="button" variant="outline" className="flex-1" onClick={onClose} disabled={saving}>Cancel</Button><Button type="submit" className="flex-1" disabled={saving}>{saving ? 'Saving…' : 'Create'}</Button></div>
         </form>
       </div>
     </div>
   );
 }
 
+// ─── Delete Lead Modal ─────────────────────────────────────────────────────────
+function DeleteLeadModal({ lead, onClose, onDeleted }: { lead: Lead; onClose: () => void; onDeleted: () => void }) {
+  const { updateLead } = useCrmStore();
+
+  const handleConfirm = async () => {
+    await api.patch(`/api/leads/${lead.id}`, { pipeline_id: null, stage_id: null });
+    updateLead(lead.id, { pipeline: '', stage: '', stageId: '', pipelineId: '' } as any);
+    toast.success('Removed from pipeline — contact data preserved');
+    onDeleted();
+  };
+
+  return (
+    <ConfirmModal
+      title="Remove from Pipeline?"
+      message={<><span className="font-semibold text-[#1c1410]">{lead.firstName} {lead.lastName}</span> will be removed from the pipeline. Their contact data, notes, and history will be kept.</>}
+      confirmLabel="Yes, Remove"
+      onConfirm={handleConfirm}
+      onClose={onClose}
+    />
+  );
+}
+
 // ─── Edit Lead Modal ───────────────────────────────────────────────────────────
 function EditLeadModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
-  const { updateLead, deleteLead, moveLeadStage, pipelines, notes, followUps, calendarEvents, addNote, updateNote, deleteNote, addFollowUp, addCalendarEvent } = useCrmStore();
+  const { updateLead, deleteLead, moveLeadStage, pipelines, calendarEvents, addNote, updateNote, deleteNote, addFollowUp, addCalendarEvent, bookingLinks } = useCrmStore();
   const currentUser = useAuthStore((s) => s.currentUser);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   type Tab = 'opportunity' | 'additional' | 'followup' | 'notes' | 'appointments';
   const [activeTab, setActiveTab] = useState<Tab>('opportunity');
   const [noteContent, setNoteContent] = useState('');
@@ -1009,32 +1094,48 @@ function EditLeadModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
     apptEvent: '', apptLocation: '', apptLink: '', apptDate: '', apptTz: 'Asia/Kolkata', apptSlot: '',
   });
 
-  const leadNotes = notes.filter((n) => n.leadId === lead.id);
-  const leadFollowUps = followUps.filter((f) => f.leadId === lead.id);
+  const [leadNotes, setLeadNotes] = useState<any[]>([]);
+  const [leadFollowUps, setLeadFollowUps] = useState<any[]>([]);
+  useEffect(() => {
+    api.get<any[]>(`/api/leads/${lead.id}/notes`).then(setLeadNotes).catch(() => null);
+    api.get<any[]>(`/api/leads/${lead.id}/followups`).then((data) =>
+      setLeadFollowUps(data.map((f) => ({ id: f.id, leadId: lead.id, dueAt: f.due_at, note: f.title, completed: f.completed, assignedTo: f.assigned_to, createdAt: f.created_at })))
+    ).catch(() => null);
+  }, [lead.id]);
   const leadEvents = calendarEvents?.filter((e) => e.leadName === `${lead.firstName} ${lead.lastName}`) ?? [];
 
-  const handleUpdate = () => {
-    updateLead(lead.id, {
-      firstName: form.firstName,
-      lastName: form.lastName,
-      email: form.email,
-      phone: form.phone,
-      stage: form.stage,
-      pipelineId: form.pipelineId,
-      source: form.source,
-      dealValue: Number(form.dealValue),
-      tags: form.tags,
-    });
-    if (form.stage !== lead.stage) moveLeadStage(lead.id, form.stage);
-    toast.success('Lead updated');
-    onClose();
+  const handleUpdate = async () => {
+    try {
+      const pipeline = pipelines.find((p) => p.id === form.pipelineId);
+      const stageId = pipeline?.stages.find((s) => s.name === form.stage)?.id;
+      await api.patch(`/api/leads/${lead.id}`, {
+        name: `${form.firstName} ${form.lastName}`.trim(),
+        email: form.email,
+        phone: form.phone,
+        source: form.source,
+        pipeline_id: form.pipelineId || undefined,
+        stage_id: stageId || undefined,
+        tags: form.tags,
+      });
+      updateLead(lead.id, {
+        firstName: form.firstName,
+        lastName: form.lastName,
+        email: form.email,
+        phone: form.phone,
+        stage: form.stage,
+        pipelineId: form.pipelineId,
+        source: form.source,
+        dealValue: Number(form.dealValue),
+        tags: form.tags,
+      });
+      if (form.stage !== lead.stage) moveLeadStage(lead.id, form.stage);
+      toast.success('Lead updated');
+      onClose();
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to update lead');
+    }
   };
 
-  const handleDelete = () => {
-    deleteLead(lead.id);
-    toast.success('Lead deleted');
-    onClose();
-  };
 
   const addTag = () => {
     const t = form.tagInput.trim();
@@ -1046,8 +1147,6 @@ function EditLeadModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
     { key: 'opportunity', label: 'Opportunity' },
     { key: 'additional', label: 'Additional Info' },
     { key: 'followup', label: 'Follow-up' },
-    { key: 'notes', label: 'Notes' },
-    { key: 'appointments', label: 'Appointments' },
   ];
 
   const field = (label: string, child: React.ReactNode, required = false) => (
@@ -1192,19 +1291,29 @@ function EditLeadModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
                   <input className={inputCls} placeholder="Enter follow-up title" value={form.fuTitle ?? ''} onChange={(e) => setForm({ ...form, fuTitle: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-[12px] text-[#7a6b5c] mb-1.5 block">Description</label>
-                  <textarea className={inputCls + ' resize-none h-20'} placeholder="Follow-up description" value={form.fuDesc ?? ''} onChange={(e) => setForm({ ...form, fuDesc: e.target.value })} />
+                  <label className="text-[12px] text-[#7a6b5c] mb-1.5 block">Notes</label>
+                  <textarea className={inputCls + ' resize-none h-20'} placeholder="Add any notes..." value={form.fuDesc ?? ''} onChange={(e) => setForm({ ...form, fuDesc: e.target.value })} />
                 </div>
                 <div>
                   <label className="text-[12px] text-[#7a6b5c] mb-1.5 block">Due Date <span className="text-red-400">*</span></label>
                   <input className={inputCls} type="datetime-local" value={form.fuDue ?? ''} onChange={(e) => setForm({ ...form, fuDue: e.target.value })} />
                 </div>
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     if (!form.fuTitle?.trim() || !form.fuDue) { toast.error('Title and due date required'); return; }
-                    addFollowUp({ id: `fu-${Date.now()}`, leadId: lead.id, dueAt: new Date(form.fuDue).toISOString(), note: form.fuTitle.trim(), completed: false, assignedTo: currentUser?.id ?? 's1' });
-                    toast.success('Follow-up added');
-                    setForm({ ...form, fuTitle: '', fuDesc: '', fuDue: '' });
+                    try {
+                      const created = await api.post<any>(`/api/leads/${lead.id}/followups`, {
+                        title: form.fuTitle.trim(),
+                        description: form.fuDesc?.trim() || undefined,
+                        due_at: new Date(form.fuDue).toISOString(),
+                        assigned_to: currentUser?.id,
+                      });
+                      const fu = { id: created.id, leadId: lead.id, dueAt: created.due_at, note: form.fuTitle.trim(), completed: false, assignedTo: currentUser?.id ?? '', createdAt: created.created_at };
+                      addFollowUp(fu);
+                      setLeadFollowUps((prev) => [...prev, fu]);
+                      toast.success('Follow-up added');
+                      setForm({ ...form, fuTitle: '', fuDesc: '', fuDue: '' });
+                    } catch (err: any) { toast.error(err.message ?? 'Failed to add follow-up'); }
                   }}
                   className="w-full py-2 rounded-xl text-white text-[13px] font-bold transition-all hover:-translate-y-0.5"
                   style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}
@@ -1262,154 +1371,45 @@ function EditLeadModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
             </div>
           )}
 
-          {/* ── Notes ── */}
-          {activeTab === 'notes' && (
-            <div className="flex gap-8">
-              {/* Left: add form */}
-              <div className="w-64 shrink-0 space-y-4 bg-gray-50 rounded-xl p-5 border border-gray-100 self-start">
-                <p className="text-[13px] font-bold text-[#1c1410] mb-1">Add Note</p>
-                <div>
-                  <label className="text-[12px] text-[#7a6b5c] mb-1.5 block">Title <span className="text-red-400">*</span></label>
-                  <input className={inputCls} placeholder="Enter note title" value={form.noteTitle ?? ''} onChange={(e) => setForm({ ...form, noteTitle: e.target.value })} />
-                </div>
-                <div>
-                  <label className="text-[12px] text-[#7a6b5c] mb-1.5 block">Tags</label>
-                  <input className={inputCls} placeholder="Type tag & Enter" value={form.noteTag ?? ''} onChange={(e) => setForm({ ...form, noteTag: e.target.value })} />
-                </div>
-                <div>
-                  <label className="text-[12px] text-[#7a6b5c] mb-1.5 block">Write Notes <span className="text-red-400">*</span></label>
-                  <textarea className={inputCls + ' resize-none h-28'} value={noteContent} onChange={(e) => setNoteContent(e.target.value)} />
-                </div>
-                <button
-                  onClick={() => {
-                    if (!noteContent.trim()) { toast.error('Note content required'); return; }
-                    addNote({ id: `note-${Date.now()}`, leadId: lead.id, content: (form.noteTitle ? `[${form.noteTitle}] ` : '') + noteContent.trim(), createdBy: currentUser?.id ?? 's1', createdAt: new Date().toISOString() });
-                    toast.success('Note saved');
-                    setNoteContent('');
-                    setForm({ ...form, noteTitle: '', noteTag: '' });
-                  }}
-                  className="w-full py-2 rounded-xl text-white text-[13px] font-bold transition-all hover:-translate-y-0.5"
-                  style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}
-                >Save</button>
-              </div>
-
-              {/* Right: existing notes */}
-              <div className="flex-1 min-w-0">
-                <h4 className="font-headline font-bold text-[#1c1410] text-[15px] mb-3">Notes</h4>
-                {leadNotes.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-10 text-center">
-                    <div className="w-10 h-10 rounded-2xl bg-[#faf0e8] flex items-center justify-center mb-2">
-                      <FileText className="w-5 h-5 text-primary" />
-                    </div>
-                    <p className="text-[13px] text-[#7a6b5c]">No notes yet.</p>
-                  </div>
-                )}
-                <div className="space-y-3">
-                  {leadNotes.map((n) => {
-                    const titleMatch = n.content.match(/^\[(.+?)\] ([\s\S]*)$/);
-                    const title = titleMatch ? titleMatch[1] : null;
-                    const description = titleMatch ? titleMatch[2] : n.content;
-                    const isEditing = editingNoteId === n.id;
-                    return (
-                      <div key={n.id} className="p-4 rounded-xl bg-gray-50 border border-gray-100">
-                        {isEditing ? (
-                          <div className="space-y-2">
-                            <textarea
-                              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-[#1c1410] bg-white outline-none focus:border-gray-400 resize-none h-24"
-                              value={editingNoteContent}
-                              onChange={(e) => setEditingNoteContent(e.target.value)}
-                              autoFocus
-                            />
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => {
-                                  if (!editingNoteContent.trim()) return;
-                                  updateNote(n.id, editingNoteContent.trim());
-                                  toast.success('Note updated');
-                                  setEditingNoteId(null);
-                                }}
-                                className="px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white bg-[#1c1410]"
-                              >Save</button>
-                              <button
-                                onClick={() => setEditingNoteId(null)}
-                                className="px-3 py-1.5 rounded-lg text-[12px] font-semibold text-gray-500 bg-gray-200"
-                              >Cancel</button>
-                            </div>
-                          </div>
-                        ) : (
-                          <>
-                            {title && <p className="text-[17px] font-bold text-primary mb-1.5">{title}</p>}
-                            <p className="text-[13px] text-[#7a6b5c] leading-relaxed">{description}</p>
-                            <div className="flex items-center justify-between mt-3">
-                              <p className="text-[11px] text-gray-400">
-                                Added by <span className="font-semibold text-[#7a6b5c]">{staff.find((s) => s.id === n.createdBy)?.name ?? 'Unknown'}</span>
-                                <span className="mx-1.5">·</span>
-                                {format(new Date(n.createdAt), 'dd MMM yyyy, h:mm a')}
-                              </p>
-                              <div className="flex items-center gap-1">
-                                <button
-                                  onClick={() => { setEditingNoteId(n.id); setEditingNoteContent(n.content); }}
-                                  className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-400 hover:text-[#1c1410] transition-colors"
-                                  title="Edit"
-                                >
-                                  <Pencil className="w-3 h-3" />
-                                </button>
-                                <button
-                                  onClick={() => { deleteNote(n.id); toast.success('Note deleted'); }}
-                                  className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
-                                  title="Delete"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* ── Appointments ── */}
-          {activeTab === 'appointments' && (
+          {activeTab === 'appointments' && (() => {
+            const apptET = bookingLinks.find((b) => b.id === (form.apptEvent ?? '')) as any | undefined;
+            const apptSlots = apptET && form.apptDate ? genSlots(apptET.schedule ?? {}, form.apptDate, apptET.duration ?? 30) : [];
+            return (
             <div className="space-y-5">
-              <p className="text-[14px] font-semibold text-[#1c1410]">{lead.firstName} {lead.lastName}</p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
                 <div className="sm:col-span-2">
                   <label className="text-[12px] text-[#7a6b5c] mb-1.5 block">Calendar Event <span className="text-red-400">*</span></label>
-                  <select className={inputCls} value={form.apptEvent ?? ''} onChange={(e) => setForm({ ...form, apptEvent: e.target.value })}>
+                  <select className={inputCls} value={form.apptEvent ?? ''} onChange={(e) => {
+                    const et = bookingLinks.find((b) => b.id === e.target.value) as any | undefined;
+                    setForm({ ...form, apptEvent: e.target.value, apptLink: et?.meetingLink ?? '', apptSlot: '' });
+                  }}>
                     <option value="">Select Event</option>
-                    {bookingLinks.map((b) => <option key={b.id} value={b.id}>{b.title}</option>)}
+                    {bookingLinks.filter((b) => (b as any).isActive !== false).map((b) => (
+                      <option key={b.id} value={b.id}>{(b as any).name ?? b.title}</option>
+                    ))}
                   </select>
                 </div>
 
-                <div>
-                  <label className="text-[12px] text-[#7a6b5c] mb-1.5 block">Event Location <span className="text-red-400">*</span></label>
-                  <select className={inputCls} value={form.apptLocation ?? ''} onChange={(e) => setForm({ ...form, apptLocation: e.target.value })}>
-                    <option value="">Please select event</option>
-                    <option value="zoom">Zoom</option>
-                    <option value="google_meet">Google Meet</option>
-                    <option value="in_person">In Person</option>
-                    <option value="phone">Phone Call</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[12px] text-[#7a6b5c] mb-1.5 block">Location Link / Address</label>
-                  <input className={inputCls} placeholder="Meeting link or address" value={form.apptLink ?? ''} onChange={(e) => setForm({ ...form, apptLink: e.target.value })} />
-                </div>
+                {form.apptEvent && (<>
+                  <div>
+                    <label className="text-[12px] text-[#7a6b5c] mb-1.5 block">Meeting Type</label>
+                    <input className="w-full border border-gray-100 rounded-lg px-3 py-2 text-[13px] text-[#7a6b5c] bg-gray-50 outline-none" value={apptET?.meetingType || '—'} readOnly />
+                  </div>
+                  <div>
+                    <label className="text-[12px] text-[#7a6b5c] mb-1.5 block">Meeting Link / Address</label>
+                    <input className={inputCls} placeholder="Meeting link or address" value={form.apptLink ?? ''} onChange={(e) => setForm({ ...form, apptLink: e.target.value })} />
+                  </div>
+                </>)}
 
                 <div>
                   <label className="text-[12px] text-[#7a6b5c] mb-1.5 block">Event Date <span className="text-red-400">*</span></label>
-                  <input className={inputCls} type="date" value={form.apptDate ?? ''} onChange={(e) => setForm({ ...form, apptDate: e.target.value })} />
+                  <input className={inputCls} type="date" value={form.apptDate ?? ''} onChange={(e) => setForm({ ...form, apptDate: e.target.value, apptSlot: '' })} />
                 </div>
 
                 <div>
-                  <label className="text-[12px] text-[#7a6b5c] mb-1.5 block">Timezone <span className="text-red-400">*</span></label>
+                  <label className="text-[12px] text-[#7a6b5c] mb-1.5 block">Timezone</label>
                   <select className={inputCls} value={form.apptTz ?? 'Asia/Kolkata'} onChange={(e) => setForm({ ...form, apptTz: e.target.value })}>
                     <option value="Asia/Kolkata">Asia/Kolkata</option>
                     <option value="Asia/Dubai">Asia/Dubai</option>
@@ -1420,36 +1420,60 @@ function EditLeadModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
 
                 <div className="sm:col-span-2">
                   <label className="text-[12px] text-[#7a6b5c] mb-1.5 block">Timeslot <span className="text-red-400">*</span></label>
-                  <select className={inputCls} value={form.apptSlot ?? ''} onChange={(e) => setForm({ ...form, apptSlot: e.target.value })}>
-                    <option value="">Please select event and date</option>
-                    {['09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM'].map((t) => <option key={t}>{t}</option>)}
+                  <select className={inputCls} value={form.apptSlot ?? ''} onChange={(e) => setForm({ ...form, apptSlot: e.target.value })} disabled={!form.apptEvent || !form.apptDate}>
+                    <option value="">{!form.apptEvent ? 'Select a calendar first' : !form.apptDate ? 'Select a date first' : apptSlots.length === 0 ? 'No slots available this day' : 'Pick a timeslot'}</option>
+                    {apptSlots.map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
               </div>
 
               <div className="flex justify-end">
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     if (!form.apptEvent || !form.apptDate || !form.apptSlot) { toast.error('Please fill all required fields'); return; }
-                    const selectedBooking = bookingLinks.find((b) => b.id === form.apptEvent);
-                    addCalendarEvent({
-                      id: `evt-${Date.now()}`,
-                      title: `${selectedBooking?.title ?? 'Appointment'} - ${lead.firstName} ${lead.lastName}`,
-                      type: (selectedBooking?.eventType as 'meeting' | 'demo' | 'call') ?? 'meeting',
-                      leadName: `${lead.firstName} ${lead.lastName}`,
-                      assignedTo: lead.assignedTo,
-                      date: form.apptDate,
-                      time: form.apptSlot.replace(' AM', '').replace(' PM', ''),
-                      duration: selectedBooking?.duration ?? 30,
-                      status: 'scheduled',
-                      meetingLink: form.apptLink,
-                    });
-                    toast.success('Appointment booked');
-                    setForm({ ...form, apptEvent: '', apptDate: '', apptSlot: '', apptLink: '', apptLocation: '' });
+                    const bookingName = apptET?.name ?? 'Appointment';
+                    const slotParts = (form.apptSlot as string).split(' ');
+                    const [hhStr, mmStr] = slotParts[0].split(':');
+                    let hh = parseInt(hhStr, 10);
+                    const mm = parseInt(mmStr, 10);
+                    if (slotParts[1] === 'PM' && hh !== 12) hh += 12;
+                    else if (slotParts[1] === 'AM' && hh === 12) hh = 0;
+                    const time24 = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+                    const startIso = `${form.apptDate}T${time24}:00`;
+                    const endDate = new Date(startIso);
+                    endDate.setMinutes(endDate.getMinutes() + (apptET?.duration ?? 30));
+                    try {
+                      const created = await api.post<any>('/api/calendar', {
+                        title: `${bookingName} - ${lead.firstName} ${lead.lastName}`,
+                        type: apptET?.eventType ?? 'meeting',
+                        start_time: startIso,
+                        end_time: endDate.toISOString(),
+                        lead_id: lead.id,
+                        assigned_to: lead.assignedTo || undefined,
+                        event_type_id: form.apptEvent,
+                        meeting_link: form.apptLink || undefined,
+                      });
+                      addCalendarEvent({
+                        id: created.id,
+                        title: `${bookingName} - ${lead.firstName} ${lead.lastName}`,
+                        type: (apptET?.eventType as 'meeting' | 'demo' | 'call') ?? 'meeting',
+                        leadName: `${lead.firstName} ${lead.lastName}`,
+                        assignedTo: lead.assignedTo,
+                        date: form.apptDate as string,
+                        time: time24,
+                        duration: apptET?.duration ?? 30,
+                        status: 'scheduled',
+                        meetingLink: form.apptLink,
+                      });
+                      toast.success('Appointment booked');
+                      setForm({ ...form, apptEvent: '', apptDate: '', apptSlot: '', apptLink: '', apptLocation: '' });
+                    } catch (err: any) {
+                      toast.error(err.message ?? 'Failed to book appointment');
+                    }
                   }}
                   className="px-8 py-2 rounded-xl text-white text-[13px] font-bold transition-all hover:-translate-y-0.5"
                   style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}
-                >ADD</button>
+                >Book Appointment</button>
               </div>
 
               {/* Existing appointments */}
@@ -1471,7 +1495,8 @@ function EditLeadModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
                 </div>
               )}
             </div>
-          )}
+            );
+          })()}
         </div>
 
         {/* Footer */}
@@ -1481,8 +1506,8 @@ function EditLeadModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
           </p>
           <div className="flex items-center gap-2">
             <button
-              onClick={handleDelete}
-              className="px-5 py-2 rounded-lg text-[13px] font-bold text-white bg-red-500 hover:bg-red-600 transition-all"
+              onClick={() => setShowDeleteModal(true)}
+              className="px-5 py-2 rounded-lg text-[13px] font-bold text-red-500 border border-red-200 hover:bg-red-50 transition-all"
             >DELETE</button>
             <button
               onClick={handleUpdate}
@@ -1491,6 +1516,9 @@ function EditLeadModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
           </div>
         </div>
       </div>
+      {showDeleteModal && (
+        <DeleteLeadModal lead={lead} onClose={() => setShowDeleteModal(false)} onDeleted={onClose} />
+      )}
     </div>
   );
 }
@@ -1507,14 +1535,17 @@ function AdditionalInfoSection({ lead, onUpdate }: { lead: Lead; onUpdate: (fiel
 
   const [answers, setAnswers] = useState<Record<string, string>>(existingAnswers);
 
-  const saveAnswer = (slug: string, question: string, value: string) => {
+  const saveAnswer = (fieldId: string, question: string, value: string) => {
     const next = { ...answers, [question]: value };
     setAnswers(next);
-    // Persist to lead.customFields (one entry per question)
     const fieldList = Object.entries(next)
       .filter(([, v]) => v !== '')
-      .map(([label, value]) => ({ label, value }));
+      .map(([label, val]) => ({ label, value: val }));
     onUpdate(fieldList);
+    // Persist to API
+    if (fieldId) {
+      api.patch(`/api/leads/${lead.id}/fields`, { values: [{ field_id: fieldId, value }] }).catch(() => null);
+    }
   };
 
   const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-[#1c1410] outline-none focus:border-primary/40 bg-white';
@@ -1562,11 +1593,11 @@ function AdditionalInfoSection({ lead, onUpdate }: { lead: Lead; onUpdate: (fiel
                   rows={2}
                   placeholder="Type answer..."
                   value={value}
-                  onChange={(e) => saveAnswer(q.slug, q.question, e.target.value)}
+                  onChange={(e) => saveAnswer(q.id, q.question, e.target.value)}
                 />
               )}
               {q.type === 'Dropdown' && (
-                <select className={inputCls} value={value} onChange={(e) => saveAnswer(q.slug, q.question, e.target.value)}>
+                <select className={inputCls} value={value} onChange={(e) => saveAnswer(q.id, q.question, e.target.value)}>
                   <option value="">Choose...</option>
                   {(q.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
@@ -1581,7 +1612,7 @@ function AdditionalInfoSection({ lead, onUpdate }: { lead: Lead; onUpdate: (fiel
                         onClick={() => {
                           const current = value ? value.split(',').map((x) => x.trim()) : [];
                           const next = selected ? current.filter((x) => x !== o) : [...current, o];
-                          saveAnswer(q.slug, q.question, next.join(', '));
+                          saveAnswer(q.id, q.question, next.join(', '));
                         }}
                         className={cn('px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors',
                           selected ? 'bg-primary text-white border-primary' : 'bg-white text-[#7a6b5c] border-black/10 hover:border-primary/30')}
@@ -1600,7 +1631,7 @@ function AdditionalInfoSection({ lead, onUpdate }: { lead: Lead; onUpdate: (fiel
                         type="radio"
                         name={`radio-${q.id}`}
                         checked={value === o}
-                        onChange={() => saveAnswer(q.slug, q.question, o)}
+                        onChange={() => saveAnswer(q.id, q.question, o)}
                         className="w-4 h-4 accent-primary"
                       />
                       <span className="text-[13px] text-[#1c1410]">{o}</span>
@@ -1620,7 +1651,7 @@ function AdditionalInfoSection({ lead, onUpdate }: { lead: Lead; onUpdate: (fiel
                           onChange={() => {
                             const current = value ? value.split(',').map((x) => x.trim()).filter(Boolean) : [];
                             const next = selected ? current.filter((x) => x !== o) : [...current, o];
-                            saveAnswer(q.slug, q.question, next.join(', '));
+                            saveAnswer(q.id, q.question, next.join(', '));
                           }}
                           className="w-4 h-4 accent-primary"
                         />
@@ -1632,31 +1663,31 @@ function AdditionalInfoSection({ lead, onUpdate }: { lead: Lead; onUpdate: (fiel
               )}
               {q.type === 'Checkbox' && (
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={value === 'true'} onChange={(e) => saveAnswer(q.slug, q.question, e.target.checked ? 'true' : 'false')} className="w-4 h-4 accent-primary" />
+                  <input type="checkbox" checked={value === 'true'} onChange={(e) => saveAnswer(q.id, q.question, e.target.checked ? 'true' : 'false')} className="w-4 h-4 accent-primary" />
                   <span className="text-[13px] text-[#1c1410]">Yes</span>
                 </label>
               )}
               {q.type === 'Date' && (
-                <input className={inputCls} type="date" value={value} onChange={(e) => saveAnswer(q.slug, q.question, e.target.value)} />
+                <input className={inputCls} type="date" value={value} onChange={(e) => saveAnswer(q.id, q.question, e.target.value)} />
               )}
               {q.type === 'Number' && (
-                <input className={inputCls} type="number" placeholder="0" value={value} onChange={(e) => saveAnswer(q.slug, q.question, e.target.value)} />
+                <input className={inputCls} type="number" placeholder="0" value={value} onChange={(e) => saveAnswer(q.id, q.question, e.target.value)} />
               )}
               {q.type === 'Monetary' && (
-                <input className={inputCls} type="number" placeholder="₹" value={value} onChange={(e) => saveAnswer(q.slug, q.question, e.target.value)} />
+                <input className={inputCls} type="number" placeholder="₹" value={value} onChange={(e) => saveAnswer(q.id, q.question, e.target.value)} />
               )}
               {q.type === 'Phone' && (
-                <input className={inputCls} type="tel" placeholder="+91" value={value} onChange={(e) => saveAnswer(q.slug, q.question, e.target.value)} />
+                <input className={inputCls} type="tel" placeholder="+91" value={value} onChange={(e) => saveAnswer(q.id, q.question, e.target.value)} />
               )}
               {q.type === 'Email' && (
-                <input className={inputCls} type="email" placeholder="name@example.com" value={value} onChange={(e) => saveAnswer(q.slug, q.question, e.target.value)} />
+                <input className={inputCls} type="email" placeholder="name@example.com" value={value} onChange={(e) => saveAnswer(q.id, q.question, e.target.value)} />
               )}
               {q.type === 'URL' && (
-                <input className={inputCls} type="url" placeholder="https://" value={value} onChange={(e) => saveAnswer(q.slug, q.question, e.target.value)} />
+                <input className={inputCls} type="url" placeholder="https://" value={value} onChange={(e) => saveAnswer(q.id, q.question, e.target.value)} />
               )}
               {/* Default: Single Line + File Upload (text for now) */}
               {(q.type === 'Single Line' || q.type === 'File Upload') && (
-                <input className={inputCls} placeholder="Type answer..." value={value} onChange={(e) => saveAnswer(q.slug, q.question, e.target.value)} />
+                <input className={inputCls} placeholder="Type answer..." value={value} onChange={(e) => saveAnswer(q.id, q.question, e.target.value)} />
               )}
             </div>
           );
@@ -1667,21 +1698,65 @@ function AdditionalInfoSection({ lead, onUpdate }: { lead: Lead; onUpdate: (fiel
 }
 
 // ─── Lead Detail Panel ─────────────────────────────────────────────────────────
-function LeadDetailPanel({ lead, onClose }: { lead: Lead; onClose: () => void }) {
+function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
+  lead: Lead;
+  onClose: () => void;
+  onLeadUpdated?: (id: string, updates: { pipelineId: string; stage: string; stageId: string | undefined; tags: string[] }) => void;
+}) {
   const [editMode, setEditMode] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [showFuModal, setShowFuModal] = useState(false);
   const [showApptModal, setShowApptModal] = useState(false);
+  const [showPipelineModal, setShowPipelineModal] = useState(false);
+  // Real API data for this lead
+  const [leadNotes, setLeadNotes] = useState<any[]>([]);
+  const [leadFollowUps, setLeadFollowUps] = useState<any[]>([]);
+  const [leadActivities, setLeadActivities] = useState<any[]>([]);
 
-  const { notes, followUps, calendarEvents, activities, updateLead, deleteLead, addActivity, pipelines, tags: storeTags } = useCrmStore();
+  const { calendarEvents, updateLead, deleteLead, addActivity, pipelines, tags: storeTags, staff, bookingLinks, addCalendarEvent } = useCrmStore();
   const currentUser = useAuthStore((s) => s.currentUser);
+  const canEditLead   = usePermission('leads:edit');
+  const canDeleteLead = usePermission('leads:delete');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showCustomFields, setShowCustomFields] = useState(false);
+
+  useEffect(() => {
+    api.get<any[]>(`/api/leads/${lead.id}/notes`).then(setLeadNotes).catch(() => null);
+    api.get<any[]>(`/api/leads/${lead.id}/followups`).then((data) =>
+      setLeadFollowUps(data.map((f) => ({ id: f.id, leadId: lead.id, dueAt: f.due_at, note: f.title, completed: f.completed, assignedTo: f.assigned_to, createdAt: f.created_at })))
+    ).catch(() => null);
+    api.get<any[]>(`/api/leads/${lead.id}/activities`).then((data) =>
+      setLeadActivities(data.map((a) => ({ id: a.id, leadId: lead.id, type: a.type, title: a.title, detail: a.detail, timestamp: a.created_at, createdBy: a.created_by_name ?? a.created_by })))
+    ).catch(() => null);
+    // Load persisted custom field values
+    api.get<any[]>(`/api/leads/${lead.id}/fields`).then((rows) => {
+      const customFields = rows.map((r) => ({ label: r.field_name ?? r.slug, value: r.value, fieldId: r.field_id }));
+      updateLead(lead.id, { customFields });
+    }).catch(() => null);
+  }, [lead.id]);
+
+  // Option B: re-fetch activities whenever this lead is updated (from any source/window)
+  useEffect(() => {
+    const socket = getSocket();
+    const onLeadUpdated = (updated: any) => {
+      if (updated.id !== lead.id) return;
+      api.get<any[]>(`/api/leads/${lead.id}/activities`).then((data) =>
+        setLeadActivities(data.map((a) => ({
+          id: a.id, leadId: lead.id, type: a.type, title: a.title,
+          detail: a.detail, timestamp: a.created_at,
+          createdBy: a.created_by_name ?? a.created_by,
+        })))
+      ).catch(() => null);
+    };
+    socket.on('lead:updated', onLeadUpdated);
+    return () => { socket.off('lead:updated', onLeadUpdated); };
+  }, [lead.id]);
+
   const assignedStaff = staff.find((s) => s.id === lead.assignedTo);
+  const assignedDisplayName = assignedStaff?.name || lead.assignedName || '';
   const pipelineName = pipelines.find((p) => p.id === lead.pipelineId)?.name ?? lead.pipelineId;
 
-  const leadNotes = notes.filter((n) => n.leadId === lead.id);
-  const leadFollowUps = followUps.filter((f) => f.leadId === lead.id);
-  const leadAppointments = calendarEvents.filter((e) => e.leadName === `${lead.firstName} ${lead.lastName}`);
-  const leadActivities = activities.filter((a) => a.leadId === lead.id);
+  const leadAppointments = calendarEvents.filter((e) => e.leadName === `${lead.firstName} ${lead.lastName}`.trim());
 
   // Edit form state
   const [editForm, setEditForm] = useState({
@@ -1692,22 +1767,41 @@ function LeadDetailPanel({ lead, onClose }: { lead: Lead; onClose: () => void })
     tags: [...lead.tags], tagInput: '',
   });
 
-  const handleSaveEdit = () => {
-    updateLead(lead.id, {
-      firstName: editForm.firstName, lastName: editForm.lastName,
-      phone: editForm.phone, email: editForm.email,
-      dealValue: Number(editForm.dealValue), source: editForm.source,
-      assignedTo: editForm.assignedTo, tags: editForm.tags,
-    });
-    setEditMode(false);
-    toast.success('Lead updated');
+  const handleSaveEdit = async () => {
+    try {
+      const pipeline = pipelines.find((p) => p.id === lead.pipelineId);
+      const stageId = pipeline?.stages.find((s) => s.name === lead.stage)?.id;
+      await api.patch(`/api/leads/${lead.id}`, {
+        name: `${editForm.firstName} ${editForm.lastName}`.trim(),
+        email: editForm.email,
+        phone: editForm.phone,
+        stage_id: stageId || undefined,
+        assigned_to: editForm.assignedTo || null,
+        tags: editForm.tags,
+        deal_value: editForm.dealValue !== undefined ? Number(editForm.dealValue) : undefined,
+      });
+      updateLead(lead.id, {
+        firstName: editForm.firstName, lastName: editForm.lastName,
+        phone: editForm.phone, email: editForm.email,
+        dealValue: Number(editForm.dealValue),
+        assignedTo: editForm.assignedTo,
+        assignedName: staff.find((s) => s.id === editForm.assignedTo)?.name ?? '',
+        tags: editForm.tags,
+      });
+      setEditMode(false);
+      toast.success('Lead updated');
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to update lead');
+    }
   };
 
   const logActivity = (type: LeadActivity['type'], title: string, detail?: string) => {
-    addActivity({
+    const act = {
       id: `act-${Date.now()}`, leadId: lead.id, type, title, detail,
-      timestamp: new Date().toISOString(), createdBy: currentUser?.id ?? 's1',
-    });
+      timestamp: new Date().toISOString(), createdBy: currentUser?.id ?? '',
+    };
+    addActivity(act);
+    setLeadActivities((prev) => [act, ...prev]);
   };
 
   const handleCall = () => {
@@ -1716,25 +1810,37 @@ function LeadDetailPanel({ lead, onClose }: { lead: Lead; onClose: () => void })
   };
 
   const handleWhatsApp = () => {
-    logActivity('whatsapp', 'WhatsApp opened', lead.phone);
+    logActivity('whatsapp', 'WhatsApp', lead.phone);
     window.open(`https://wa.me/${lead.phone.replace(/\D/g, '')}`, '_blank');
   };
+
+  const cleanActivityTitle = (t: string) => t
+    .replace(/^Lead added\/updated in CRM and verified\s*→\s*stage:\s*/i, 'Added to CRM · ')
+    .replace(/^Tags added and verified:\s*/i, 'Tags added: ')
+    .replace(/^Tags removed and verified:\s*/i, 'Tags removed: ')
+    .replace(/^Assigned and verified:\s*/i, 'Assigned: ')
+    .replace(/^Staff assignment removed and verified$/i, 'Staff unassigned')
+    .replace(/^Lead quality set and verified:\s*/i, 'Quality: ')
+    .replace(/^Attributes updated and verified:\s*/i, 'Updated: ')
+    .replace(/^Lead soft-deleted and verified$/i, 'Lead removed')
+    .replace(/^Note created and verified:\s*/i, 'Note: ')
+    .replace(/^Follow-up created and verified:\s*/i, 'Follow-up: ')
+    .replace(/^Notification sent and verified:\s*/i, 'Notified: ')
+    .replace(/^Appointment status changed and verified:\s*/i, 'Appointment: ')
+    .replace(/^Stage changed and verified:\s*/i, 'Moved to ')
+    .replace(/^Stage changed to\s+/i, 'Moved to ')
+    .replace(/^Stage →\s*/i, 'Moved to ');
 
   // Build timeline from all sources
   type TimelineEntry = { id: string; type: LeadActivity['type']; title: string; detail?: string; timestamp: string; createdBy?: string };
   const timeline: TimelineEntry[] = [
-    { id: 'created', type: 'created', title: `Joined ${pipelineName}`, detail: `Source: ${lead.source}`, timestamp: lead.createdAt },
-    ...leadActivities.map((a) => ({ id: a.id, type: a.type, title: a.title, detail: a.detail, timestamp: a.timestamp, createdBy: a.createdBy })),
-    ...leadNotes.map((n) => ({ id: `note-${n.id}`, type: 'note' as const, title: 'Note added', detail: n.content, timestamp: n.createdAt, createdBy: n.createdBy })),
-    ...leadFollowUps.map((f) => ({
-      id: `fu-${f.id}`, type: 'followup' as const,
-      title: f.completed ? 'Follow-up completed' : 'Follow-up scheduled',
-      detail: f.note, timestamp: f.dueAt,
-    })),
+    { id: 'created', type: 'created', title: `Joined · ${pipelineName}`, detail: getSourceLabel(lead), timestamp: lead.createdAt },
+    ...leadActivities.map((a) => ({ id: a.id, type: a.type, title: cleanActivityTitle(a.title), detail: a.detail, timestamp: a.timestamp, createdBy: a.createdBy })),
+    ...leadNotes.map((n) => ({ id: `note-${n.id}`, type: 'note' as const, title: 'Note', detail: n.content, timestamp: n.created_at, createdBy: n.created_by_name ?? n.created_by })),
     ...leadAppointments.map((a) => ({
       id: `appt-${a.id}`, type: 'appointment' as const,
-      title: `Appointment: ${a.title.split(' - ')[0]}`,
-      detail: `${format(new Date(a.date), 'dd MMM yyyy')} at ${a.time}`,
+      title: a.title.split(' - ')[0],
+      detail: `${format(new Date(a.date), 'dd MMM yyyy')} · ${a.time}`,
       timestamp: a.date,
     })),
   ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
@@ -1772,20 +1878,32 @@ function LeadDetailPanel({ lead, onClose }: { lead: Lead; onClose: () => void })
     <div className="w-full max-w-[480px] bg-white h-full flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
 
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-black/5 shrink-0">
-        <h2 className="font-bold text-[17px] text-[#1c1410]">Lead Details</h2>
-        <div className="flex items-center gap-1">
-          {!editMode && (
-            <button onClick={() => setEditMode(true)} title="Edit" className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors">
-              <Pencil className="w-4 h-4" />
+      <div className="px-5 py-4 border-b border-black/5 shrink-0">
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold text-[17px] text-[#1c1410]">Lead Details</h2>
+          <div className="flex items-center gap-1">
+            {lead.source && (
+              <span className={cn('px-2.5 py-1 rounded-full text-[11px] font-semibold', getSourceColor(lead.source))}>
+                {getSourceLabel(lead)}
+              </span>
+            )}
+            {!editMode && canEditLead && (
+              <button onClick={() => setEditMode(true)} title="Edit" className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors">
+                <Pencil className="w-4 h-4" />
+              </button>
+            )}
+            {canDeleteLead && (
+              <button onClick={() => setShowDeleteModal(true)} title="Delete" className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-[#c4b09e] hover:text-red-500 transition-colors">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+            {showDeleteModal && (
+              <DeleteLeadModal lead={lead} onClose={() => setShowDeleteModal(false)} onDeleted={onClose} />
+            )}
+            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center hover:bg-[#f5ede3] rounded-lg transition-colors">
+              <X className="w-5 h-5 text-[#7a6b5c]" />
             </button>
-          )}
-          <button onClick={() => { if (window.confirm(`Delete ${lead.firstName} ${lead.lastName}?`)) { deleteLead(lead.id); onClose(); toast.success('Deleted'); } }} title="Delete" className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-[#c4b09e] hover:text-red-500 transition-colors">
-            <Trash2 className="w-4 h-4" />
-          </button>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center hover:bg-[#f5ede3] rounded-lg transition-colors">
-            <X className="w-5 h-5 text-[#7a6b5c]" />
-          </button>
+          </div>
         </div>
       </div>
 
@@ -1810,8 +1928,9 @@ function LeadDetailPanel({ lead, onClose }: { lead: Lead; onClose: () => void })
                 { Icon: User, value: `${lead.firstName} ${lead.lastName}` },
                 { Icon: Phone, value: lead.phone },
                 { Icon: Mail, value: lead.email || '—' },
-                { Icon: UserCheck, value: assignedStaff ? `Assigned to ${assignedStaff.name}` : 'Unassigned' },
-                { Icon: Tag, value: lead.source },
+                { Icon: Layers, value: lead.stage ? `${lead.stage} · ${pipelineName}` : pipelineName },
+                { Icon: UserCheck, value: assignedDisplayName ? `Assigned to ${assignedDisplayName}` : 'Unassigned' },
+                { Icon: Tag, value: getSourceLabel(lead) },
               ].map(({ Icon, value }, i) => (
                 <div key={i} className="flex items-center gap-3">
                   <Icon className="w-4 h-4 text-[#7a6b5c] shrink-0" />
@@ -1819,15 +1938,71 @@ function LeadDetailPanel({ lead, onClose }: { lead: Lead; onClose: () => void })
                 </div>
               ))}
 
-              {/* Additional custom fields */}
-              {lead.customFields && lead.customFields.length > 0 && lead.customFields.map((f, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <FileText className="w-4 h-4 text-[#7a6b5c] shrink-0" />
-                  <span className="text-[13px] text-[#1c1410] font-medium flex-1 break-words">
-                    <span className="text-[#7a6b5c]">{f.label}:</span> {f.value}
-                  </span>
+              {/* Last Follow Up */}
+              {(() => {
+                const last = leadFollowUps
+                  .filter((f) => f.dueAt)
+                  .sort((a, b) => new Date(b.dueAt).getTime() - new Date(a.dueAt).getTime())[0];
+                if (!last) return null;
+                return (
+                  <div className="flex items-center gap-3">
+                    <Clock className="w-4 h-4 text-[#7a6b5c] shrink-0" />
+                    <span className="text-[13px] text-[#1c1410] font-medium">
+                      Last Follow Up:{' '}
+                      <span className="text-[#1c1410]">{format(new Date(last.dueAt), 'dd MMM yyyy')}</span>
+                      <span className="text-[#7a6b5c] ml-1">({formatDistanceToNow(new Date(last.dueAt), { addSuffix: true })})</span>
+                    </span>
+                  </div>
+                );
+              })()}
+
+              {/* Tags */}
+              {lead.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  {lead.tags.map((t) => (
+                    <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-orange-50 text-[#c2410c] border border-orange-100">
+                      <Tag className="w-2.5 h-2.5" />{t}
+                    </span>
+                  ))}
                 </div>
-              ))}
+              )}
+
+              {/* Additional custom fields — collapsed by default */}
+              {lead.customFields && lead.customFields.length > 0 && (
+                <div>
+                  <button
+                    onClick={() => setShowCustomFields((v) => !v)}
+                    className="flex items-center gap-1.5 text-[12px] font-semibold text-primary hover:text-[#c2410c] transition-colors"
+                  >
+                    <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${showCustomFields ? 'rotate-90' : ''}`} />
+                    Additional Fields ({lead.customFields.length})
+                  </button>
+                  {showCustomFields && (
+                    <div className="mt-2 space-y-2 pl-1">
+                      {lead.customFields.map((f, i) => (
+                        <div key={i} className="flex items-start gap-3">
+                          <FileText className="w-4 h-4 text-[#7a6b5c] shrink-0 mt-0.5" />
+                          <span className="text-[13px] text-[#1c1410] font-medium flex-1 break-words">
+                            <span className="text-[#7a6b5c]">{f.label}:</span> {f.value}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Timestamps */}
+              <div className="pt-1 border-t border-black/5 mt-1 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-[#7a6b5c]">Created at</span>
+                  <span className="text-[11px] font-medium text-[#1c1410]">{format(new Date(lead.createdAt), 'dd MMM yyyy, hh:mm:ss a')}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-[#7a6b5c]">Updated at</span>
+                  <span className="text-[11px] font-medium text-[#1c1410]">{format(new Date(lead.lastActivity), 'dd MMM yyyy, hh:mm:ss a')}</span>
+                </div>
+              </div>
             </div>
           </div>
         ) : (
@@ -1867,9 +2042,11 @@ function LeadDetailPanel({ lead, onClose }: { lead: Lead; onClose: () => void })
                   </div>
                   <div>
                     <label className="text-[11px] text-[#7a6b5c] mb-1 block font-medium">Source</label>
-                    <select className={inputCls} value={editForm.source} onChange={(e) => setEditForm({ ...editForm, source: e.target.value })}>
-                      {['Meta Forms','WhatsApp','Custom Form','Manual','Landing Page'].map((s) => <option key={s}>{s}</option>)}
-                    </select>
+                    <div className={inputCls + ' bg-gray-50 text-[#7a6b5c] cursor-default select-none'}>
+                      <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-full', getSourceColor(lead.source))}>
+                        {getSourceLabel(lead)}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -1937,13 +2114,12 @@ function LeadDetailPanel({ lead, onClose }: { lead: Lead; onClose: () => void })
         {!editMode && (
           <div className="px-5 py-4 border-b border-black/5">
             <h4 className="text-[13px] font-bold text-[#1c1410] mb-3">Quick Actions</h4>
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               {([
-                { Icon: Phone, label: 'Call', onClick: handleCall },
+                { Icon: Layers, label: 'Pipeline', onClick: () => setShowPipelineModal(true) },
                 { Icon: MessageCircle, label: 'WhatsApp', onClick: handleWhatsApp },
-                { Icon: FileText, label: 'Notes', onClick: () => setShowNoteModal(true) },
                 { Icon: Clock, label: 'Follow-up', onClick: () => setShowFuModal(true) },
-                { Icon: Calendar, label: 'Schedule', onClick: () => setShowApptModal(true) },
+                { Icon: CalendarPlus, label: 'Appointment', onClick: () => setShowApptModal(true) },
               ]).map(({ Icon, label, onClick }) => (
                 <button
                   key={label}
@@ -1958,10 +2134,11 @@ function LeadDetailPanel({ lead, onClose }: { lead: Lead; onClose: () => void })
           </div>
         )}
 
+
         {/* Activity Timeline */}
         {!editMode && (
           <div className="px-5 py-4">
-            <h4 className="text-[13px] font-bold text-[#1c1410] mb-4">Activity Timeline</h4>
+            <h4 className="text-[13px] font-bold text-[#1c1410] mb-3">Activity Timeline</h4>
             {timeline.length === 0 ? (
               <p className="text-[12px] text-[#b09e8d] text-center py-4">No activity yet</p>
             ) : (
@@ -1976,9 +2153,14 @@ function LeadDetailPanel({ lead, onClose }: { lead: Lead; onClose: () => void })
                       <div className="flex-1 pt-0.5 min-w-0">
                         <p className="text-[13px] font-semibold text-[#1c1410]">{entry.title}</p>
                         {entry.detail && <p className="text-[12px] text-[#7a6b5c] mt-0.5 break-words">{entry.detail}</p>}
-                        <p className="text-[11px] text-[#b09e8d] mt-1 flex items-center gap-1">
-                          <Clock className="w-3 h-3" /> {timestampLabel(entry.timestamp)}
-                        </p>
+                        <div className="flex items-center justify-between mt-1">
+                          <p className="text-[11px] text-[#b09e8d] flex items-center gap-1">
+                            <Clock className="w-3 h-3" /> {timestampLabel(entry.timestamp)}
+                          </p>
+                          {entry.createdBy && (
+                            <span className="text-[11px] text-[#7a6b5c] font-medium">~ {entry.createdBy}</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -1991,16 +2173,34 @@ function LeadDetailPanel({ lead, onClose }: { lead: Lead; onClose: () => void })
       </div>
     </div>
     </div>
-    {showNoteModal && <NoteModal leadId={lead.id} onClose={() => setShowNoteModal(false)} />}
-    {showFuModal && <FollowUpModal leadId={lead.id} onClose={() => setShowFuModal(false)} />}
-    {showApptModal && <AppointmentModal lead={lead} onClose={() => setShowApptModal(false)} />}
+    {showNoteModal && <NoteModal leadId={lead.id} onClose={() => setShowNoteModal(false)} onCreated={(n) => setLeadNotes((prev) => [n, ...prev])} />}
+    {showPipelineModal && <QuickEditModal lead={lead} onClose={() => setShowPipelineModal(false)} onSaved={(updates) => onLeadUpdated?.(lead.id, updates)} />}
+    {showFuModal && <FollowUpModal leadId={lead.id} onClose={() => setShowFuModal(false)} onCreated={(fu) => {
+      setLeadFollowUps((prev) => [...prev, fu]);
+      setTimeout(() => {
+        api.get<any[]>(`/api/leads/${lead.id}/activities`).then((data) =>
+          setLeadActivities(data.map((a) => ({ id: a.id, leadId: lead.id, type: a.type, title: a.title, detail: a.detail, timestamp: a.timestamp ?? a.created_at, createdBy: a.created_by_name ?? a.created_by })))
+        ).catch(() => null);
+      }, 400);
+    }} />}
+    {showApptModal && <AppointmentModal lead={lead} onClose={() => setShowApptModal(false)} onBooked={() => {
+      setTimeout(() => {
+        api.get<any[]>(`/api/leads/${lead.id}/activities`).then((data) =>
+          setLeadActivities(data.map((a) => ({ id: a.id, leadId: lead.id, type: a.type, title: a.title, detail: a.detail, timestamp: a.created_at, createdBy: a.created_by_name ?? a.created_by })))
+        ).catch(() => null);
+      }, 500);
+    }} />}
     </>
   );
 }
 
 // ─── Kanban Card ───────────────────────────────────────────────────────────────
 // ─── Quick Edit Modal ──────────────────────────────────────────────────────────
-function QuickEditModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
+function QuickEditModal({ lead, onClose, onSaved }: {
+  lead: Lead;
+  onClose: () => void;
+  onSaved?: (updates: { pipelineId: string; stage: string; stageId: string | undefined; tags: string[] }) => void;
+}) {
   const { updateLead, moveLeadStage, pipelines, tags: storeTags } = useCrmStore();
   const [pipelineId, setPipelineId] = useState(lead.pipelineId);
   const [stage, setStage] = useState(lead.stage);
@@ -2016,9 +2216,18 @@ function QuickEditModal({ lead, onClose }: { lead: Lead; onClose: () => void }) 
     setTagInput('');
   };
 
-  const handleSave = () => {
-    updateLead(lead.id, { pipelineId, stage, tags });
-    if (stage !== lead.stage) moveLeadStage(lead.id, stage);
+  const handleSave = async () => {
+    const stageId = selectedPipeline?.stages.find((s) => s.name === stage)?.id;
+    try {
+      await api.patch(`/api/leads/${lead.id}`, {
+        pipeline_id: pipelineId || undefined,
+        stage_id: stageId || undefined,
+        tags,
+      });
+    } catch { /* best-effort */ }
+    updateLead(lead.id, { pipelineId, stage, stageId, tags });
+    if (stage !== lead.stage) moveLeadStage(lead.id, stage, stageId);
+    onSaved?.({ pipelineId, stage, stageId, tags });
     toast.success('Lead updated');
     onClose();
   };
@@ -2030,7 +2239,7 @@ function QuickEditModal({ lead, onClose }: { lead: Lead; onClose: () => void }) 
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col" style={{ boxShadow: '0 25px 80px rgba(0,0,0,0.18)' }}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-black/5">
           <div>
-            <p className="text-[11px] text-[#b09e8d]">Quick Edit</p>
+            <p className="text-[11px] text-[#b09e8d]">Pipeline / Stage / Tags</p>
             <h3 className="font-bold text-[15px] text-[#1c1410]">{lead.firstName} {lead.lastName}</h3>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-[#7a6b5c]"><X className="w-4 h-4" /></button>
@@ -2083,12 +2292,20 @@ function QuickEditModal({ lead, onClose }: { lead: Lead; onClose: () => void }) 
               </button>
             </div>
           </div>
+
+          {/* Created date — read only */}
+          <div className="flex items-center justify-between py-2.5 px-3 rounded-xl bg-[#faf8f6] border border-black/5">
+            <span className="text-[12px] font-semibold text-[#7a6b5c]">Created</span>
+            <span className="text-[12px] font-bold text-[#1c1410]">
+              {new Date(lead.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </span>
+          </div>
         </div>
 
         <div className="flex gap-2 px-5 pb-5">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] hover:bg-gray-100 transition-colors">Cancel</button>
           <button onClick={handleSave} className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white transition-all" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>
-            Save Changes
+            Update
           </button>
         </div>
       </div>
@@ -2097,33 +2314,89 @@ function QuickEditModal({ lead, onClose }: { lead: Lead; onClose: () => void }) 
 }
 
 // ─── Appointment Modal ─────────────────────────────────────────────────────────
-function AppointmentModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
-  const { addCalendarEvent } = useCrmStore();
+const SHORT_DAYS_APPT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+function genSlots(schedule: Record<string, { enabled: boolean; slots: { start: string; end: string }[] }>, date: string, duration: number): string[] {
+  const dayName = SHORT_DAYS_APPT[new Date(date + 'T12:00:00').getDay()];
+  const day = schedule[dayName];
+  if (!day?.enabled) return [];
+  const result: string[] = [];
+  for (const w of day.slots) {
+    let [sh, sm] = w.start.split(':').map(Number);
+    const [eh, em] = w.end.split(':').map(Number);
+    const endMins = eh * 60 + em;
+    while (sh * 60 + sm + duration <= endMins) {
+      const hh = sh % 12 === 0 ? 12 : sh % 12;
+      const ampm = sh < 12 ? 'AM' : 'PM';
+      result.push(`${String(hh).padStart(2,'0')}:${String(sm).padStart(2,'0')} ${ampm}`);
+      const total = sh * 60 + sm + duration;
+      sh = Math.floor(total / 60); sm = total % 60;
+    }
+  }
+  return result;
+}
+
+function AppointmentModal({ lead, onClose, onBooked }: { lead: Lead; onClose: () => void; onBooked?: () => void }) {
+  const { addCalendarEvent, bookingLinks } = useCrmStore();
   const [form, setForm] = useState({
-    event: '', location: '', locationValue: '', date: '', tz: 'Asia/Kolkata', slot: '',
+    event: '', locationValue: '', date: '', tz: 'Asia/Kolkata', slot: '',
   });
 
+  const selectedET = bookingLinks.find((b) => b.id === form.event) as any | undefined;
+  const location   = selectedET?.meetingType ?? '';
+  const slots      = selectedET && form.date ? genSlots(selectedET.schedule ?? {}, form.date, selectedET.duration ?? 30) : [];
+
+  const handleSelectEvent = (id: string) => {
+    const et = bookingLinks.find((b) => b.id === id) as any | undefined;
+    setForm((f) => ({ ...f, event: id, locationValue: et?.meetingLink ?? '', slot: '' }));
+  };
+
   const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2.5 text-[13px] text-[#1c1410] outline-none focus:border-primary/40 transition-colors bg-white';
-  const lbl = (text: string) => (
+  const lbl = (text: string, required = true) => (
     <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">
-      {text} <span className="text-red-500">*</span>
+      {text} {required && <span className="text-red-500">*</span>}
     </label>
   );
 
-  const handleBook = () => {
-    if (!form.event || !form.location || !form.locationValue || !form.date || !form.slot) {
-      toast.error('Please fill all required fields'); return;
+  const handleBook = async () => {
+    if (!form.event || !form.date || !form.slot) {
+      toast.error('Please select a calendar, date and timeslot'); return;
     }
-    const selectedBooking = bookingLinks.find((b) => b.id === form.event);
-    addCalendarEvent({
-      id: `evt-${Date.now()}`,
-      title: `${selectedBooking?.title ?? 'Appointment'} - ${lead.firstName} ${lead.lastName}`,
-      type: (selectedBooking?.eventType as 'meeting' | 'demo' | 'call') ?? 'meeting',
-      date: form.date, time: form.slot, duration: selectedBooking?.duration ?? 30,
-      leadName: `${lead.firstName} ${lead.lastName}`, status: 'scheduled',
-    });
-    toast.success('Appointment booked');
-    onClose();
+    const bookingName = selectedET?.name ?? 'Appointment';
+    const slotParts = form.slot.split(' ');
+    const [hhStr, mmStr] = slotParts[0].split(':');
+    let hh = parseInt(hhStr, 10);
+    const mm = parseInt(mmStr, 10);
+    if (slotParts[1] === 'PM' && hh !== 12) hh += 12;
+    else if (slotParts[1] === 'AM' && hh === 12) hh = 0;
+    const time24 = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    const startIso = `${form.date}T${time24}:00`;
+    const endDate = new Date(startIso);
+    endDate.setMinutes(endDate.getMinutes() + (selectedET?.duration ?? 30));
+    try {
+      const created = await api.post<any>('/api/calendar', {
+        title: `${bookingName} - ${lead.firstName} ${lead.lastName}`,
+        type: selectedET?.eventType ?? 'meeting',
+        start_time: startIso,
+        end_time: endDate.toISOString(),
+        lead_id: lead.id,
+        assigned_to: lead.assignedTo || undefined,
+        event_type_id: form.event,
+        meeting_link: form.locationValue || undefined,
+      });
+      addCalendarEvent({
+        id: created.id,
+        title: `${bookingName} - ${lead.firstName} ${lead.lastName}`,
+        type: (selectedET?.eventType as 'meeting' | 'demo' | 'call') ?? 'meeting',
+        date: form.date, time: time24, duration: selectedET?.duration ?? 30,
+        leadName: `${lead.firstName} ${lead.lastName}`, status: 'scheduled',
+      });
+      toast.success('Appointment booked');
+      onClose();
+      onBooked?.();
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to book appointment');
+    }
   };
 
   return (
@@ -2149,43 +2422,50 @@ function AppointmentModal({ lead, onClose }: { lead: Lead; onClose: () => void }
           {/* Calendar Event */}
           <div>
             {lbl('Calendar Event')}
-            <select className={inputCls} value={form.event} onChange={(e) => setForm({ ...form, event: e.target.value })}>
+            <select className={inputCls} value={form.event} onChange={(e) => handleSelectEvent(e.target.value)}>
               <option value="">Select Event</option>
-              {bookingLinks.map((b) => <option key={b.id} value={b.id}>{b.title}</option>)}
+              {bookingLinks.filter((b) => (b as any).isActive !== false).map((b) => (
+                <option key={b.id} value={b.id}>{(b as any).name ?? b.title}</option>
+              ))}
             </select>
           </div>
 
-          {/* Event Location + Event Location Value */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              {lbl('Event Location')}
-              <select className={inputCls} value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })}>
-                <option value="">Please select event</option>
-                <option value="zoom">Zoom</option>
-                <option value="google_meet">Google Meet</option>
-                <option value="in_person">In Person</option>
-                <option value="phone">Phone Call</option>
-              </select>
+          {/* Location — auto-filled from calendar, editable */}
+          {form.event && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                {lbl('Meeting Type', false)}
+                <input
+                  className="w-full border border-gray-100 rounded-lg px-3 py-2.5 text-[13px] text-[#7a6b5c] bg-gray-50 outline-none cursor-default"
+                  value={location || '—'}
+                  readOnly
+                />
+              </div>
+              <div>
+                {lbl('Meeting Link / Address', false)}
+                <input
+                  className={inputCls}
+                  placeholder="Meeting link or address"
+                  value={form.locationValue}
+                  onChange={(e) => setForm({ ...form, locationValue: e.target.value })}
+                />
+              </div>
             </div>
-            <div>
-              {lbl('Event Location Value')}
-              <input
-                className={inputCls}
-                placeholder="Meeting link or address"
-                value={form.locationValue}
-                onChange={(e) => setForm({ ...form, locationValue: e.target.value })}
-              />
-            </div>
-          </div>
+          )}
 
           {/* Event Date + Timezone */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               {lbl('Event Date')}
-              <input className={inputCls} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+              <input
+                className={inputCls}
+                type="date"
+                value={form.date}
+                onChange={(e) => setForm({ ...form, date: e.target.value, slot: '' })}
+              />
             </div>
             <div>
-              {lbl('Timezone')}
+              {lbl('Timezone', false)}
               <select className={inputCls} value={form.tz} onChange={(e) => setForm({ ...form, tz: e.target.value })}>
                 <option value="Asia/Kolkata">Asia/Kolkata</option>
                 <option value="Asia/Dubai">Asia/Dubai</option>
@@ -2196,14 +2476,19 @@ function AppointmentModal({ lead, onClose }: { lead: Lead; onClose: () => void }
             </div>
           </div>
 
-          {/* Timeslots */}
+          {/* Timeslots — from calendar schedule */}
           <div>
-            {lbl('Timeslots')}
-            <select className={inputCls} value={form.slot} onChange={(e) => setForm({ ...form, slot: e.target.value })}>
-              <option value="">Please select event and date</option>
-              {['09:00 AM','10:00 AM','11:00 AM','12:00 PM','02:00 PM','03:00 PM','04:00 PM','05:00 PM'].map((t) => (
-                <option key={t}>{t}</option>
-              ))}
+            {lbl('Timeslot')}
+            <select
+              className={inputCls}
+              value={form.slot}
+              onChange={(e) => setForm({ ...form, slot: e.target.value })}
+              disabled={!form.event || !form.date}
+            >
+              <option value="">
+                {!form.event ? 'Select a calendar first' : !form.date ? 'Select a date first' : slots.length === 0 ? 'No slots available this day' : 'Pick a timeslot'}
+              </option>
+              {slots.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
         </div>
@@ -2212,10 +2497,10 @@ function AppointmentModal({ lead, onClose }: { lead: Lead; onClose: () => void }
         <div className="flex items-center justify-end px-6 pb-6">
           <button
             onClick={handleBook}
-            className="px-8 py-2.5 rounded-lg text-[13px] font-bold text-white transition-all hover:-translate-y-0.5"
+            className="px-8 py-2.5 rounded-lg text-[13px] font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-50"
             style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}
           >
-            ADD
+            Book Appointment
           </button>
         </div>
       </div>
@@ -2227,78 +2512,134 @@ function AppointmentModal({ lead, onClose }: { lead: Lead; onClose: () => void }
 function LeadCard({ lead, onClick, onFollowUp, onNote, onAssign, showPhone }: { lead: Lead; onClick: () => void; onFollowUp: () => void; onNote: () => void; onAssign: () => void; showPhone: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: lead.id });
   const stopAnd = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); };
-  const { staff: allStaff } = useCrmStore();
+  const { staff: allStaff, followUps } = useCrmStore();
   const assignedStaff = allStaff.find((s) => s.id === lead.assignedTo);
+  const assignedCardName = assignedStaff?.name || lead.assignedName || '';
+  const assignedCardAvatar = assignedStaff?.avatar || assignedCardName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() || '';
   const [showQuickEdit, setShowQuickEdit] = useState(false);
   const [showAppointment, setShowAppointment] = useState(false);
+  const [showCardMenu, setShowCardMenu] = useState(false);
+
+  const initials = `${lead.firstName[0] ?? ''}${lead.lastName[0] ?? ''}`.toUpperCase() || '?';
+  const bgPalette = ['#fde8d8','#dbeafe','#dcfce7','#ede9fe','#fce7f3','#fef9c3'];
+  const fgPalette = ['#c2410c','#1d4ed8','#15803d','#7c3aed','#be185d','#a16207'];
+  const ci = (lead.firstName.charCodeAt(0) ?? 0) % bgPalette.length;
+
+  // ── Follow-up & days calculations ──
+  const now = new Date();
+  const leadFUs = followUps.filter((f) => f.leadId === lead.id);
+  const lastFU = leadFUs
+    .filter((f) => new Date(f.dueAt) <= now)
+    .sort((a, b) => new Date(b.dueAt).getTime() - new Date(a.dueAt).getTime())[0] ?? null;
+  const nextFU = leadFUs
+    .filter((f) => !f.completed && new Date(f.dueAt) > now)
+    .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime())[0] ?? null;
+  const created = new Date(lead.createdAt);
+  const daysInPipeline = Math.max(0, Math.floor(
+    (Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) -
+     Date.UTC(created.getFullYear(), created.getMonth(), created.getDate())) / (1000 * 60 * 60 * 24)
+  ));
+  const fmtDate = (iso: string) => {
+    const d = new Date(iso);
+    const diffDays = Math.round((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+    const dateStr = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    if (diffDays === 0) return `${dateStr} (today)`;
+    if (diffDays > 0) return `${dateStr} (${diffDays}d ago)`;
+    return `${dateStr} (in ${Math.abs(diffDays)}d)`;
+  };
+  const daysBg = daysInPipeline <= 2 ? 'bg-emerald-50 text-emerald-700' : daysInPipeline <= 7 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-600';
 
   return (<>
     <div
       ref={setNodeRef}
       {...attributes}
       {...listeners}
-      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
-      className="group bg-white rounded-xl border border-black/[0.07] border-t-[3px] border-t-primary p-3.5 cursor-grab active:cursor-grabbing hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.25 : 1 }}
+      className="group bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all duration-150 cursor-grab active:cursor-grabbing"
       onClick={onClick}
     >
-      {/* Name + phone + assigned avatar */}
-      <div className="flex items-start justify-between mb-2.5">
-        <div className="min-w-0">
-          <span className="text-[13px] font-bold text-[#1c1410] truncate block">{lead.firstName} {lead.lastName}</span>
-          <span className="text-[12px] text-[#7a6b5c] mt-0.5 block">{showPhone ? lead.phone : lead.phone.replace(/\d(?=\d{4})/g, '*')}</span>
-        </div>
-        {/* Assigned: show initials if assigned, dashed circle on hover if not */}
-        {assignedStaff ? (
-          <div
-            title={`Assigned: ${assignedStaff.name}`}
-            className="w-6 h-6 rounded-full bg-[#f5ede3] flex items-center justify-center text-[10px] font-bold text-primary shrink-0 ml-2"
-          >
-            {assignedStaff.avatar}
+      <div className="p-2.5">
+        {/* Row 1: avatar + name/phone (left) | staff avatar + 3-dot menu (right) */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0"
+              style={{ background: bgPalette[ci], color: fgPalette[ci] }}>
+              {initials}
+            </div>
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold text-[#1c1410] truncate leading-tight">
+                {lead.firstName} {lead.lastName}
+              </p>
+              <p className="text-[11px] text-[#7a6b5c] truncate">
+                {showPhone ? lead.phone : lead.phone.replace(/\d(?=\d{4})/g, '*')}
+              </p>
+            </div>
           </div>
-        ) : (
-          <button
-            onClick={stopAnd(onAssign)}
-            title="Assign staff"
-            className="w-6 h-6 rounded-full border border-dashed border-[#c4b09e] flex items-center justify-center text-[#c4b09e] hover:border-primary hover:text-primary transition-colors shrink-0 ml-2 opacity-0 group-hover:opacity-100"
-          >
-            <User className="w-3 h-3" />
-          </button>
-        )}
-      </div>
-
-      {/* Source + actions */}
-      <div className="flex items-center justify-between mb-2.5" onClick={(e) => e.stopPropagation()}>
-        {lead.source
-          ? <span className={cn('inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold', SOURCE_COLORS[lead.source] ?? 'bg-gray-100 text-gray-600')}>{lead.source}</span>
-          : <span />
-        }
-        <div className="flex items-center gap-1">
-          <button onClick={stopAnd(() => setShowQuickEdit(true))} title="Edit pipeline / stage / tags" className="w-6 h-6 rounded-lg flex items-center justify-center text-[#b09e8d] hover:bg-[#f5ede3] hover:text-primary transition-colors">
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
-          <button onClick={stopAnd(onFollowUp)} title="Follow-up" className="w-6 h-6 rounded-lg flex items-center justify-center text-[#b09e8d] hover:bg-[#f5ede3] hover:text-primary transition-colors">
-            <CheckSquare className="w-3.5 h-3.5" />
-          </button>
-          <button onClick={stopAnd(onNote)} title="Note" className="w-6 h-6 rounded-lg flex items-center justify-center text-[#b09e8d] hover:bg-[#f5ede3] hover:text-primary transition-colors">
-            <FileText className="w-3.5 h-3.5" />
-          </button>
-          <button onClick={stopAnd(() => setShowAppointment(true))} title="Book Appointment" className="w-6 h-6 rounded-lg flex items-center justify-center text-primary hover:bg-[#f5ede3] transition-colors">
-            <CalendarPlus className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {assignedCardName && (
+              <div title={`Assigned: ${assignedCardName}`}
+                className="w-5 h-5 rounded-full bg-[#f5ede3] flex items-center justify-center text-[9px] font-bold text-primary">
+                {assignedCardAvatar}
+              </div>
+            )}
+            <div className="relative" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => setShowCardMenu((v) => !v)}
+                className="w-6 h-6 rounded-md flex items-center justify-center text-[#1c1410] hover:bg-orange-50 hover:text-primary transition-colors">
+                <MoreHorizontal className="w-3.5 h-3.5" />
+              </button>
+              {showCardMenu && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setShowCardMenu(false)} />
+                  <div className="absolute right-0 top-7 z-40 w-44 bg-white rounded-xl border border-black/5 shadow-xl overflow-hidden py-1">
+                    <button onClick={() => { setShowCardMenu(false); setShowQuickEdit(true); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
+                      <Pencil className="w-3 h-3 text-[#7a6b5c]" /> Edit
+                    </button>
+                    <button onClick={() => { setShowCardMenu(false); onFollowUp(); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
+                      <CheckSquare className="w-3 h-3 text-[#7a6b5c]" /> Follow-up
+                    </button>
+                    <button onClick={() => { setShowCardMenu(false); setShowAppointment(true); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
+                      <CalendarPlus className="w-3 h-3 text-[#7a6b5c]" /> Book Appointment
+                    </button>
+                    {!assignedCardName && (
+                      <button onClick={() => { setShowCardMenu(false); onAssign(); }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
+                        <User className="w-3 h-3 text-[#7a6b5c]" /> Assign
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </div>
+
+        {/* Row 2: last FU (left) | days untouched (center) | next FU (right) */}
+        <div className="flex items-center justify-between gap-1 mt-2 pt-2 border-t border-black/[0.05]">
+          <div className="flex flex-col items-start min-w-0">
+            <span className="text-[9px] font-bold text-[#9e8e7e] uppercase tracking-wide leading-none mb-0.5">Last Follow</span>
+            <span className="text-[11px] font-bold text-[#1c1410] truncate">
+              {lastFU ? fmtDate(lastFU.dueAt) : <span className="text-[#c4b09e]">—</span>}
+            </span>
+          </div>
+          <div className="flex flex-col items-end min-w-0">
+            <span className="text-[9px] font-bold text-[#9e8e7e] uppercase tracking-wide leading-none mb-0.5">Next Follow</span>
+            <span className="text-[11px] font-bold text-[#1c1410] truncate">
+              {nextFU ? fmtDate(nextFU.dueAt) : <span className="text-[#c4b09e]">—</span>}
+            </span>
+          </div>
+        </div>
+
       </div>
 
-      {/* Timestamps */}
-      <div className="flex items-center justify-between text-[10px] text-[#c4b09e] border-t border-black/[0.04] pt-2">
-        <span>{format(new Date(lead.createdAt), 'dd MMM h:mm a')}</span>
-        <span>{format(new Date(lead.lastActivity), 'dd MMM h:mm a')}</span>
-      </div>
     </div>
 
     {showQuickEdit && <QuickEditModal lead={lead} onClose={() => setShowQuickEdit(false)} />}
     {showAppointment && <AppointmentModal lead={lead} onClose={() => setShowAppointment(false)} />}
-  </>
-  );
+  </>);
 }
 
 // ─── Stage Column ──────────────────────────────────────────────────────────────
@@ -2307,15 +2648,20 @@ function StageColumn({ stage, leads: stageLeads, onLeadClick, onFollowUp, onNote
   onFollowUp: (l: Lead) => void; onNote: (l: Lead) => void; onAssign: (l: Lead) => void; showPhone: boolean;
 }) {
   const { setNodeRef } = useDroppable({ id: stage });
-  const total = stageLeads.reduce((s, l) => s + l.dealValue, 0);
+  const dotPalette = ['#3b82f6','#f59e0b','#8b5cf6','#10b981','#f43f5e','#06b6d4','#ea580c'];
+  const dotColor = dotPalette[(stage.charCodeAt(0) ?? 0) % dotPalette.length];
   return (
     <div className="min-w-[280px] w-[280px] flex-shrink-0 flex flex-col min-h-0">
-      {/* Column header — fixed at top of column, cards below scroll independently */}
-      <div className="mb-3 bg-white rounded-xl border border-black/[0.06] px-4 py-2.5 flex items-center justify-between shrink-0 border-t-[3px] border-t-[#1c1410]">
-        <h3 className="font-bold text-[12px] text-[#1c1410] uppercase tracking-wider">{stage}</h3>
-        <span className="text-[11px] font-bold text-[#7a6b5c] bg-black/[0.06] rounded-full px-2 py-0.5 min-w-[20px] text-center">{stageLeads.length}</span>
+      {/* Column header — centered name with colored dot + count */}
+      <div className="mb-3 flex items-center justify-center gap-1.5 shrink-0 px-0.5">
+        <h3 className="text-[14px] font-bold text-[#c2410c]">{stage}</h3>
+        <span className="flex items-center gap-0.5 text-[13px] font-semibold">
+          <span style={{ color: dotColor }}>•</span>
+          <span className="text-[#1c1410] font-bold">({stageLeads.length})</span>
+        </span>
       </div>
-      <div ref={setNodeRef} className="space-y-2 flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-0.5 pb-2 scrollbar-hide">
+
+      <div ref={setNodeRef} className="space-y-2.5 flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-0.5 pb-2 scrollbar-hide">
         <SortableContext items={stageLeads.map((l) => l.id)} strategy={verticalListSortingStrategy}>
           {stageLeads.map((lead) => (
             <LeadCard key={lead.id} lead={lead}
@@ -2328,9 +2674,9 @@ function StageColumn({ stage, leads: stageLeads, onLeadClick, onFollowUp, onNote
           ))}
         </SortableContext>
         {stageLeads.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-10 gap-2 opacity-40">
-            <User className="w-6 h-6 text-[#c4b09e]" />
-            <p className="text-[11px] text-[#7a6b5c]">No leads</p>
+          <div className="flex flex-col items-center justify-center py-12 gap-2 rounded-xl border-2 border-dashed border-gray-100">
+            <User className="w-5 h-5 text-gray-200" />
+            <p className="text-[11px] text-gray-300">No leads</p>
           </div>
         )}
       </div>
@@ -2432,16 +2778,20 @@ function NewPipelineModal({ onClose }: { onClose: () => void }) {
 
   const COLORS = ['#6366f1', '#f59e0b', '#10b981', '#3b82f6', '#22c55e', '#ef4444', '#8b5cf6', '#ec4899'];
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim()) { toast.error('Pipeline name is required'); return; }
     if (stages.length === 0) { toast.error('Add at least one stage'); return; }
     if (pipelines.some((p) => p.name.toLowerCase() === name.trim().toLowerCase())) {
       toast.error('A pipeline with this name already exists'); return;
     }
-    const stagesWithColor = stages.map((s, i) => ({ ...s, color: COLORS[i % COLORS.length] }));
-    addPipeline({ id: `pipeline-${Date.now()}`, name: name.trim(), stages: stagesWithColor });
-    toast.success(`Pipeline "${name.trim()}" created`);
-    onClose();
+    try {
+      const stagesWithColor = stages.map((s, i) => ({ ...s, color: COLORS[i % COLORS.length] }));
+      await addPipeline({ id: '', name: name.trim(), stages: stagesWithColor });
+      toast.success(`Pipeline "${name.trim()}" created`);
+      onClose();
+    } catch {
+      toast.error('Failed to create pipeline. Please try again.');
+    }
   };
 
   return (
@@ -2544,17 +2894,125 @@ function NewPipelineModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+// ─── Query Builder Helpers (S2.3.1 / S2.3.3) ──────────────────────────────────
+function dateRangeToIso(range: string): { date_from?: string; date_to?: string } {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const iso = (d: Date) => d.toISOString();
+  switch (range) {
+    case 'Today':      return { date_from: iso(today) };
+    case 'Yesterday': { const y = new Date(today); y.setDate(y.getDate() - 1); return { date_from: iso(y), date_to: iso(today) }; }
+    case 'This Week':  { const w = new Date(today); w.setDate(w.getDate() - w.getDay()); return { date_from: iso(w) }; }
+    case 'Last Week':  { const ws = new Date(today); ws.setDate(ws.getDate() - ws.getDay() - 7); const we = new Date(today); we.setDate(we.getDate() - we.getDay()); return { date_from: iso(ws), date_to: iso(we) }; }
+    case 'Last 7 Days':  { const d = new Date(today); d.setDate(d.getDate() - 7);  return { date_from: iso(d) }; }
+    case 'Last 30 Days': { const d = new Date(today); d.setDate(d.getDate() - 30); return { date_from: iso(d) }; }
+    case 'This Month': return { date_from: iso(new Date(now.getFullYear(), now.getMonth(), 1)) };
+    case 'Last Month': { const ms = new Date(now.getFullYear(), now.getMonth() - 1, 1); const me = new Date(now.getFullYear(), now.getMonth(), 1); return { date_from: iso(ms), date_to: iso(me) }; }
+    case 'This Year':  return { date_from: iso(new Date(now.getFullYear(), 0, 1)) };
+    case 'Last Year':  { const ys = new Date(now.getFullYear() - 1, 0, 1); const ye = new Date(now.getFullYear(), 0, 1); return { date_from: iso(ys), date_to: iso(ye) }; }
+    default: return {};
+  }
+}
+
+function buildLeadsParams(
+  filters: FilterState,
+  search: string,
+  pipelineId: string | null,
+  selectedPipeline: Pipeline | undefined,
+  cursor = '',
+): URLSearchParams {
+  const p = new URLSearchParams();
+  p.set('after', cursor);          // triggers cursor-mode response
+  p.set('limit', '50');
+  if (pipelineId) p.set('pipeline_id', pipelineId);
+  if (search)     p.set('search', search);
+  // Single-selection filters map directly to API; multi-selection stays client-side
+  if (filters.assignedTo.length === 1 && filters.assignedTo[0] !== 'none') p.set('assigned_to', filters.assignedTo[0]);
+  if (filters.stage.length === 1) {
+    const stageId = selectedPipeline?.stages.find((s) => s.name === filters.stage[0])?.id;
+    if (stageId) p.set('stage', stageId);
+  }
+  if (filters.tags.length === 1) p.set('tag', filters.tags[0]);
+  if (filters.createdOn) {
+    const { date_from, date_to } = dateRangeToIso(filters.createdOn);
+    if (date_from) p.set('date_from', date_from);
+    if (date_to)   p.set('date_to',   date_to);
+  }
+  return p;
+}
+
+function mapApiLeadsToStore(rows: any[], stageMap: Record<string, string>): Lead[] {
+  return rows.map((l) => {
+    const parts = (l.name ?? '').split(' ');
+    const stageName = stageMap[l.stage_id] ?? l.stage_name ?? 'New Lead';
+    return {
+      id: l.id,
+      firstName: l.first_name ?? parts[0] ?? '',
+      lastName: l.last_name ?? parts.slice(1).join(' ') ?? '',
+      email: l.email ?? '',
+      phone: l.phone ?? '',
+      stage: stageName,
+      stageId: l.stage_id ?? '',
+      pipelineId: l.pipeline_id ?? '',
+      source: l.source ?? 'Manual',
+      tags: l.tags ?? [],
+      assignedTo: l.assigned_to ?? '',
+      assignedName: l.assigned_name ?? '',
+      createdAt: l.created_at ?? new Date().toISOString(),
+      lastActivity: l.updated_at ?? l.created_at ?? new Date().toISOString(),
+      businessName: '',
+      city: '',
+      notes: l.notes ?? '',
+      dealValue: Number(l.deal_value ?? 0),
+      value: 0,
+      probability: 0,
+      nextFollowUp: null,
+      customFields: {},
+    } as Lead;
+  });
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function LeadsPage() {
-  const { leads, moveLeadStage, followUps, completeFollowUp, pipelines, updateLead, deleteLead } = useCrmStore();
+  const { leads, moveLeadStage, followUps, completeFollowUp, pipelines, updateLead, deleteLead, staff, bookingLinks } = useCrmStore();
   const currentUser = useAuthStore((s) => s.currentUser);
+  const canCreateLead = usePermission('leads:create');
+  const canEditLead   = usePermission('leads:edit');
+  const canDeleteLead = usePermission('leads:delete');
   const [search, setSearch] = useState('');
   const [pipelineSearch, setPipelineSearch] = useState('');
   const [pipelineOpen, setPipelineOpen] = useState(false);
-  const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(pipelines[0]?.id ?? null);
+  const [searchParams] = useSearchParams();
+  const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(
+    () => searchParams.get('pipeline') ?? localStorage.getItem('crm_selected_pipeline') ?? null
+  );
+
+  // Persist pipeline selection across refreshes
+  const setPipeline = (id: string) => {
+    setSelectedPipelineId(id);
+    localStorage.setItem('crm_selected_pipeline', id);
+  };
+
+  // Sync selected pipeline when real pipelines load from API
+  // If ?pipeline= param is present, it takes priority over localStorage
+  useEffect(() => {
+    if (pipelines.length === 0) return;
+    const fromUrl = searchParams.get('pipeline');
+    if (fromUrl && pipelines.find((p) => p.id === fromUrl)) {
+      setPipeline(fromUrl);
+      return;
+    }
+    // If already on a valid pipeline, do nothing — don't reset on every 30s poll
+    if (selectedPipelineId && pipelines.find((p) => p.id === selectedPipelineId)) return;
+    // Pipeline was deleted or nothing selected yet — fall back to saved or first
+    const saved = localStorage.getItem('crm_selected_pipeline');
+    const valid = saved && pipelines.find((p) => p.id === saved);
+    setPipeline(valid ? saved! : pipelines[0].id);
+  }, [pipelines]);
   const [kanbanView, setKanbanView] = useState(true);
   const [showPhone, setShowPhone] = useState(true);
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const selectedLead = leads.find((l) => l.id === selectedLeadId) ?? null;
   const [showAddLead, setShowAddLead] = useState(false);
   const [showNewPipeline, setShowNewPipeline] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
@@ -2564,6 +3022,7 @@ export default function LeadsPage() {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showBulkStage, setShowBulkStage] = useState(false);
   const [showBulkAssign, setShowBulkAssign] = useState(false);
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const filterBtnRef = useRef<HTMLButtonElement>(null);
@@ -2593,13 +3052,86 @@ export default function LeadsPage() {
     return () => document.removeEventListener('mousedown', handler);
   }, [showMoreMenu]);
 
+  const stageMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const p of pipelines) for (const s of p.stages) m[s.id] = s.name;
+    return m;
+  }, [pipelines]);
+
+  // Real-time: update leads live when others create/edit them
+  useEffect(() => {
+    const socket = getSocket();
+
+    const onLeadCreated = (lead: any) => {
+      const stageName = stageMap[lead.stage_id] ?? lead.stage_name ?? '';
+      useCrmStore.getState().addLead({
+        id: lead.id,
+        firstName: (lead.name ?? '').split(' ')[0],
+        lastName: (lead.name ?? '').split(' ').slice(1).join(' '),
+        email: lead.email ?? '',
+        phone: lead.phone ?? '',
+        pipelineId: lead.pipeline_id ?? '',
+        stage: stageName,
+        source: lead.source ?? '',
+        dealValue: lead.deal_value ?? 0,
+        tags: lead.tags ?? [],
+        score: 0,
+        notes: [],
+        assignedTo: lead.assigned_to ?? '',
+        assignedName: lead.assigned_name ?? '',
+        createdAt: lead.created_at ?? new Date().toISOString(),
+        lastActivity: lead.updated_at ?? new Date().toISOString(),
+      });
+    };
+
+    const onLeadUpdated = (lead: any) => {
+      const stageName = stageMap[lead.stage_id] ?? lead.stage_name ?? '';
+      const parts = (lead.name ?? '').split(' ');
+      useCrmStore.getState().updateLead(lead.id, {
+        firstName: parts[0] ?? '',
+        lastName: parts.slice(1).join(' ') ?? '',
+        email: lead.email ?? '',
+        phone: lead.phone ?? '',
+        stage: stageName,
+        stageId: lead.stage_id ?? '',
+        pipelineId: lead.pipeline_id ?? '',
+        tags: lead.tags ?? [],
+        assignedTo: lead.assigned_to ?? '',
+        assignedName: lead.assigned_name ?? '',
+        dealValue: Number(lead.deal_value ?? 0),
+        lastActivity: lead.updated_at ?? new Date().toISOString(),
+      });
+    };
+
+    socket.on('lead:created', onLeadCreated);
+    socket.on('lead:updated', onLeadUpdated);
+    return () => {
+      socket.off('lead:created', onLeadCreated);
+      socket.off('lead:updated', onLeadUpdated);
+    };
+  }, [stageMap]);
+
   const exportLeads = () => {
-    const headers = ['First Name', 'Last Name', 'Phone', 'Email', 'Deal Value', 'Stage', 'Source', 'Tags', 'Created At'];
-    const rows = filteredLeads.map((l) => [l.firstName, l.lastName, l.phone, l.email, l.dealValue, l.stage, l.source, l.tags.join('; '), format(new Date(l.createdAt), 'dd/MM/yyyy')]);
-    const csv = [headers, ...rows].map((r) => r.map((c) => `"${c ?? ''}"`).join(',')).join('\n');
-    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })), download: `opportunities_${format(new Date(), 'dd-MM-yyyy')}.csv` });
-    a.click();
-    toast.success(`${filteredLeads.length} opportunities exported`);
+    // Use real API export when available
+    api.get('/api/leads/export', { responseType: 'blob' } as any)
+      .then((data: any) => {
+        const blob = data instanceof Blob ? data : new Blob([data as any], { type: 'text/csv' });
+        const a = Object.assign(document.createElement('a'), {
+          href: URL.createObjectURL(blob),
+          download: `leads_${format(new Date(), 'dd-MM-yyyy')}.csv`,
+        });
+        a.click();
+        toast.success('Leads exported');
+      })
+      .catch(() => {
+        // Fallback to client-side export
+        const headers = ['First Name', 'Last Name', 'Phone', 'Email', 'Deal Value', 'Stage', 'Source', 'Tags', 'Created At'];
+        const rows = filteredLeads.map((l) => [l.firstName, l.lastName, l.phone, l.email, l.dealValue, l.stage, l.source, l.tags.join('; '), format(new Date(l.createdAt), 'dd/MM/yyyy')]);
+        const csv = [headers, ...rows].map((r) => r.map((c) => `"${c ?? ''}"`).join(',')).join('\n');
+        const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })), download: `opportunities_${format(new Date(), 'dd-MM-yyyy')}.csv` });
+        a.click();
+        toast.success(`${filteredLeads.length} opportunities exported`);
+      });
   };
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterState>({ ...emptyFilters });
@@ -2611,16 +3143,46 @@ export default function LeadsPage() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   const selectedPipeline = pipelines.find((p) => p.id === selectedPipelineId) ?? pipelines[0];
-  const activeStages = selectedPipeline?.stages.map((s) => s.name) ?? STAGES;
+  const activeStages = selectedPipeline?.stages.map((s) => s.name) ?? [];
+
+  // ── Server-side filter state (S2.3.1 + S2.3.3) ──────────────────────────────
+  const [apiLeads, setApiLeads] = useState<Lead[] | null>(null);
+
+  const hasServerFilter = !!(
+    search || selectedPipelineId ||
+    filters.assignedTo.length || filters.stage.length ||
+    filters.tags.length || filters.createdOn
+  );
+
+  useEffect(() => {
+    if (!hasServerFilter) { setApiLeads(null); return; }
+
+    let cancelled = false;
+    const delay = search ? 300 : 0;
+    const t = setTimeout(async () => {
+      try {
+        let allLeads: any[] = [];
+        let cursor = '';
+        while (true) {
+          const params = buildLeadsParams(filters, search, selectedPipelineId, selectedPipeline, cursor);
+          const data = await api.get<{ leads: any[]; nextCursor: string | null }>(`/api/leads?${params}`);
+          if (cancelled) return;
+          allLeads = [...allLeads, ...data.leads];
+          if (!data.nextCursor) break;
+          cursor = data.nextCursor;
+        }
+        setApiLeads(mapApiLeadsToStore(allLeads, stageMap));
+      } catch { /* ignore */ }
+    }, delay);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [filters, search, selectedPipelineId, selectedPipeline?.id, hasServerFilter]);
 
   const filteredLeads = useMemo(() => {
-    let result = leads;
-    if (selectedPipelineId) result = result.filter((l) => l.pipelineId === selectedPipelineId);
-    if (search) { const s = search.toLowerCase(); result = result.filter((l) => `${l.firstName} ${l.lastName}`.toLowerCase().includes(s) || l.phone.includes(s) || l.email.toLowerCase().includes(s)); }
-    if (filters.assignedTo.length) result = result.filter((l) => filters.assignedTo.includes('none') ? !l.assignedTo : filters.assignedTo.includes(l.assignedTo ?? ''));
+    // Use server-fetched leads when active filters exist, otherwise use store leads
+    let result = apiLeads ?? leads;
+
+    // Client-side-only filters (no backend equivalent)
     if (filters.contactType.length) result = result.filter((l) => filters.contactType.includes('Customer') ? l.stage === 'Closed Won' : l.stage !== 'Closed Won');
-    if (filters.stage.length) result = result.filter((l) => filters.stage.includes(l.stage));
-    if (filters.tags.length) result = result.filter((l) => filters.tags.some((t) => l.tags.includes(t)));
     if (filters.opportunityValue.length) result = result.filter((l) => {
       const v = l.dealValue;
       return filters.opportunityValue.some((r) =>
@@ -2631,21 +3193,33 @@ export default function LeadsPage() {
         r === 'More than ₹50,000' ? v > 50000 : true
       );
     });
-    if (filters.createdOn) {
-      const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      result = result.filter((l) => {
-        const d = new Date(l.createdAt);
-        if (filters.createdOn === 'Today') return d >= today;
-        if (filters.createdOn === 'Yesterday') { const y = new Date(today); y.setDate(y.getDate() - 1); return d >= y && d < today; }
-        if (filters.createdOn === 'This Week') { const w = new Date(today); w.setDate(w.getDate() - w.getDay()); return d >= w; }
-        if (filters.createdOn === 'This Month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-        if (filters.createdOn === 'Last 7 Days') { const w = new Date(today); w.setDate(w.getDate() - 7); return d >= w; }
-        if (filters.createdOn === 'Last 30 Days') { const m = new Date(today); m.setDate(m.getDate() - 30); return d >= m; }
-        return true;
-      });
+
+    // Multi-value filters still applied client-side when >1 selection
+    if (!apiLeads) {
+      if (selectedPipelineId) result = result.filter((l) => l.pipelineId === selectedPipelineId);
+      if (search) { const s = search.toLowerCase(); result = result.filter((l) => `${l.firstName} ${l.lastName}`.toLowerCase().includes(s) || l.phone.includes(s) || l.email.toLowerCase().includes(s)); }
+      if (filters.assignedTo.length) result = result.filter((l) => filters.assignedTo.includes('none') ? !l.assignedTo : filters.assignedTo.includes(l.assignedTo ?? ''));
+      if (filters.stage.length) result = result.filter((l) => filters.stage.includes(l.stage));
+      if (filters.tags.length) result = result.filter((l) => filters.tags.some((t) => l.tags.includes(t)));
+      if (filters.createdOn) {
+        const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        result = result.filter((l) => {
+          const d = new Date(l.createdAt);
+          if (filters.createdOn === 'Today') return d >= today;
+          if (filters.createdOn === 'Yesterday') { const y = new Date(today); y.setDate(y.getDate() - 1); return d >= y && d < today; }
+          if (filters.createdOn === 'This Week') { const w = new Date(today); w.setDate(w.getDate() - w.getDay()); return d >= w; }
+          if (filters.createdOn === 'This Month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+          if (filters.createdOn === 'Last 7 Days') { const w = new Date(today); w.setDate(w.getDate() - 7); return d >= w; }
+          if (filters.createdOn === 'Last 30 Days') { const m = new Date(today); m.setDate(m.getDate() - 30); return d >= m; }
+          return true;
+        });
+      }
+    } else if (filters.assignedTo.length > 1) {
+      result = result.filter((l) => filters.assignedTo.includes('none') ? !l.assignedTo : filters.assignedTo.includes(l.assignedTo ?? ''));
     }
+
     return result;
-  }, [leads, selectedPipelineId, search, filters]);
+  }, [leads, apiLeads, selectedPipelineId, search, filters]);
 
   const totalCount = filteredLeads.length;
   const leadCount = filteredLeads.filter((l) => l.stage !== 'Closed Won').length;
@@ -2662,36 +3236,74 @@ export default function LeadsPage() {
     setActiveDragId(null);
     const { active, over } = e;
     if (!over) return;
+    const leadId = active.id as string;
     const overId = over.id as string;
-    if (activeStages.includes(overId)) { moveLeadStage(active.id as string, overId); toast.success(`Lead moved to ${overId}`); return; }
-    const targetLead = leads.find((l) => l.id === overId);
-    if (targetLead && targetLead.stage !== leads.find((l) => l.id === active.id)?.stage) {
-      moveLeadStage(active.id as string, targetLead.stage);
-      toast.success(`Lead moved to ${targetLead.stage}`);
+
+    let newStage: string | undefined;
+    let newStageId: string | undefined;
+
+    if (activeStages.includes(overId)) {
+      newStage = overId;
+      newStageId = selectedPipeline?.stages.find((s) => s.name === overId)?.id;
+    } else {
+      const targetLead = (apiLeads ?? leads).find((l) => l.id === overId);
+      const srcLead = (apiLeads ?? leads).find((l) => l.id === leadId);
+      if (targetLead && targetLead.stage !== srcLead?.stage) {
+        newStage = targetLead.stage;
+        newStageId = targetLead.stageId;
+      }
     }
+
+    if (!newStage) return;
+
+    // Update store leads
+    moveLeadStage(leadId, newStage, newStageId);
+
+    // Also update apiLeads so filteredLeads (which reads apiLeads ?? leads) reflects the move
+    if (apiLeads) {
+      setApiLeads((prev) =>
+        (prev ?? []).map((l) => l.id === leadId ? { ...l, stage: newStage!, stageId: newStageId ?? l.stageId } : l)
+      );
+    }
+
+    toast.success(`Lead moved to ${newStage}`);
+    if (newStageId) api.patch(`/api/leads/${leadId}`, { stage_id: newStageId }).catch(() => null);
   };
 
-  const activeLead = activeDragId ? leads.find((l) => l.id === activeDragId) : null;
+  const activeLead = activeDragId ? (apiLeads ?? leads).find((l) => l.id === activeDragId) : null;
 
   const pipelineLeads = selectedPipelineId ? leads.filter((l) => l.pipelineId === selectedPipelineId) : leads;
 
   // Bulk actions
-  const bulkMove = (stage: string) => {
-    selectedIds.forEach((id) => moveLeadStage(id, stage));
-    toast.success(`${selectedIds.length} leads moved to ${stage}`);
+  const bulkMove = async (stage: string) => {
+    const ids = [...selectedIds];
+    const pl = pipelines.find((p) => p.id === selectedPipelineId) ?? pipelines[0];
+    const stageId = pl?.stages.find((s) => s.name === stage)?.id;
+    ids.forEach((id) => moveLeadStage(id, stage, stageId));
+    toast.success(`${ids.length} leads moved to ${stage}`);
     setSelectedIds([]); setShowBulkStage(false);
+    if (stageId) {
+      await Promise.all(ids.map((id) => api.patch(`/api/leads/${id}`, { stage_id: stageId }).catch(() => null)));
+    }
   };
-  const bulkAssign = (staffId: string) => {
-    selectedIds.forEach((id) => updateLead(id, { assignedTo: staffId }));
-    const name = staffId ? staff.find((s) => s.id === staffId)?.name : 'unassigned';
-    toast.success(`${selectedIds.length} leads ${staffId ? 'assigned to ' + name : 'unassigned'}`);
+  const bulkAssign = async (staffId: string) => {
+    const ids = [...selectedIds];
+    ids.forEach((id) => updateLead(id, { assignedTo: staffId }));
+    const name = staffId ? staff.find((s: any) => s.id === staffId)?.name : 'unassigned';
+    toast.success(`${ids.length} leads ${staffId ? 'assigned to ' + name : 'unassigned'}`);
     setSelectedIds([]); setShowBulkAssign(false);
+    await Promise.all(ids.map((id) => api.patch(`/api/leads/${id}`, { assigned_to: staffId || null }).catch(() => null)));
   };
-  const bulkDelete = () => {
-    if (!window.confirm(`Delete ${selectedIds.length} lead(s)? This cannot be undone.`)) return;
-    selectedIds.forEach((id) => deleteLead(id));
-    toast.success(`${selectedIds.length} leads deleted`);
+  const bulkDelete = async () => {
+    let failed = 0;
+    await Promise.all(selectedIds.map((id) =>
+      api.delete(`/api/leads/${id}`).then(() => deleteLead(id)).catch(() => { failed++; })
+    ));
+    const done = selectedIds.length - failed;
+    if (done > 0) toast.success(`${done} contact${done !== 1 ? 's' : ''} deleted`);
+    if (failed > 0) toast.error(`${failed} could not be deleted`);
     setSelectedIds([]);
+    setShowBulkDeleteConfirm(false);
   };
 
   return (
@@ -2759,9 +3371,20 @@ export default function LeadsPage() {
             <div className="flex-1" />
 
             {/* Delete */}
-            <button onClick={bulkDelete} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-red-500 hover:bg-red-50 transition-colors">
-              <Trash2 className="w-3.5 h-3.5" /> Delete
-            </button>
+            {canDeleteLead && (
+              <button onClick={() => setShowBulkDeleteConfirm(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-red-500 hover:bg-red-50 transition-colors">
+                <Trash2 className="w-3.5 h-3.5" /> Delete
+              </button>
+            )}
+            {showBulkDeleteConfirm && (
+              <ConfirmModal
+                title={`Delete ${selectedIds.length} contact${selectedIds.length !== 1 ? 's' : ''}?`}
+                message="This will permanently remove them from the CRM. This cannot be undone."
+                confirmLabel="Yes, Delete"
+                onConfirm={bulkDelete}
+                onClose={() => setShowBulkDeleteConfirm(false)}
+              />
+            )}
 
             {/* Clear selection */}
             <button onClick={() => setSelectedIds([])} className="p-1.5 rounded-lg hover:bg-white transition-colors text-[#7a6b5c]">
@@ -2770,19 +3393,20 @@ export default function LeadsPage() {
           </div>
         ) : (
           /* ── Default Toolbar ── */
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-3">
 
-            {/* Pipeline selector with lead count */}
+            {/* Pipeline selector */}
             <div className="relative shrink-0">
               <button
                 onClick={() => { setPipelineOpen((o) => !o); setPipelineSearch(''); }}
-                className="flex items-center gap-2 pl-4 pr-3 py-2.5 rounded-full border border-black/10 bg-white text-[13px] font-semibold text-[#1c1410] hover:border-primary/40 transition-all"
-                style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
+                className="flex items-center gap-2.5 pl-3 pr-2.5 h-10 rounded-xl bg-white border border-black/10 text-[13px] font-semibold text-[#1c1410] hover:border-primary/40 hover:bg-orange-50/30 transition-all"
               >
-                <Layers className="w-3.5 h-3.5 text-[#7a6b5c] shrink-0" />
-                <span className="truncate max-w-[140px]">{selectedPipeline?.name ?? 'Select pipeline'}</span>
-                <span className="text-[11px] font-bold bg-black/[0.06] text-[#7a6b5c] rounded-full px-1.5 py-0.5 min-w-[22px] text-center">{pipelineLeads.length}</span>
-                <ChevronDown className="w-3.5 h-3.5 text-[#9a8a7a] shrink-0" />
+                <div className="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                  <Layers className="w-3.5 h-3.5 text-primary" />
+                </div>
+                <span className="truncate max-w-[130px]">{selectedPipeline?.name ?? 'Select pipeline'}</span>
+                <span className="text-[11px] font-bold bg-primary/10 text-primary rounded-md px-1.5 py-0.5 min-w-[22px] text-center">{pipelineLeads.length}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-[#9a8a7a]" />
               </button>
 
               {pipelineOpen && (
@@ -2797,11 +3421,8 @@ export default function LeadsPage() {
                       {filteredPipelines.map((p) => {
                         const cnt = leads.filter((l) => l.pipelineId === p.id).length;
                         return (
-                          <button
-                            key={p.id}
-                            onClick={() => { setSelectedPipelineId(p.id); setPipelineOpen(false); }}
-                            className={cn('w-full text-left px-4 py-2.5 text-[13px] transition-colors flex items-center gap-2', p.id === selectedPipelineId ? 'bg-[#faf0e8] text-primary font-semibold' : 'text-[#1c1410] hover:bg-[#faf8f6]')}
-                          >
+                          <button key={p.id} onClick={() => { setPipeline(p.id); setPipelineOpen(false); }}
+                            className={cn('w-full text-left px-4 py-2.5 text-[13px] transition-colors flex items-center gap-2', p.id === selectedPipelineId ? 'bg-[#faf0e8] text-primary font-semibold' : 'text-[#1c1410] hover:bg-[#faf8f6]')}>
                             {p.id === selectedPipelineId && <div className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />}
                             <span className="flex-1 truncate">{p.name}</span>
                             <span className="text-[10px] text-[#b09e8d] font-normal">{cnt}</span>
@@ -2815,108 +3436,90 @@ export default function LeadsPage() {
               )}
             </div>
 
-            {/* Smart Search with ⌘K hint */}
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#b09e8d]" />
+            {/* Search */}
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#b09e8d] pointer-events-none" />
               <input
                 ref={searchInputRef}
-                className="w-full pl-9 pr-16 py-2.5 text-[13px] bg-white border border-black/10 rounded-full outline-none focus:border-primary/40 placeholder:text-gray-400 transition-all"
-                style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
-                placeholder="Search name, phone, email..."
+                className="w-full h-10 pl-9 pr-10 text-[13px] bg-white border border-black/10 rounded-xl outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 placeholder:text-[#b09e8d] transition-all"
+                placeholder="Search leads…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
-              {!search && (
-                <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-[#b09e8d] bg-black/[0.04] border border-black/[0.06] rounded px-1.5 py-0.5">⌘K</kbd>
-              )}
-              {search && (
-                <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full hover:bg-black/5 flex items-center justify-center text-[#b09e8d]">
-                  <X className="w-3 h-3" />
-                </button>
-              )}
+              {!search
+                ? <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-[#c4b09e] bg-gray-50 border border-black/[0.07] rounded px-1.5 py-0.5">⌘K</kbd>
+                : <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full hover:bg-gray-100 flex items-center justify-center text-[#b09e8d]"><X className="w-3 h-3" /></button>
+              }
             </div>
 
             <div className="flex-1" />
 
-            {/* View toggle */}
-            <div className="flex items-center bg-white border border-black/10 rounded-xl overflow-hidden shrink-0" style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-              <button title="Board view" onClick={() => setKanbanView(true)} className={cn('flex items-center justify-center w-9 h-9 transition-colors', kanbanView ? 'bg-primary text-white' : 'text-[#7a6b5c] hover:bg-[#f5ede3]')}>
-                <LayoutGrid className="w-4 h-4" />
-              </button>
-              <button title="List view" onClick={() => setKanbanView(false)} className={cn('flex items-center justify-center w-9 h-9 transition-colors', !kanbanView ? 'bg-primary text-white' : 'text-[#7a6b5c] hover:bg-[#f5ede3]')}>
-                <List className="w-4 h-4" />
-              </button>
-            </div>
+            {/* Right action group */}
+            <div className="flex items-center gap-2 shrink-0">
 
-            {/* Filter — compact popover trigger */}
-            <div className="relative shrink-0">
-              <button
-                ref={filterBtnRef}
-                onClick={() => setShowFilters((v) => !v)}
-                className={cn('relative w-9 h-9 flex items-center justify-center rounded-xl border transition-colors',
-                  activeFiltersCount > 0 || showFilters ? 'border-primary/40 bg-orange-50 text-primary' : 'border-black/10 bg-white text-[#7a6b5c] hover:border-primary/30 hover:text-primary'
+              {/* View toggle — segmented pill */}
+              <div className="flex items-center h-10 bg-gray-100 rounded-xl p-1 gap-0.5">
+                <button title="Board" onClick={() => setKanbanView(true)}
+                  className={cn('flex items-center justify-center w-8 h-8 rounded-lg transition-all', kanbanView ? 'bg-white shadow-sm text-primary' : 'text-[#7a6b5c] hover:text-[#1c1410]')}>
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                </button>
+                <button title="List" onClick={() => setKanbanView(false)}
+                  className={cn('flex items-center justify-center w-8 h-8 rounded-lg transition-all', !kanbanView ? 'bg-white shadow-sm text-primary' : 'text-[#7a6b5c] hover:text-[#1c1410]')}>
+                  <List className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Filter */}
+              <div className="relative">
+                <button ref={filterBtnRef} onClick={() => setShowFilters((v) => !v)}
+                  title={activeFiltersCount > 0 ? `${activeFiltersCount} filter${activeFiltersCount > 1 ? 's' : ''} active` : 'Filter'}
+                  className={cn('relative flex items-center justify-center w-10 h-10 rounded-xl border transition-all',
+                    activeFiltersCount > 0 || showFilters ? 'bg-orange-50 border-primary/30 text-primary' : 'bg-white border-black/10 text-[#7a6b5c] hover:border-primary/30 hover:text-primary'
+                  )}>
+                  <Filter className="w-4 h-4" />
+                  {activeFiltersCount > 0 && <span className="absolute -top-1 -right-1 bg-primary text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{activeFiltersCount}</span>}
+                </button>
+                {showFilters && <FilterPopover filters={filters} onChange={setFilters} onClose={() => setShowFilters(false)} stages={activeStages} anchorRef={filterBtnRef} />}
+              </div>
+
+              {/* More */}
+              <div className="relative" ref={moreMenuRef}>
+                <button onClick={() => setShowMoreMenu((v) => !v)}
+                  className={cn('flex items-center justify-center w-10 h-10 rounded-xl border transition-all', showMoreMenu ? 'bg-orange-50 border-primary/30 text-primary' : 'bg-white border-black/10 text-[#7a6b5c] hover:border-primary/30 hover:text-primary')}>
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+                {showMoreMenu && (
+                  <div className="absolute right-0 top-12 z-40 w-56 bg-white rounded-xl border border-black/5 shadow-xl overflow-hidden py-1">
+                    <button onClick={() => { setShowMoreMenu(false); setShowImport(true); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
+                      <Package className="w-3.5 h-3.5 text-[#7a6b5c]" /> Import leads
+                    </button>
+                    <button onClick={() => { setShowMoreMenu(false); exportLeads(); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
+                      <Download className="w-3.5 h-3.5 text-[#7a6b5c]" /> Export leads
+                    </button>
+                    <div className="border-t border-black/5 my-1" />
+                    <button onClick={() => { setShowMoreMenu(false); setShowWorkflow(true); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
+                      <Zap className="w-3.5 h-3.5 text-[#7a6b5c]" /> Trigger Workflow
+                    </button>
+                    <button onClick={() => { setShowMoreMenu(false); setShowPhone((v) => !v); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
+                      {showPhone ? <EyeOff className="w-3.5 h-3.5 text-[#7a6b5c]" /> : <Eye className="w-3.5 h-3.5 text-[#7a6b5c]" />}
+                      {showPhone ? 'Hide contact info' : 'Show contact info'}
+                    </button>
+                    <div className="border-t border-black/5 my-1" />
+                    <button onClick={() => { setShowMoreMenu(false); setSearch(''); setFilters({ ...emptyFilters }); setSelectedIds([]); toast.success('Reset'); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
+                      <RotateCcw className="w-3.5 h-3.5 text-[#7a6b5c]" /> Reset filters
+                    </button>
+                  </div>
                 )}
-                style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
-                title={activeFiltersCount > 0 ? `Filters (${activeFiltersCount} active)` : 'Filter'}
-              >
-                <Filter className="w-4 h-4" />
-                {activeFiltersCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-primary text-white text-[9px] font-bold rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1">{activeFiltersCount}</span>
-                )}
-              </button>
-              {showFilters && (
-                <FilterPopover
-                  filters={filters}
-                  onChange={setFilters}
-                  onClose={() => setShowFilters(false)}
-                  stages={activeStages}
-                  anchorRef={filterBtnRef}
-                />
+              </div>
+
+              {/* Add Lead */}
+              {canCreateLead && (
+                <button onClick={() => setShowAddLead(true)}
+                  className="flex items-center gap-2 px-4 h-10 rounded-xl text-[13px] font-bold text-white bg-primary hover:bg-primary/90 transition-all active:scale-95 shrink-0">
+                  <Plus className="w-4 h-4" /> Add Lead
+                </button>
               )}
             </div>
-
-            {/* Overflow menu */}
-            <div className="relative shrink-0" ref={moreMenuRef}>
-              <button
-                onClick={() => setShowMoreMenu((v) => !v)}
-                className={cn('w-9 h-9 flex items-center justify-center rounded-xl border bg-white transition-colors', showMoreMenu ? 'border-primary/40 text-primary' : 'border-black/10 text-[#7a6b5c] hover:border-primary/30 hover:text-primary')}
-                style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
-                title="More options"
-              >
-                <MoreHorizontal className="w-4 h-4" />
-              </button>
-              {showMoreMenu && (
-                <div className="absolute right-0 top-11 z-40 w-56 bg-white rounded-xl border border-black/5 shadow-xl overflow-hidden py-1">
-                  <button onClick={() => { setShowMoreMenu(false); setShowImport(true); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
-                    <Package className="w-3.5 h-3.5 text-[#7a6b5c]" /> Import leads
-                  </button>
-                  <button onClick={() => { setShowMoreMenu(false); exportLeads(); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
-                    <Download className="w-3.5 h-3.5 text-[#7a6b5c]" /> Export leads
-                  </button>
-                  <div className="border-t border-black/5 my-1" />
-                  <button onClick={() => { setShowMoreMenu(false); setShowWorkflow(true); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
-                    <Zap className="w-3.5 h-3.5 text-[#7a6b5c]" /> Trigger Workflow
-                  </button>
-                  <button onClick={() => { setShowMoreMenu(false); setShowPhone((v) => !v); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
-                    {showPhone ? <EyeOff className="w-3.5 h-3.5 text-[#7a6b5c]" /> : <Eye className="w-3.5 h-3.5 text-[#7a6b5c]" />}
-                    {showPhone ? 'Hide contact info' : 'Show contact info'}
-                  </button>
-                  <div className="border-t border-black/5 my-1" />
-                  <button onClick={() => { setShowMoreMenu(false); setSearch(''); setFilters({ ...emptyFilters }); setSelectedIds([]); toast.success('Reset'); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
-                    <RotateCcw className="w-3.5 h-3.5 text-[#7a6b5c]" /> Reset filters
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Primary: Add Lead */}
-            <button
-              onClick={() => setShowAddLead(true)}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white transition-all hover:-translate-y-0.5 shrink-0"
-              style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 3px 10px rgba(234,88,12,0.25)' }}
-            >
-              <Plus className="w-4 h-4" /> Add Lead
-            </button>
           </div>
         )}
 
@@ -2955,17 +3558,34 @@ export default function LeadsPage() {
       {kanbanView ? (
         <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="flex gap-4 overflow-x-auto overflow-y-hidden flex-1 min-h-0 pb-4 items-stretch scrollbar-hide">
-            {activeStages.map((stage) => (
+            {activeStages.map((stage) => {
+              const now = new Date();
+              const stageLeadsSorted = filteredLeads
+                .filter((l) => l.stage === stage)
+                .sort((a, b) => {
+                  const nextA = followUps
+                    .filter((f) => f.leadId === a.id && !f.completed)
+                    .sort((x, y) => new Date(x.dueAt).getTime() - new Date(y.dueAt).getTime())[0];
+                  const nextB = followUps
+                    .filter((f) => f.leadId === b.id && !f.completed)
+                    .sort((x, y) => new Date(x.dueAt).getTime() - new Date(y.dueAt).getTime())[0];
+                  if (nextA && nextB) return new Date(nextA.dueAt).getTime() - new Date(nextB.dueAt).getTime();
+                  if (nextA) return -1;
+                  if (nextB) return 1;
+                  return 0;
+                });
+              return (
               <StageColumn
                 key={stage} stage={stage}
-                leads={filteredLeads.filter((l) => l.stage === stage)}
-                onLeadClick={setSelectedLead}
+                leads={stageLeadsSorted}
+                onLeadClick={(l) => setSelectedLeadId(l.id)}
                 onFollowUp={setQuickFollowUpLead}
                 onNote={setQuickNoteLead}
                 onAssign={setQuickAssignLead}
                 showPhone={showPhone}
               />
-            ))}
+              );
+            })}
           </div>
           <DragOverlay>{activeLead && <div className="bg-card rounded-lg border-2 border-primary p-3 shadow-2xl opacity-90 w-[280px]"><span className="font-semibold text-sm">{activeLead.firstName} {activeLead.lastName}</span></div>}</DragOverlay>
         </DndContext>
@@ -3013,14 +3633,14 @@ export default function LeadsPage() {
                       />
                     </td>
                     <td className="px-3 py-3">
-                      <button onClick={() => setSelectedLead(lead)} className="text-primary font-semibold hover:underline text-[13px]">
+                      <button onClick={() => setSelectedLeadId(lead.id)} className="text-primary font-semibold hover:underline text-[13px]">
                         {lead.firstName} {lead.lastName}
                       </button>
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0" style={{ background: 'linear-gradient(135deg, #c2410c, #ea580c)' }}>{initials}</div>
-                        <button onClick={() => setSelectedLead(lead)} className="text-primary font-semibold hover:underline text-[13px] truncate max-w-[90px]">
+                        <button onClick={() => setSelectedLeadId(lead.id)} className="text-primary font-semibold hover:underline text-[13px] truncate max-w-[90px]">
                           {lead.firstName}
                         </button>
                       </div>
@@ -3063,11 +3683,15 @@ export default function LeadsPage() {
       )}
       </div>{/* end flex-1 board wrapper */}
 
-      {selectedLead && <LeadDetailPanel lead={selectedLead} onClose={() => setSelectedLead(null)} />}
+      {selectedLead && <LeadDetailPanel lead={selectedLead} onClose={() => setSelectedLeadId(null)} onLeadUpdated={(id, updates) => {
+        if (apiLeads) {
+          setApiLeads((prev) => prev?.map((l) => l.id === id ? { ...l, ...updates } : l) ?? null);
+        }
+      }} />}
       {showAddLead && <AddLeadModal onClose={() => setShowAddLead(false)} />}
       {showNewPipeline && <NewPipelineModal onClose={() => setShowNewPipeline(false)} />}
       {showImport && <ImportModal onClose={() => setShowImport(false)} />}
-      {showWorkflow && <WorkflowModal selectedCount={selectedIds.length || filteredLeads.length} onClose={() => setShowWorkflow(false)} />}
+      {showWorkflow && <WorkflowModal leadIds={selectedIds.length > 0 ? selectedIds : filteredLeads.map((l) => l.id)} onClose={() => setShowWorkflow(false)} />}
       {quickEditLead && <EditLeadModal lead={quickEditLead} onClose={() => setQuickEditLead(null)} />}
       {quickNoteLead && <NoteModal leadId={quickNoteLead.id} onClose={() => setQuickNoteLead(null)} />}
       {quickFollowUpLead && <FollowUpModal leadId={quickFollowUpLead.id} onClose={() => setQuickFollowUpLead(null)} />}

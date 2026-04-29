@@ -12,7 +12,7 @@ export const useCompanyStore = create<CompanyState>()(
   persist(
     (set) => ({
       logoUrl: null,
-      companyName: 'NexCRM',
+      companyName: 'DigyGo CRM',
       setLogo: (url) => set({ logoUrl: url }),
       setCompanyName: (name) => set({ companyName: name }),
     }),

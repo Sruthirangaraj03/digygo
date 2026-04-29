@@ -55,20 +55,39 @@ async function seed() {
       stageIds.push(r.rows[0].id);
     }
 
-    // Sample leads
+    // Demo staff member (for testing permissions)
+    const staffHash = await bcrypt.hash('staff123', 10);
+    await client.query(`
+      INSERT INTO users (tenant_id, email, password_hash, name, role)
+      VALUES ($1, $2, $3, $4, 'staff')
+      ON CONFLICT (email) DO NOTHING
+    `, [tenantId, 'staff@demo.com', staffHash, 'Demo Staff']);
+
+    const staffRes = await client.query(
+      `SELECT id FROM users WHERE email='staff@demo.com' LIMIT 1`
+    );
+    const staffUserId = staffRes.rows[0]?.id;
+
+    // Tenant admin user ID
+    const tenantAdminRes = await client.query(
+      `SELECT id FROM users WHERE email='saral@demo.com' LIMIT 1`
+    );
+    const tenantAdminId = tenantAdminRes.rows[0]?.id;
+
+    // Sample leads — 3 assigned to staff, 2 unassigned
     const leadData = [
-      { name: 'Aarav Sharma', email: 'aarav@example.com', phone: '+91 98765 43210', source: 'Meta Forms', stage: 0 },
-      { name: 'Priya Nair', email: 'priya.nair@gmail.com', phone: '+91 87654 32109', source: 'Website', stage: 1 },
-      { name: 'Rahul Mehta', email: 'rahulmehta@outlook.com', phone: '+91 76543 21098', source: 'Referral', stage: 2 },
-      { name: 'Sunita Reddy', email: 'sunita.r@yahoo.com', phone: '+91 65432 10987', source: 'Cold Call', stage: 3 },
-      { name: 'Kiran Patel', email: 'kiran.patel@work.com', phone: '+91 54321 09876', source: 'Website', stage: 4 },
+      { name: 'Aarav Sharma', email: 'aarav@example.com', phone: '+91 98765 43210', source: 'Meta Forms', stage: 0, assignTo: staffUserId },
+      { name: 'Priya Nair', email: 'priya.nair@gmail.com', phone: '+91 87654 32109', source: 'Website', stage: 1, assignTo: staffUserId },
+      { name: 'Rahul Mehta', email: 'rahulmehta@outlook.com', phone: '+91 76543 21098', source: 'Referral', stage: 2, assignTo: staffUserId },
+      { name: 'Sunita Reddy', email: 'sunita.r@yahoo.com', phone: '+91 65432 10987', source: 'Cold Call', stage: 3, assignTo: null },
+      { name: 'Kiran Patel', email: 'kiran.patel@work.com', phone: '+91 54321 09876', source: 'Website', stage: 4, assignTo: null },
     ];
 
     for (const lead of leadData) {
       await client.query(`
-        INSERT INTO leads (tenant_id, name, email, phone, source, pipeline_id, stage_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-      `, [tenantId, lead.name, lead.email, lead.phone, lead.source, pipelineId, stageIds[lead.stage]]);
+        INSERT INTO leads (tenant_id, name, email, phone, source, pipeline_id, stage_id, assigned_to)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [tenantId, lead.name, lead.email, lead.phone, lead.source, pipelineId, stageIds[lead.stage], lead.assignTo]);
     }
 
     // Sample notification
@@ -77,11 +96,56 @@ async function seed() {
       VALUES ($1, $2, $3, $4)
     `, [tenantId, 'Welcome to DigyGo CRM!', 'Your workspace is ready. Start adding leads.', 'info']);
 
+    // Seed RBAC role_permissions
+    // Admin: full access to everything; staff: only their assigned leads by default
+    const adminPerms = {
+      'leads:view_all': true, 'leads:create': true,
+      'leads:edit': true, 'leads:delete': true, 'leads:export': true,
+      'leads:import': true, 'leads:assign': true, 'pipeline:manage': true,
+      'automation:view': true, 'automation:manage': true,
+      'inbox:view_all': true, 'inbox:send': true,
+      'calendar:view_all': true, 'calendar:manage': true,
+      'staff:view': true, 'staff:manage': true, 'settings:manage': true, 'reports:view': true,
+      'meta_forms:read': true, 'custom_forms:read': true, 'landing_pages:read': true,
+      'contacts:read': true, 'workflows:view': true, 'fields:view': true,
+      'dashboard:total_leads': true, 'dashboard:active_staff': true,
+      'dashboard:conversations': true, 'dashboard:appointments': true,
+    };
+    // Staff by default: no leads:view_all → backend filters to assigned only
+    const staffPerms = {
+      'leads:create': true, 'leads:edit': true,
+      'inbox:send': true, 'calendar:manage': true,
+      'meta_forms:read': true, 'custom_forms:read': true,
+      'contacts:read': true, 'workflows:view': true,
+      'dashboard:total_leads': true,
+    };
+    await client.query(
+      `INSERT INTO role_permissions (tenant_id, role, permissions) VALUES ($1,'admin',$2),($1,'staff',$3)
+       ON CONFLICT (tenant_id, role) DO UPDATE SET permissions = EXCLUDED.permissions`,
+      [tenantId, JSON.stringify(adminPerms), JSON.stringify(staffPerms)]
+    );
+
+    // Sample booking link
+    await client.query(`
+      INSERT INTO booking_links (tenant_id, created_by, name, slug, duration_mins, buffer_mins,
+                                  location, description, availability, is_active)
+      VALUES ($1, $2, '30-min Discovery Call', 'discovery-call', 30, 5,
+              'Google Meet', 'Book a free 30-minute call to discuss your needs.',
+              '{"monday":{"enabled":true,"start":"09:00","end":"17:00"},
+                "tuesday":{"enabled":true,"start":"09:00","end":"17:00"},
+                "wednesday":{"enabled":true,"start":"09:00","end":"17:00"},
+                "thursday":{"enabled":true,"start":"09:00","end":"17:00"},
+                "friday":{"enabled":true,"start":"09:00","end":"17:00"}}',
+              TRUE)
+      ON CONFLICT DO NOTHING
+    `, [tenantId, tenantAdminId]);
+
     await client.query('COMMIT');
     console.log('✅  Seed completed');
     console.log('');
     console.log('   Super Admin → admin@digygocrm.com  / admin123');
     console.log('   Demo Tenant → saral@demo.com       / demo123');
+    console.log('   Booking URL → /book/discovery-call');
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('❌  Seed failed:', err);

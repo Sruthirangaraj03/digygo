@@ -1,25 +1,10 @@
 import { create } from 'zustand';
 import { api } from '@/lib/api';
 import {
-  leads as initialLeads,
-  conversations as initialConversations,
-  workflows as initialWorkflows,
-  notifications as initialNotifications,
-  calendarEvents as initialEvents,
-  staff as initialStaff,
-  tags as initialTags,
-  opportunities as initialOpportunities,
-  notes as initialNotes,
-  followUps as initialFollowUps,
-  customFields as initialCustomFields,
-  bookingLinks as initialBookingLinks,
-  availabilitySlots as initialAvailabilitySlots,
-  quickReplies as initialQuickReplies,
-  pipelines as initialPipelines,
   Lead, Conversation, Workflow, Notification, CalendarEvent, StaffMember,
   Tag, Opportunity, NoteEntry, FollowUp, CustomFieldDef, BookingLink, AvailabilitySlot, QuickReply, Pipeline, PipelineStage,
 } from '@/data/mockData';
-import { WFRecord, WFFolder } from '@/pages/AutomationPage';
+import { WFRecord, WFFolder } from '@/types/workflow';
 
 export interface LeadActivity {
   id: string;
@@ -89,7 +74,7 @@ interface CrmState {
   // Lead actions
   addLead: (lead: Lead) => void;
   updateLead: (id: string, updates: Partial<Lead>) => void;
-  moveLeadStage: (id: string, newStage: string) => void;
+  moveLeadStage: (id: string, newStage: string, newStageId?: string) => void;
   deleteLead: (id: string) => void;
 
   // Note actions
@@ -99,7 +84,7 @@ interface CrmState {
 
   // Follow-up actions
   addFollowUp: (fu: FollowUp) => void;
-  completeFollowUp: (id: string) => void;
+  completeFollowUp: (id: string, leadId?: string) => void;
 
   // Tag actions
   addTag: (tag: Tag) => void;
@@ -123,6 +108,7 @@ interface CrmState {
   deleteWorkflow: (id: string) => void;
 
   // Notification actions
+  addNotification: (n: Notification) => void;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
 
@@ -150,11 +136,12 @@ interface CrmState {
   deactivateStaff: (id: string) => void;
 
   // Pipeline actions
-  addPipeline: (pipeline: Pipeline) => void;
-  updatePipeline: (id: string, updates: Partial<Pipeline>) => void;
-  deletePipeline: (id: string) => void;
-  clonePipeline: (id: string) => void;
+  addPipeline: (pipeline: Pipeline) => Promise<void>;
+  updatePipeline: (id: string, updates: Partial<Pipeline>) => Promise<void>;
+  deletePipeline: (id: string) => Promise<void>;
+  clonePipeline: (id: string) => Promise<void>;
 
+  refreshPipelines: () => Promise<void>;
   // API sync
   initFromApi: () => Promise<void>;
 }
@@ -177,28 +164,23 @@ export const useCrmStore = create<CrmState>((set) => ({
     ),
   })),
 
-  pipelines: initialPipelines,
-  leads: initialLeads,
-  conversations: initialConversations,
-  workflows: initialWorkflows,
-  notifications: initialNotifications,
-  calendarEvents: initialEvents,
-  staff: initialStaff,
-  tags: initialTags,
-  opportunities: initialOpportunities,
-  notes: initialNotes,
-  followUps: initialFollowUps,
-  customFields: initialCustomFields,
-  bookingLinks: initialBookingLinks,
-  availabilitySlots: initialAvailabilitySlots,
-  quickReplies: initialQuickReplies,
+  pipelines: [],
+  leads: [],
+  conversations: [],
+  workflows: [],
+  notifications: [],
+  calendarEvents: [],
+  staff: [],
+  tags: [],
+  opportunities: [],
+  notes: [],
+  followUps: [],
+  customFields: [],
+  bookingLinks: [],
+  availabilitySlots: [],
+  quickReplies: [],
   activities: [],
-  additionalFields: [
-    { id: 'a1', pipelineId: 'sales', question: 'What is their budget range?', type: 'Dropdown', slug: 'budget_range', options: ['< ₹50k', '₹50k – ₹2L', '₹2L – ₹10L', '> ₹10L'], required: true },
-    { id: 'a2', pipelineId: 'sales', question: 'Expected timeline to decide?', type: 'Date',     slug: 'timeline',     required: false },
-    { id: 'a3', pipelineId: 'sales', question: 'Who is the decision-maker?',   type: 'Single Line', slug: 'decision_maker', required: false },
-    { id: 'a4', pipelineId: 'sales', question: 'Main pain point?',             type: 'Multi Line', slug: 'pain_point', required: false },
-  ],
+  additionalFields: [],
 
   // Activity actions
   addActivity: (activity) => set((s) => ({ activities: [activity, ...s.activities] })),
@@ -244,12 +226,10 @@ export const useCrmStore = create<CrmState>((set) => ({
       activities: newActivities.length > 0 ? [...newActivities, ...s.activities] : s.activities,
     };
   }),
-  moveLeadStage: (id, newStage) => set((s) => {
+  moveLeadStage: (id, newStage, newStageId) => set((s) => {
     const lead = s.leads.find((l) => l.id === id);
     const oldStage = lead?.stage;
-    if (oldStage === newStage) {
-      return { leads: s.leads };
-    }
+    if (oldStage === newStage) return { leads: s.leads };
     const activity: LeadActivity = {
       id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       leadId: id,
@@ -259,7 +239,7 @@ export const useCrmStore = create<CrmState>((set) => ({
       timestamp: new Date().toISOString(),
     };
     return {
-      leads: s.leads.map((l) => l.id === id ? { ...l, stage: newStage, lastActivity: new Date().toISOString() } : l),
+      leads: s.leads.map((l) => l.id === id ? { ...l, stage: newStage, stageId: newStageId ?? l.stageId, lastActivity: new Date().toISOString() } : l),
       activities: [activity, ...s.activities],
     };
   }),
@@ -272,7 +252,15 @@ export const useCrmStore = create<CrmState>((set) => ({
 
   // Follow-up actions
   addFollowUp: (fu) => set((s) => ({ followUps: [fu, ...s.followUps] })),
-  completeFollowUp: (id) => set((s) => ({ followUps: s.followUps.map((f) => f.id === id ? { ...f, completed: true } : f) })),
+  completeFollowUp: (id, leadId) => {
+    set((s) => {
+      const resolvedLeadId = leadId ?? s.followUps.find((f) => f.id === id)?.leadId;
+      if (resolvedLeadId) {
+        api.patch(`/api/leads/${resolvedLeadId}/followups/${id}`, { completed: true }).catch(() => null);
+      }
+      return { followUps: s.followUps.map((f) => f.id === id ? { ...f, completed: true } : f) };
+    });
+  },
 
   // Tag actions
   addTag: (tag) => set((s) => ({ tags: [...s.tags, tag] })),
@@ -308,8 +296,15 @@ export const useCrmStore = create<CrmState>((set) => ({
   deleteWorkflow: (id) => set((s) => ({ workflows: s.workflows.filter((w) => w.id !== id) })),
 
   // Notification actions
-  markNotificationRead: (id) => set((s) => ({ notifications: s.notifications.map((n) => n.id === id ? { ...n, read: true } : n) })),
-  markAllNotificationsRead: () => set((s) => ({ notifications: s.notifications.map((n) => ({ ...n, read: true })) })),
+  addNotification: (n) => set((s) => ({ notifications: [n, ...s.notifications] })),
+  markNotificationRead: (id) => {
+    set((s) => ({ notifications: s.notifications.map((n) => n.id === id ? { ...n, read: true } : n) }));
+    api.patch(`/api/notifications/${id}/read`, {}).catch(() => {});
+  },
+  markAllNotificationsRead: () => {
+    set((s) => ({ notifications: s.notifications.map((n) => ({ ...n, read: true })) }));
+    api.post('/api/notifications/read-all', {}).catch(() => {});
+  },
 
   // Calendar actions
   addCalendarEvent: (event) => set((s) => ({ calendarEvents: [event, ...s.calendarEvents] })),
@@ -335,44 +330,167 @@ export const useCrmStore = create<CrmState>((set) => ({
   deactivateStaff: (id) => set((s) => ({ staff: s.staff.map((m) => m.id === id ? { ...m, status: m.status === 'active' ? 'inactive' as const : 'active' as const } : m) })),
 
   // Pipeline actions
-  addPipeline: (pipeline) => set((s) => ({ pipelines: [...s.pipelines, pipeline] })),
-  updatePipeline: (id, updates) => set((s) => ({ pipelines: s.pipelines.map((p) => p.id === id ? { ...p, ...updates } : p) })),
-  deletePipeline: (id) => set((s) => ({ pipelines: s.pipelines.filter((p) => p.id !== id) })),
-  clonePipeline: (id) => set((s) => {
-    const src = s.pipelines.find((p) => p.id === id);
-    if (!src) return {};
-    const newId = `pipeline-${Date.now()}`;
-    return { pipelines: [...s.pipelines, { ...src, id: newId, name: `${src.name} (Copy)`, stages: src.stages.map((st) => ({ ...st, id: `${st.id}-c${Date.now()}` })) }] };
-  }),
+  addPipeline: async (pipeline) => {
+    const created = await api.post<any>('/api/pipelines', {
+      name: pipeline.name,
+      stages: pipeline.stages.map((s) => s.name),
+    });
+    const mapped: Pipeline = {
+      id: created.id,
+      name: created.name,
+      stages: (created.stages ?? []).map((s: any) => ({ id: s.id, name: s.name, color: s.color ?? '#94a3b8' })),
+    };
+    set((s) => ({ pipelines: [...s.pipelines, mapped] }));
+  },
+  updatePipeline: async (id, updates) => {
+    // Capture old stages BEFORE optimistic update
+    const oldStages = useCrmStore.getState().pipelines.find((p) => p.id === id)?.stages ?? [];
+
+    // Optimistic update
+    set((s) => ({ pipelines: s.pipelines.map((p) => p.id === id ? { ...p, ...updates } : p) }));
+
+    // Persist name change
+    if (updates.name) {
+      await api.patch(`/api/pipelines/${id}`, { name: updates.name }).catch(() => null);
+    }
+
+    // Persist stage changes
+    if (updates.stages) {
+      const newStages = updates.stages;
+      const isTempId = (sid: string) => sid.startsWith('s-') || sid.startsWith('new-');
+
+      // DELETE stages that were removed
+      for (const old of oldStages) {
+        if (!isTempId(old.id) && !newStages.find((s) => s.id === old.id)) {
+          await api.delete(`/api/pipelines/${id}/stages/${old.id}`).catch(() => null);
+        }
+      }
+
+      const finalStages: PipelineStage[] = [];
+      for (let i = 0; i < newStages.length; i++) {
+        const s = newStages[i];
+        if (isTempId(s.id)) {
+          // New stage — create
+          const created = await api.post<any>(`/api/pipelines/${id}/stages`, {
+            name: s.name, stage_order: i, color: s.color ?? null,
+          }).catch(() => null);
+          finalStages.push(created ? { id: created.id, name: created.name, color: created.color ?? s.color } : s);
+        } else {
+          // Existing stage — patch if changed
+          const old = oldStages.find((o) => o.id === s.id);
+          if (old && (old.name !== s.name || old.color !== s.color)) {
+            await api.patch(`/api/pipelines/${id}/stages/${s.id}`, {
+              name: s.name, stage_order: i, color: s.color ?? null,
+            }).catch(() => null);
+          }
+          finalStages.push(s);
+        }
+      }
+
+      // Update store with real IDs after creation
+      set((st) => ({
+        pipelines: st.pipelines.map((p) =>
+          p.id === id ? { ...p, stages: finalStages } : p
+        ),
+      }));
+    }
+  },
+  deletePipeline: async (id) => {
+    await api.delete(`/api/pipelines/${id}`);
+    set((s) => ({ pipelines: s.pipelines.filter((p) => p.id !== id) }));
+  },
+  clonePipeline: async (id) => {
+    const src = useCrmStore.getState().pipelines.find((p) => p.id === id);
+    if (!src) return;
+    try {
+      const created = await api.post<any>('/api/pipelines', {
+        name: `${src.name} (Copy)`,
+        stages: src.stages.map((s) => s.name),
+      });
+      const mapped: Pipeline = {
+        id: created.id,
+        name: created.name,
+        stages: (created.stages ?? []).map((s: any) => ({ id: s.id, name: s.name, color: s.color ?? '#94a3b8' })),
+      };
+      set((s) => ({ pipelines: [...s.pipelines, mapped] }));
+    } catch {
+      const newId = `pipeline-${Date.now()}`;
+      set((s) => ({ pipelines: [...s.pipelines, { ...src, id: newId, name: `${src.name} (Copy)`, stages: src.stages.map((st) => ({ ...st, id: `${st.id}-c` })) }] }));
+    }
+  },
+
+  refreshPipelines: async () => {
+    const res = await api.get<any[]>('/api/pipelines');
+    const mapped: Pipeline[] = res.map((p) => ({
+      id: p.id,
+      name: p.name,
+      stages: (p.stages ?? []).map((s: any) => ({ id: s.id, name: s.name, color: s.color ?? '#94a3b8' })),
+    }));
+    set({ pipelines: mapped });
+  },
 
   initFromApi: async () => {
     try {
-      const [leadsRes, staffRes] = await Promise.all([
-        api.get<any[]>('/api/leads'),
-        api.get<any[]>('/api/settings/staff'),
+      const [leadsRes, staffRes, pipelinesRes, calRes, tagsRes, questionsRes, convsRes, notifsRes, bookingLinksRes, followUpsRes, customFieldsRes] = await Promise.all([
+        api.get<any[]>('/api/leads?limit=5000').catch(() => [] as any[]),
+        api.get<any[]>('/api/settings/staff').catch(() => [] as any[]),
+        api.get<any[]>('/api/pipelines').catch(() => [] as any[]),
+        api.get<any[]>('/api/calendar').catch(() => [] as any[]),
+        api.get<any[]>('/api/tags').catch(() => [] as any[]),
+        api.get<any[]>('/api/fields/questions').catch(() => [] as any[]),
+        api.get<any[]>('/api/conversations').catch(() => [] as any[]),
+        api.get<any[]>('/api/notifications').catch(() => [] as any[]),
+        api.get<any[]>('/api/calendar/event-types').catch(() => [] as any[]),
+        api.get<any[]>('/api/leads/followups').catch(() => [] as any[]),
+        api.get<any[]>('/api/fields/custom').catch(() => [] as any[]),
       ]);
+
+      // Build stageId → stageName lookup
+      const stageMap: Record<string, string> = {};
+      for (const p of pipelinesRes) {
+        for (const s of (p.stages ?? [])) {
+          stageMap[s.id] = s.name;
+        }
+      }
+
+      const mappedPipelines: Pipeline[] = pipelinesRes.map((p) => ({
+        id: p.id,
+        name: p.name,
+        stages: (p.stages ?? []).map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          color: s.color ?? '#94a3b8',
+        })),
+      }));
 
       const mappedLeads: Lead[] = leadsRes.map((l) => {
         const parts = (l.name ?? '').split(' ');
+        const stageName = stageMap[l.stage_id] ?? l.stage_name ?? 'New Lead';
         return {
           id: l.id,
           firstName: parts[0] ?? '',
           lastName: parts.slice(1).join(' ') ?? '',
           email: l.email ?? '',
           phone: l.phone ?? '',
-          stage: l.stage_id ?? 'New',
+          stage: stageName,
+          stageId: l.stage_id ?? '',
+          pipelineId: l.pipeline_id ?? '',
           source: l.source ?? 'Manual',
-          tags: [],
+          meta_form_name: l.meta_form_name ?? undefined,
+          custom_form_name: l.custom_form_name ?? undefined,
+          tags: l.tags ?? [],
           assignedTo: l.assigned_to ?? '',
+          assignedName: l.assigned_name ?? '',
           createdAt: l.created_at ?? new Date().toISOString(),
-          lastActivity: l.created_at ?? new Date().toISOString(),
+          lastActivity: l.updated_at ?? l.created_at ?? new Date().toISOString(),
           businessName: '',
           city: '',
-          notes: '',
+          notes: l.notes ?? '',
+          dealValue: 0,
           value: 0,
           probability: 0,
           nextFollowUp: null,
-          customFields: {},
+          customFields: [],
         } as Lead;
       });
 
@@ -387,7 +505,113 @@ export const useCrmStore = create<CrmState>((set) => ({
         avatar: (s.name as string).split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase(),
       }));
 
-      set({ leads: mappedLeads, staff: mappedStaff });
+      const mappedEvents: CalendarEvent[] = calRes.map((e) => ({
+        id: e.id,
+        title: e.title,
+        type: (e.type ?? 'meeting') as CalendarEvent['type'],
+        leadName: e.lead_name ?? '',
+        assignedTo: e.assigned_to ?? '',
+        createdBy: e.created_by ?? undefined,
+        createdByName: e.created_by_name ?? undefined,
+        date: e.start_time ? e.start_time.slice(0, 10) : new Date().toISOString().slice(0, 10),
+        time: e.start_time ? e.start_time.slice(11, 16) : '09:00',
+        duration: e.end_time && e.start_time
+          ? Math.round((new Date(e.end_time).getTime() - new Date(e.start_time).getTime()) / 60000)
+          : 60,
+        status: (['scheduled','completed','no-show','cancelled'].includes(e.status) ? e.status : 'scheduled') as CalendarEvent['status'],
+        notes: e.description ?? '',
+      }));
+
+      const mappedTags = tagsRes.map((t) => ({
+        id: t.id,
+        name: t.name,
+        color: t.color ?? '#94a3b8',
+        count: t.lead_count ?? 0,
+      }));
+
+      const mappedAdditionalFields: AdditionalField[] = (questionsRes ?? []).map((r: any) => ({
+        id: r.id,
+        pipelineId: r.pipeline_id ?? 'all',
+        question: r.question,
+        type: r.type as AdditionalFieldType,
+        slug: r.slug,
+        options: r.options ?? undefined,
+        required: r.required ?? false,
+      }));
+
+      const mappedConversations = (convsRes ?? []).map((c: any) => ({
+        id: c.id,
+        leadId: c.lead_id ?? '',
+        leadName: c.lead_name ?? 'Unknown',
+        leadPhone: c.lead_phone ?? '',
+        channel: (c.channel ?? 'whatsapp') as 'whatsapp',
+        lastMessage: c.last_message ?? '',
+        lastMessageTime: c.last_message_at ?? c.created_at ?? new Date().toISOString(),
+        unreadCount: c.unread_count ?? 0,
+        status: (c.status ?? 'open') as 'open' | 'pending' | 'resolved',
+        assignedTo: c.assigned_to ?? '',
+        messages: [],
+      }));
+
+      const mappedNotifications = (notifsRes ?? []).map((n: any) => ({
+        id: n.id,
+        type: 'lead_created' as const,
+        message: n.title + (n.message ? `: ${n.message}` : ''),
+        time: n.created_at ?? new Date().toISOString(),
+        read: n.is_read ?? false,
+        avatar: '🔔',
+      }));
+
+      const mappedBookingLinks = (bookingLinksRes ?? []).map((b: any) => ({
+        id: b.id,
+        title: b.name,
+        name: b.name,
+        eventType: b.meeting_type ?? 'meeting',
+        slug: b.slug,
+        duration: b.duration ?? 30,
+        buffer: b.buffer_time ?? 0,
+        isActive: b.is_active ?? true,
+        url: `/book/${b.slug}`,
+        meetingType: b.meeting_type ?? '',
+        meetingLink: b.meeting_link ?? '',
+        schedule: b.schedule ?? {},
+        capacityPerSlot: b.capacity_per_slot ?? 1,
+      }));
+
+      const mappedFollowUps = (followUpsRes ?? []).map((f: any) => ({
+        id: f.id,
+        leadId: f.lead_id,
+        note: f.title + (f.description ? `\n${f.description}` : ''),
+        dueAt: f.due_at,
+        completed: f.completed ?? false,
+        assignedTo: f.assigned_to ?? '',
+        createdAt: f.created_at ?? new Date().toISOString(),
+      }));
+
+      const mappedCustomFields = (customFieldsRes ?? []).map((cf: any) => ({
+        id: cf.id,
+        name: cf.name,
+        slug: cf.slug,
+        type: cf.type,
+        required: cf.required ?? false,
+        visible: cf.visible ?? true,
+        options: cf.options ?? undefined,
+        orderIndex: cf.order_index ?? 0,
+      }));
+
+      set({
+        leads: mappedLeads,
+        staff: mappedStaff,
+        pipelines: mappedPipelines,
+        calendarEvents: mappedEvents,
+        tags: mappedTags,
+        conversations: mappedConversations,
+        notifications: mappedNotifications,
+        bookingLinks: mappedBookingLinks,
+        followUps: mappedFollowUps,
+        ...(mappedCustomFields.length > 0 ? { customFields: mappedCustomFields } : {}),
+        ...(mappedAdditionalFields.length > 0 ? { additionalFields: mappedAdditionalFields } : {}),
+      });
     } catch {
       // Keep mock data if API fails (e.g. not logged in yet)
     }

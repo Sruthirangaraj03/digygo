@@ -42,16 +42,17 @@ export default function CreateBusinessPage() {
     if (!validate()) return;
     setLoading(true);
     try {
+      const password = form.loginPin.trim() || form.phone.replace(/\D/g, '').slice(-6) || Math.random().toString(36).slice(-8);
       await api.post('/api/auth/tenants', {
         businessName: form.businessName,
         adminName: `${form.firstName} ${form.lastName}`.trim(),
         email: form.email,
-        password: form.loginPin || form.phone.slice(-4),
+        password,
         plan: form.plan.toLowerCase(),
         phone: form.phone,
         address: form.address,
       });
-      toast.success(`${form.businessName} created successfully!`);
+      toast.success(`${form.businessName} created! Login: ${form.email} / ${password}`);
       navigate('/admin');
     } catch (err: any) {
       toast.error(err.message ?? 'Failed to create account');

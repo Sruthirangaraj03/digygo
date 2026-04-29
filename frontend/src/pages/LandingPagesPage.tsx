@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { api } from '@/lib/api';
 import {
   Plus, Pencil, Trash2, Copy, Layout, X, Check, Globe, Eye,
   Users, Paintbrush,
@@ -24,11 +25,18 @@ interface LandingPage {
 
 const TEMPLATES = ['Product Launch', 'Lead Capture', 'Webinar Registration', 'Free Trial', 'Contact Us'];
 
-const defaultPages: LandingPage[] = [
-  { id: 'lp-1', title: 'Free Demo Booking', slug: 'free-demo-booking', template: 'Lead Capture', views: 1243, leads: 89, status: 'published', createdAt: '2025-02-10' },
-  { id: 'lp-2', title: 'Enterprise Webinar', slug: 'enterprise-webinar-q1', template: 'Webinar Registration', views: 892, leads: 54, status: 'published', createdAt: '2025-03-01' },
-  { id: 'lp-3', title: 'Summer Sale Campaign', slug: 'summer-sale-2025', template: 'Product Launch', views: 321, leads: 22, status: 'draft', createdAt: '2025-04-05' },
-];
+function mapPage(r: any): LandingPage {
+  return {
+    id: r.id,
+    title: r.title,
+    slug: r.slug,
+    template: r.template ?? 'Lead Capture',
+    views: r.views ?? 0,
+    leads: r.leads ?? 0,
+    status: r.status as 'published' | 'draft',
+    createdAt: r.created_at ? r.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+  };
+}
 
 function PageModal({ initial, onClose, onSave }: {
   initial?: LandingPage | null;
@@ -105,37 +113,66 @@ function PageModal({ initial, onClose, onSave }: {
 
 export default function LandingPagesPage() {
   const navigate = useNavigate();
-  const [pages, setPages] = useState(defaultPages);
+  const [pages, setPages] = useState<LandingPage[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editPage, setEditPage] = useState<LandingPage | null>(null);
+
+  useEffect(() => {
+    api.get<any[]>('/api/landing-pages')
+      .then((rows) => setPages((rows ?? []).map(mapPage)))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
   const totalViews = pages.reduce((s, p) => s + p.views, 0);
   const totalLeads = pages.reduce((s, p) => s + p.leads, 0);
   const published = pages.filter((p) => p.status === 'published').length;
 
-  const handleCreate = (data: Pick<LandingPage, 'title' | 'slug' | 'template' | 'status'>) => {
-    setPages([...pages, { ...data, id: `lp-${Date.now()}`, views: 0, leads: 0, createdAt: new Date().toISOString().split('T')[0] }]);
-    setShowModal(false);
-    toast.success(`"${data.title}" created — open builder to design it`);
+  const handleCreate = async (data: Pick<LandingPage, 'title' | 'slug' | 'template' | 'status'>) => {
+    try {
+      const created = await api.post<any>('/api/landing-pages', data);
+      setPages((prev) => [mapPage(created), ...prev]);
+      setShowModal(false);
+      toast.success(`"${data.title}" created — open builder to design it`);
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Failed to create page');
+    }
   };
 
-  const handleEdit = (data: Pick<LandingPage, 'title' | 'slug' | 'template' | 'status'>) => {
+  const handleEdit = async (data: Pick<LandingPage, 'title' | 'slug' | 'template' | 'status'>) => {
     if (!editPage) return;
-    setPages(pages.map((p) => p.id === editPage.id ? { ...p, ...data } : p));
-    setEditPage(null);
-    toast.success('Page updated');
+    try {
+      await api.patch(`/api/landing-pages/${editPage.id}`, data);
+      setPages((prev) => prev.map((p) => p.id === editPage.id ? { ...p, ...data } : p));
+      setEditPage(null);
+      toast.success('Page updated');
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Failed to update page');
+    }
   };
 
-  const toggleStatus = (id: string) => {
+  const toggleStatus = async (id: string) => {
     const page = pages.find((p) => p.id === id)!;
-    setPages(pages.map((p) => p.id === id ? { ...p, status: p.status === 'published' ? 'draft' : 'published' } : p));
-    toast.success(`"${page.title}" ${page.status === 'published' ? 'unpublished' : 'published'}`);
+    const newStatus = page.status === 'published' ? 'draft' : 'published';
+    try {
+      await api.patch(`/api/landing-pages/${id}`, { status: newStatus });
+      setPages((prev) => prev.map((p) => p.id === id ? { ...p, status: newStatus } : p));
+      toast.success(`"${page.title}" ${newStatus === 'published' ? 'published' : 'unpublished'}`);
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Failed to update status');
+    }
   };
 
-  const deletePage = (id: string) => {
+  const deletePage = async (id: string) => {
     const page = pages.find((p) => p.id === id);
-    setPages(pages.filter((p) => p.id !== id));
-    toast.success(`"${page?.title}" deleted`);
+    try {
+      await api.delete(`/api/landing-pages/${id}`);
+      setPages((prev) => prev.filter((p) => p.id !== id));
+      toast.success(`"${page?.title}" deleted`);
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Failed to delete page');
+    }
   };
 
   return (
@@ -160,7 +197,11 @@ export default function LandingPagesPage() {
       </div>
 
       {/* Page cards */}
-      {pages.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : pages.length === 0 ? (
         <div className="bg-white rounded-2xl border border-black/5 card-shadow px-8 py-16 text-center">
           <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <Layout className="w-7 h-7 text-primary" />
@@ -181,7 +222,7 @@ export default function LandingPagesPage() {
                 <div
                   className="h-20 flex items-center justify-center cursor-pointer relative"
                   style={{ background: 'linear-gradient(135deg, rgba(194,65,12,0.10) 0%, rgba(249,115,22,0.15) 100%)' }}
-                  onClick={() => navigate('/lead-generation/landing-pages/builder')}
+                  onClick={() => navigate(`/lead-generation/landing-pages/builder?id=${page.id}`)}
                 >
                   <Layout className="w-9 h-9 text-primary/25" />
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-primary/5">

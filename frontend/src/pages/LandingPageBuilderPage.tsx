@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { api } from '@/lib/api';
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
   DragOverlay, type DragEndEvent, type DragStartEvent,
@@ -472,6 +473,8 @@ const STARTER: Block[] = [
 
 export default function LandingPageBuilderPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const pageId = searchParams.get('id');
   const [blocks, setBlocks] = useState<Block[]>(STARTER);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -480,6 +483,7 @@ export default function LandingPageBuilderPage() {
   const [pageName, setPageName] = useState('Free Demo Booking');
   const [editingName, setEditingName] = useState(false);
   const [showThemes, setShowThemes] = useState(false);
+  const [publishing, setPublishing] = useState(false);
 
   const theme = THEMES[themeKey];
   const selectedBlock = blocks.find((b) => b.id === selectedId) ?? null;
@@ -594,8 +598,30 @@ export default function LandingPageBuilderPage() {
           ))}
         </div>
 
-        <Button size="sm" onClick={() => toast.success('🎉 Page published successfully!')}>
-          <Zap className="w-3.5 h-3.5" /> Publish
+        <Button size="sm" disabled={publishing} onClick={async () => {
+          const content = { blocks, themeKey };
+          setPublishing(true);
+          try {
+            if (pageId) {
+              await api.patch(`/api/landing-pages/${pageId}`, { content, status: 'published' });
+            } else {
+              await api.post('/api/landing-pages', {
+                title: pageName,
+                slug: pageName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+                template: 'Custom',
+                status: 'published',
+                content,
+              });
+            }
+            toast.success('Page published successfully!');
+            navigate('/lead-generation/landing-pages');
+          } catch (err: any) {
+            toast.error(err?.message ?? 'Failed to publish');
+          } finally {
+            setPublishing(false);
+          }
+        }}>
+          <Zap className="w-3.5 h-3.5" /> {publishing ? 'Publishing…' : 'Publish'}
         </Button>
       </div>
 

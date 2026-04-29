@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useCrmStore } from '@/store/crmStore';
 import { useAuthStore } from '@/store/authStore';
-import { staff } from '@/data/mockData';
+import { api } from '@/lib/api';
+import { getSocket } from '@/lib/socket';
 import {
-  Search, Send, Paperclip, Smile, Check, CheckCheck, MessageCircle,
+  Search, Send, Paperclip, Check, CheckCheck, MessageCircle,
   ArrowLeft, StickyNote, Zap, ChevronDown, UserCheck, X,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -15,9 +16,35 @@ import { toast } from 'sonner';
 
 type FilterTab = 'all' | 'mine' | 'unread' | 'unassigned' | 'resolved';
 
+interface ApiConversation {
+  id: string;
+  lead_id: string;
+  lead_name: string;
+  lead_phone: string;
+  channel: string;
+  status: 'open' | 'pending' | 'resolved';
+  assigned_to: string | null;
+  assigned_name: string | null;
+  last_message: string;
+  last_message_at: string;
+  unread_count: number;
+}
+
+interface ApiMessage {
+  id: string;
+  conversation_id: string;
+  sender: 'agent' | 'customer';
+  body: string;
+  is_note: boolean;
+  status: string;
+  created_at: string;
+}
+
 export default function InboxPage() {
-  const { conversations, sendMessage, resolveConversation, reopenConversation, assignConversation, markConversationRead, quickReplies } = useCrmStore();
+  const { staff, quickReplies } = useCrmStore();
   const currentUser = useAuthStore((s) => s.currentUser);
+  const [conversations, setConversations] = useState<ApiConversation[]>([]);
+  const [messages, setMessages] = useState<ApiMessage[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
@@ -25,39 +52,134 @@ export default function InboxPage() {
   const [isNote, setIsNote] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
-  const [showList, setShowList] = useState(true); // mobile toggle
+  const [showList, setShowList] = useState(true);
+  const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const selected = conversations.find((c) => c.id === selectedId);
+  const selected = conversations.find((c) => c.id === selectedId) ?? null;
+
+  const loadConversations = useCallback(() => {
+    api.get<ApiConversation[]>('/api/conversations').then(setConversations).catch(() => {});
+  }, []);
+
+  useEffect(() => { loadConversations(); }, [loadConversations]);
+
+  // Real-time: listen for new messages and conversation updates via Socket.io
+  useEffect(() => {
+    const socket = getSocket();
+
+    const onNewMessage = (msg: ApiMessage) => {
+      if (msg.sender === 'customer') {
+        setMessages((prev) =>
+          prev[0]?.conversation_id === msg.conversation_id ? [...prev, msg] : prev
+        );
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === msg.conversation_id
+              ? { ...c, last_message: msg.body, last_message_at: msg.created_at, unread_count: c.unread_count + 1 }
+              : c
+          )
+        );
+      }
+    };
+
+    const onConvUpdated = (conv: ApiConversation) => {
+      setConversations((prev) =>
+        prev.some((c) => c.id === conv.id)
+          ? prev.map((c) => c.id === conv.id ? { ...c, ...conv } : c)
+          : [conv, ...prev]
+      );
+    };
+
+    socket.on('message:new', onNewMessage);
+    socket.on('conversation:updated', onConvUpdated);
+    return () => {
+      socket.off('message:new', onNewMessage);
+      socket.off('conversation:updated', onConvUpdated);
+    };
+  }, []);
 
   useEffect(() => {
-    if (selectedId) markConversationRead(selectedId);
+    if (!selectedId) { setMessages([]); return; }
+    api.get<ApiMessage[]>(`/api/conversations/${selectedId}/messages`)
+      .then(setMessages)
+      .catch(() => {});
+    api.patch(`/api/conversations/${selectedId}/read`, {}).catch(() => {});
+    setConversations((prev) =>
+      prev.map((c) => c.id === selectedId ? { ...c, unread_count: 0 } : c)
+    );
   }, [selectedId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [selected?.messages.length]);
+  }, [messages.length]);
 
   const filtered = conversations.filter((c) => {
-    if (search && !c.leadName.toLowerCase().includes(search.toLowerCase())) return false;
-    if (filterTab === 'mine') return c.assignedTo === currentUser?.id;
-    if (filterTab === 'unread') return c.unreadCount > 0;
-    if (filterTab === 'unassigned') return !c.assignedTo;
+    if (search && !c.lead_name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (filterTab === 'mine') return c.assigned_to === currentUser?.id;
+    if (filterTab === 'unread') return c.unread_count > 0;
+    if (filterTab === 'unassigned') return !c.assigned_to;
     if (filterTab === 'resolved') return c.status === 'resolved';
     return true;
   });
 
-  const handleSend = () => {
-    if (!messageText.trim() || !selectedId) return;
-    sendMessage(selectedId, messageText.trim(), 'agent', isNote);
-    setMessageText('');
-    setIsNote(false);
-    setShowQuickReplies(false);
+  const handleSend = async () => {
+    if (!messageText.trim() || !selectedId || sending) return;
+    setSending(true);
+    try {
+      const msg = await api.post<ApiMessage>(`/api/conversations/${selectedId}/messages`, {
+        body: messageText.trim(),
+        is_note: isNote,
+      });
+      setMessages((prev) => [...prev, msg]);
+      if (!isNote) {
+        setConversations((prev) =>
+          prev.map((c) => c.id === selectedId
+            ? { ...c, last_message: messageText.trim(), last_message_at: new Date().toISOString() }
+            : c
+          )
+        );
+      }
+      setMessageText('');
+      setIsNote(false);
+      setShowQuickReplies(false);
+    } catch {
+      toast.error('Failed to send message');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleAssign = async (staffId: string) => {
+    if (!selectedId) return;
+    try {
+      await api.patch(`/api/conversations/${selectedId}/assign`, { assigned_to: staffId });
+      const member = staff.find((s) => s.id === staffId);
+      setConversations((prev) =>
+        prev.map((c) => c.id === selectedId
+          ? { ...c, assigned_to: staffId, assigned_name: member?.name ?? null }
+          : c
+        )
+      );
+      toast.success(`Assigned to ${member?.name ?? 'staff'}`);
+    } catch { toast.error('Failed to assign'); }
+    setShowAssign(false);
+  };
+
+  const handleStatus = async (status: 'open' | 'resolved') => {
+    if (!selectedId) return;
+    try {
+      await api.patch(`/api/conversations/${selectedId}/status`, { status });
+      setConversations((prev) =>
+        prev.map((c) => c.id === selectedId ? { ...c, status } : c)
+      );
+      toast.success(status === 'resolved' ? 'Conversation resolved' : 'Conversation reopened');
+    } catch { toast.error('Failed to update status'); }
   };
 
   const handleSelectConversation = (id: string) => {
     setSelectedId(id);
-    setShowList(false); // on mobile, switch to thread view
+    setShowList(false);
   };
 
   const handleBack = () => {
@@ -80,7 +202,7 @@ export default function InboxPage() {
     { key: 'resolved', label: 'Resolved' },
   ];
 
-  const assignedStaff = selected ? staff.find((s) => s.id === selected.assignedTo) : null;
+  const assignedStaff = selected ? staff.find((s) => s.id === selected.assigned_to) : null;
 
   return (
     <div className="animate-fade-in -m-4 md:-m-8 flex" style={{ height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
@@ -94,9 +216,12 @@ export default function InboxPage() {
           </div>
           <div className="flex gap-1 overflow-x-auto pb-0.5">
             {tabs.map(({ key, label }) => {
-              const count = key === 'unread' ? conversations.filter((c) => c.unreadCount > 0).length : key === 'unassigned' ? conversations.filter((c) => !c.assignedTo).length : 0;
+              const count = key === 'unread' ? conversations.filter((c) => c.unread_count > 0).length
+                : key === 'unassigned' ? conversations.filter((c) => !c.assigned_to).length : 0;
               return (
-                <button key={key} onClick={() => setFilterTab(key)} className={cn('px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors flex items-center gap-1', filterTab === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-[#f5ede3]')}>
+                <button key={key} onClick={() => setFilterTab(key)}
+                  className={cn('px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors flex items-center gap-1',
+                    filterTab === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-[#f5ede3]')}>
                   {label}
                   {count > 0 && <span className={cn('text-[10px] rounded-full px-1', filterTab === key ? 'bg-white/20' : 'bg-primary/10 text-primary')}>{count}</span>}
                 </button>
@@ -105,27 +230,41 @@ export default function InboxPage() {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {filtered.length === 0 && <div className="text-center py-12 text-muted-foreground text-sm">No conversations</div>}
+          {filtered.length === 0 && (
+            <div className="text-center py-12 text-muted-foreground text-sm">No conversations</div>
+          )}
           {filtered.map((conv) => (
-            <button key={conv.id} onClick={() => handleSelectConversation(conv.id)} className={cn('w-full text-left px-4 py-3 border-b border-black/5 hover:bg-[#faf8f6] transition-colors flex gap-3', conv.id === selectedId && 'bg-accent/30 border-l-2 border-l-primary')}>
+            <button key={conv.id} onClick={() => handleSelectConversation(conv.id)}
+              className={cn('w-full text-left px-4 py-3 border-b border-black/5 hover:bg-[#faf8f6] transition-colors flex gap-3',
+                conv.id === selectedId && 'bg-accent/30 border-l-2 border-l-primary')}>
               <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary shrink-0">
-                {conv.leadName.split(' ').map((n) => n[0]).join('')}
+                {conv.lead_name.split(' ').map((n) => n[0]).join('')}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm text-foreground">{conv.leadName}</span>
-                  <span className="text-[11px] text-[#7a6b5c]">{formatDistanceToNow(new Date(conv.lastMessageTime), { addSuffix: false })}</span>
+                  <span className="font-medium text-sm text-foreground">{conv.lead_name}</span>
+                  <span className="text-[11px] text-[#7a6b5c]">
+                    {conv.last_message_at ? formatDistanceToNow(new Date(conv.last_message_at), { addSuffix: false }) : ''}
+                  </span>
                 </div>
                 <div className="flex items-center gap-1">
                   <MessageCircle className="w-3 h-3 text-green-500 shrink-0" />
-                  <p className="text-[11px] text-[#7a6b5c] truncate">{conv.lastMessage}</p>
+                  <p className="text-[11px] text-[#7a6b5c] truncate">{conv.last_message}</p>
                 </div>
                 <div className="flex items-center gap-1 mt-0.5">
-                  <Badge variant="secondary" className={cn('text-[10px] px-1.5 py-0 border-0', conv.status === 'open' && 'bg-green-100 text-green-700', conv.status === 'pending' && 'bg-yellow-100 text-yellow-700', conv.status === 'resolved' && 'bg-muted text-muted-foreground')}>{conv.status}</Badge>
-                  {assignedStaff && conv.id === selectedId && <span className="text-[10px] text-muted-foreground">{assignedStaff.name}</span>}
+                  <Badge variant="secondary" className={cn('text-[10px] px-1.5 py-0 border-0',
+                    conv.status === 'open' && 'bg-green-100 text-green-700',
+                    conv.status === 'pending' && 'bg-yellow-100 text-yellow-700',
+                    conv.status === 'resolved' && 'bg-muted text-muted-foreground')}>
+                    {conv.status}
+                  </Badge>
                 </div>
               </div>
-              {conv.unreadCount > 0 && <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-semibold shrink-0 self-center">{conv.unreadCount}</span>}
+              {conv.unread_count > 0 && (
+                <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-semibold shrink-0 self-center">
+                  {conv.unread_count}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -140,15 +279,18 @@ export default function InboxPage() {
               <div className="flex items-center gap-3">
                 <button onClick={handleBack} className="sm:hidden p-1 hover:bg-[#f5ede3] rounded-lg"><ArrowLeft className="w-5 h-5" /></button>
                 <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-semibold">
-                  {selected.leadName.split(' ').map((n) => n[0]).join('')}
+                  {selected.lead_name.split(' ').map((n) => n[0]).join('')}
                 </div>
                 <div>
-                  <h3 className="font-headline font-bold text-[#1c1410]">{selected.leadName}</h3>
-                  <p className="text-[11px] text-[#7a6b5c]">{selected.leadPhone}</p>
+                  <h3 className="font-headline font-bold text-[#1c1410]">{selected.lead_name}</h3>
+                  <p className="text-[11px] text-[#7a6b5c]">{selected.lead_phone}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant="secondary" className={cn('text-xs', selected.status === 'open' && 'bg-green-100 text-green-700', selected.status === 'pending' && 'bg-yellow-100 text-yellow-700', selected.status === 'resolved' && 'bg-muted text-muted-foreground')}>
+                <Badge variant="secondary" className={cn('text-xs',
+                  selected.status === 'open' && 'bg-green-100 text-green-700',
+                  selected.status === 'pending' && 'bg-yellow-100 text-yellow-700',
+                  selected.status === 'resolved' && 'bg-muted text-muted-foreground')}>
                   {selected.status}
                 </Badge>
 
@@ -164,10 +306,12 @@ export default function InboxPage() {
                       <div className="fixed inset-0 z-40" onClick={() => setShowAssign(false)} />
                       <div className="absolute right-0 top-10 bg-card border border-black/5 rounded-xl shadow-xl z-50 w-48 py-1">
                         {staff.filter((s) => s.status === 'active').map((s) => (
-                          <button key={s.id} onClick={() => { assignConversation(selected.id, s.id); toast.success(`Assigned to ${s.name}`); setShowAssign(false); }} className={cn('w-full text-left px-3 py-2 text-sm hover:bg-[#f5ede3] flex items-center gap-2', selected.assignedTo === s.id && 'text-primary font-medium')}>
+                          <button key={s.id} onClick={() => handleAssign(s.id)}
+                            className={cn('w-full text-left px-3 py-2 text-sm hover:bg-[#f5ede3] flex items-center gap-2',
+                              selected.assigned_to === s.id && 'text-primary font-medium')}>
                             <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-semibold text-primary">{s.avatar}</div>
                             {s.name.split(' ')[0]}
-                            {selected.assignedTo === s.id && <Check className="w-3 h-3 ml-auto" />}
+                            {selected.assigned_to === s.id && <Check className="w-3 h-3 ml-auto" />}
                           </button>
                         ))}
                       </div>
@@ -176,28 +320,44 @@ export default function InboxPage() {
                 </div>
 
                 {selected.status === 'resolved'
-                  ? <Button variant="outline" size="sm" onClick={() => { reopenConversation(selected.id); toast.success('Conversation reopened'); }}>Reopen</Button>
-                  : <Button variant="outline" size="sm" onClick={() => { resolveConversation(selected.id); toast.success('Conversation resolved'); }}>Resolve</Button>
+                  ? <Button variant="outline" size="sm" onClick={() => handleStatus('open')}>Reopen</Button>
+                  : <Button variant="outline" size="sm" onClick={() => handleStatus('resolved')}>Resolve</Button>
                 }
               </div>
             </div>
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {selected.messages.map((msg, i) => {
-                const showDate = i === 0 || formatMsgDate(msg.timestamp) !== formatMsgDate(selected.messages[i - 1].timestamp);
+              {messages.map((msg, i) => {
+                const showDate = i === 0 || formatMsgDate(msg.created_at) !== formatMsgDate(messages[i - 1].created_at);
                 return (
                   <div key={msg.id}>
-                    {showDate && <div className="text-center my-4"><span className="text-[11px] text-[#7a6b5c] bg-muted px-3 py-1 rounded-full">{formatMsgDate(msg.timestamp)}</span></div>}
+                    {showDate && (
+                      <div className="text-center my-4">
+                        <span className="text-[11px] text-[#7a6b5c] bg-muted px-3 py-1 rounded-full">{formatMsgDate(msg.created_at)}</span>
+                      </div>
+                    )}
                     <div className={cn('flex', msg.sender === 'agent' ? 'justify-end' : 'justify-start')}>
-                      <div className={cn('max-w-[70%] p-3 text-sm', msg.isNote ? 'bg-yellow-50 border border-yellow-200 rounded-2xl' : msg.sender === 'customer' ? 'bg-muted rounded-2xl rounded-tl-sm' : 'bg-primary text-primary-foreground rounded-2xl rounded-tr-sm')}>
-                        {msg.isNote && <p className="text-[10px] font-semibold text-yellow-600 mb-1 flex items-center gap-1"><StickyNote className="w-3 h-3" /> Internal Note</p>}
-                        <p className={msg.isNote ? 'text-yellow-800' : ''}>{msg.text}</p>
+                      <div className={cn('max-w-[70%] p-3 text-sm',
+                        msg.is_note ? 'bg-yellow-50 border border-yellow-200 rounded-2xl'
+                          : msg.sender === 'customer' ? 'bg-muted rounded-2xl rounded-tl-sm'
+                          : 'bg-primary text-primary-foreground rounded-2xl rounded-tr-sm')}>
+                        {msg.is_note && (
+                          <p className="text-[10px] font-semibold text-yellow-600 mb-1 flex items-center gap-1">
+                            <StickyNote className="w-3 h-3" /> Internal Note
+                          </p>
+                        )}
+                        <p className={msg.is_note ? 'text-yellow-800' : ''}>{msg.body}</p>
                         <div className={cn('flex items-center gap-1 mt-1', msg.sender === 'agent' ? 'justify-end' : '')}>
-                          <span className={cn('text-xs', msg.isNote ? 'text-yellow-600' : msg.sender === 'customer' ? 'text-muted-foreground' : 'text-primary-foreground/70')}>{format(new Date(msg.timestamp), 'HH:mm')}</span>
-                          {msg.sender === 'agent' && !msg.isNote && msg.status === 'read' && <CheckCheck className="w-3 h-3 text-blue-300" />}
-                          {msg.sender === 'agent' && !msg.isNote && msg.status === 'delivered' && <CheckCheck className="w-3 h-3 text-primary-foreground/50" />}
-                          {msg.sender === 'agent' && !msg.isNote && msg.status === 'sent' && <Check className="w-3 h-3 text-primary-foreground/50" />}
+                          <span className={cn('text-xs',
+                            msg.is_note ? 'text-yellow-600'
+                              : msg.sender === 'customer' ? 'text-muted-foreground'
+                              : 'text-primary-foreground/70')}>
+                            {format(new Date(msg.created_at), 'HH:mm')}
+                          </span>
+                          {msg.sender === 'agent' && !msg.is_note && msg.status === 'read' && <CheckCheck className="w-3 h-3 text-blue-300" />}
+                          {msg.sender === 'agent' && !msg.is_note && msg.status === 'delivered' && <CheckCheck className="w-3 h-3 text-primary-foreground/50" />}
+                          {msg.sender === 'agent' && !msg.is_note && msg.status === 'sent' && <Check className="w-3 h-3 text-primary-foreground/50" />}
                         </div>
                       </div>
                     </div>
@@ -216,7 +376,8 @@ export default function InboxPage() {
                 </div>
                 <div className="space-y-1.5">
                   {quickReplies.map((qr) => (
-                    <button key={qr.id} onClick={() => { setMessageText(qr.content); setShowQuickReplies(false); }} className="w-full text-left p-2 rounded-lg hover:bg-background border border-black/5 text-sm transition-colors">
+                    <button key={qr.id} onClick={() => { setMessageText(qr.content); setShowQuickReplies(false); }}
+                      className="w-full text-left p-2 rounded-lg hover:bg-background border border-black/5 text-sm transition-colors">
                       <p className="font-medium text-foreground text-xs">{qr.title}</p>
                       <p className="text-muted-foreground text-xs truncate">{qr.content}</p>
                     </button>
@@ -227,12 +388,22 @@ export default function InboxPage() {
 
             {/* Input */}
             <div className={cn('border-t border-black/5 p-3', isNote && 'bg-yellow-50')}>
-              {isNote && <p className="text-xs font-semibold text-yellow-600 mb-2 flex items-center gap-1"><StickyNote className="w-3 h-3" /> Internal Note — not visible to customer</p>}
+              {isNote && (
+                <p className="text-xs font-semibold text-yellow-600 mb-2 flex items-center gap-1">
+                  <StickyNote className="w-3 h-3" /> Internal Note — not visible to customer
+                </p>
+              )}
               <div className="flex items-end gap-2">
                 <div className="flex gap-1">
-                  <button onClick={() => setShowQuickReplies(!showQuickReplies)} className={cn('p-2 rounded-lg transition-colors', showQuickReplies ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-[#f5ede3]')} title="Quick replies"><Zap className="w-5 h-5" /></button>
-                  <button onClick={() => setIsNote(!isNote)} className={cn('p-2 rounded-lg transition-colors', isNote ? 'bg-yellow-200 text-yellow-700' : 'text-muted-foreground hover:text-foreground hover:bg-[#f5ede3]')} title="Internal note"><StickyNote className="w-5 h-5" /></button>
-                  <button className="p-2 text-muted-foreground hover:text-foreground hover:bg-[#f5ede3] rounded-lg transition-colors" title="Attachment"><Paperclip className="w-5 h-5" /></button>
+                  <button onClick={() => setShowQuickReplies(!showQuickReplies)}
+                    className={cn('p-2 rounded-lg transition-colors', showQuickReplies ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-[#f5ede3]')}
+                    title="Quick replies"><Zap className="w-5 h-5" /></button>
+                  <button onClick={() => setIsNote(!isNote)}
+                    className={cn('p-2 rounded-lg transition-colors', isNote ? 'bg-yellow-200 text-yellow-700' : 'text-muted-foreground hover:text-foreground hover:bg-[#f5ede3]')}
+                    title="Internal note"><StickyNote className="w-5 h-5" /></button>
+                  <button className="p-2 text-muted-foreground hover:text-foreground hover:bg-[#f5ede3] rounded-lg transition-colors" title="Attachment">
+                    <Paperclip className="w-5 h-5" />
+                  </button>
                 </div>
                 <Input
                   className={cn('flex-1', isNote && 'border-yellow-300 bg-yellow-50 focus-visible:ring-yellow-200')}
@@ -241,7 +412,10 @@ export default function InboxPage() {
                   onChange={(e) => setMessageText(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
                 />
-                <Button onClick={handleSend} disabled={!messageText.trim()} className={isNote ? 'bg-yellow-500 hover:bg-yellow-600' : ''}><Send className="w-4 h-4" /></Button>
+                <Button onClick={handleSend} disabled={!messageText.trim() || sending}
+                  className={isNote ? 'bg-yellow-500 hover:bg-yellow-600' : ''}>
+                  <Send className="w-4 h-4" />
+                </Button>
               </div>
             </div>
           </>

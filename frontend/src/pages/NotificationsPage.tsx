@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowLeft, Check, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { api } from '@/lib/api';
 
 interface NotifSetting {
   id: string;
@@ -30,13 +31,32 @@ export default function NotificationsPage() {
   const [settings, setSettings] = useState(defaultSettings);
   const [saving, setSaving] = useState(false);
 
+  // Load saved prefs on mount
+  useEffect(() => {
+    api.get<Record<string, { inApp: boolean; email: boolean }>>('/api/settings/notifications')
+      .then((prefs) => {
+        if (Object.keys(prefs).length === 0) return;
+        setSettings((prev) => prev.map((s) => prefs[s.id] ? { ...s, ...prefs[s.id] } : s));
+      })
+      .catch(() => {});
+  }, []);
+
   const update = (id: string, channel: 'inApp' | 'email', val: boolean) => {
     setSettings(settings.map((s) => s.id === id ? { ...s, [channel]: val } : s));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setSaving(true);
-    setTimeout(() => { setSaving(false); toast.success('Notification preferences saved'); }, 800);
+    try {
+      const prefs: Record<string, { inApp: boolean; email: boolean }> = {};
+      settings.forEach((s) => { prefs[s.id] = { inApp: s.inApp, email: s.email }; });
+      await api.put('/api/settings/notifications', prefs);
+      toast.success('Notification preferences saved');
+    } catch {
+      toast.error('Failed to save preferences');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
