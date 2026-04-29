@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Upload, Trash2, Search, MapPin, RefreshCw, CheckCircle, AlertCircle, Download } from 'lucide-react';
+import { ArrowLeft, Trash2, Search, MapPin, RefreshCw, CheckCircle, AlertCircle, Download, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
@@ -9,6 +9,14 @@ import * as XLSX from 'xlsx';
 interface DistrictStat { district: string; state: string | null; pipeline_name: string | null; pincode_count: string; }
 interface Stats { districts: DistrictStat[]; total: number; }
 interface PreviewRow { pincode: string; district: string; state: string; pipeline_name: string; }
+interface ColumnMap { pincode: string; district: string; state: string; pipeline: string; }
+
+const SYSTEM_FIELDS = [
+  { key: 'pincode' as keyof ColumnMap, label: 'Pincode', required: true },
+  { key: 'district' as keyof ColumnMap, label: 'District', required: true },
+  { key: 'state' as keyof ColumnMap, label: 'State', required: false },
+  { key: 'pipeline' as keyof ColumnMap, label: 'Pipeline', required: false },
+];
 
 export default function PincodeRoutingPage() {
   const navigate = useNavigate();
@@ -24,6 +32,12 @@ export default function PincodeRoutingPage() {
   const [testResult, setTestResult] = useState<any>(null);
   const [testing, setTesting] = useState(false);
 
+  // Column mapper state
+  const [mapperOpen, setMapperOpen] = useState(false);
+  const [rawColumns, setRawColumns] = useState<string[]>([]);
+  const [rawRows, setRawRows] = useState<any[]>([]);
+  const [columnMap, setColumnMap] = useState<ColumnMap>({ pincode: '', district: '', state: '', pipeline: '' });
+
   const loadStats = async () => {
     try {
       const s = await api.get<Stats>('/api/pincode-routing/stats');
@@ -33,6 +47,19 @@ export default function PincodeRoutingPage() {
   };
 
   useEffect(() => { loadStats(); }, []);
+
+  const buildPreview = (raw: any[], pincodeKey: string, districtKey: string, stateKey: string, pipelineKey: string) => {
+    const rows: PreviewRow[] = raw.map((r) => ({
+      pincode:       String(r[pincodeKey] ?? '').trim(),
+      district:      String(r[districtKey] ?? '').trim(),
+      state:         stateKey ? String(r[stateKey] ?? '').trim() : '',
+      pipeline_name: pipelineKey ? String(r[pipelineKey] ?? '').trim() : '',
+    })).filter((r) => r.pincode && r.district);
+
+    if (rows.length === 0) { toast.error('No valid rows found after filtering blank pincodes/districts'); return; }
+    setPreview(rows);
+    toast.success(`Found ${rows.length} rows ready to upload`);
+  };
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -45,38 +72,37 @@ export default function PincodeRoutingPage() {
         const raw: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
         if (raw.length === 0) { toast.error('File is empty or unreadable'); return; }
 
-        // Auto-detect column names (case-insensitive)
         const sample = raw[0];
-        const keys = Object.keys(sample).map((k) => k.toLowerCase().trim());
         const findKey = (candidates: string[]) =>
           Object.keys(sample).find((k) => candidates.includes(k.toLowerCase().trim())) ?? '';
 
-        const pincodeKey   = findKey(['pincode', 'pin code', 'pin', 'postal_code', 'postalcode', 'zip', 'zipcode']);
-        const districtKey  = findKey(['district', 'city', 'town', 'area', 'location']);
-        const stateKey     = findKey(['state', 'province', 'region']);
-        const pipelineKey  = findKey(['pipeline', 'pipeline_name', 'pipeline name']);
+        const pincodeKey  = findKey(['pincode', 'pin code', 'pin', 'postal_code', 'postalcode', 'zip', 'zipcode']);
+        const districtKey = findKey(['district', 'city', 'town', 'area', 'location']);
+        const stateKey    = findKey(['state', 'province', 'region']);
+        const pipelineKey = findKey(['pipeline', 'pipeline_name', 'pipeline name']);
 
         if (!pincodeKey || !districtKey) {
-          toast.error(`Columns not found. Need "pincode" and "district" columns. Found: ${keys.join(', ')}`);
+          // Auto-detect failed — open column mapper instead of showing error
+          setRawColumns(Object.keys(sample));
+          setRawRows(raw);
+          setColumnMap({ pincode: '', district: '', state: '', pipeline: '' });
+          setMapperOpen(true);
           return;
         }
 
-        const rows: PreviewRow[] = raw.map((r) => ({
-          pincode:       String(r[pincodeKey] ?? '').trim(),
-          district:      String(r[districtKey] ?? '').trim(),
-          state:         stateKey ? String(r[stateKey] ?? '').trim() : '',
-          pipeline_name: pipelineKey ? String(r[pipelineKey] ?? '').trim() : '',
-        })).filter((r) => r.pincode && r.district);
-
-        if (rows.length === 0) { toast.error('No valid rows found after filtering blank pincodes/districts'); return; }
-        setPreview(rows);
-        toast.success(`Found ${rows.length} rows ready to upload`);
+        buildPreview(raw, pincodeKey, districtKey, stateKey, pipelineKey);
       } catch {
         toast.error('Failed to read file. Ensure it is a valid .xlsx or .csv file.');
       }
     };
     reader.readAsBinaryString(file);
     e.target.value = '';
+  };
+
+  const applyColumnMap = () => {
+    if (!columnMap.pincode || !columnMap.district) return;
+    buildPreview(rawRows, columnMap.pincode, columnMap.district, columnMap.state, columnMap.pipeline);
+    setMapperOpen(false);
   };
 
   const handleUpload = async () => {
@@ -163,7 +189,7 @@ export default function PincodeRoutingPage() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="font-bold text-[#1c1410]">Upload Pincode Excel</h2>
-            <p className="text-[12px] text-[#7a6b5c] mt-0.5">Upload an Excel (.xlsx) or CSV file with pincode, district, state, pipeline_name columns</p>
+            <p className="text-[12px] text-[#7a6b5c] mt-0.5">Upload any Excel (.xlsx) or CSV — columns are auto-detected or you can map them manually</p>
           </div>
           <button onClick={downloadTemplate} className="flex items-center gap-1.5 text-[12px] text-primary font-semibold hover:underline">
             <Download className="w-3.5 h-3.5" /> Download Template
@@ -171,14 +197,98 @@ export default function PincodeRoutingPage() {
         </div>
 
         <div
-          onClick={() => fileRef.current?.click()}
+          onClick={() => !mapperOpen && fileRef.current?.click()}
           className="border-2 border-dashed border-[#e8ddd4] rounded-xl p-8 text-center cursor-pointer hover:border-primary/40 hover:bg-[#faf5f0] transition-colors"
         >
           <MapPin className="w-8 h-8 text-[#c4b09e] mx-auto mb-2" />
           <p className="text-[13px] font-semibold text-[#1c1410]">Click to select your Excel / CSV file</p>
-          <p className="text-[11px] text-[#7a6b5c] mt-1">Columns needed: <span className="font-mono bg-gray-100 px-1 rounded">pincode</span> and <span className="font-mono bg-gray-100 px-1 rounded">district</span> (state and pipeline_name optional)</p>
+          <p className="text-[11px] text-[#7a6b5c] mt-1">
+            Columns auto-detected — or map manually if your headers are different
+          </p>
         </div>
         <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
+
+        {/* Column Mapper */}
+        {mapperOpen && (
+          <div className="border border-amber-200 bg-amber-50 rounded-xl p-5 space-y-4">
+            <div>
+              <p className="font-semibold text-[#1c1410] text-[13px]">Map your columns</p>
+              <p className="text-[12px] text-[#7a6b5c] mt-0.5">
+                We couldn't auto-detect your columns. Select which column in your file maps to each field.
+              </p>
+            </div>
+
+            <div className="space-y-2.5">
+              {SYSTEM_FIELDS.map(({ key, label, required }) => (
+                <div key={key} className="flex items-center gap-3">
+                  <div className="w-24 shrink-0">
+                    <span className="text-[12px] font-semibold text-[#1c1410]">{label}</span>
+                    {required && <span className="text-red-500 ml-0.5 text-[11px]">*</span>}
+                  </div>
+                  <ArrowRight className="w-3.5 h-3.5 text-[#b09e8d] shrink-0" />
+                  <select
+                    value={columnMap[key]}
+                    onChange={(e) => setColumnMap((m) => ({ ...m, [key]: e.target.value }))}
+                    className="flex-1 border border-black/10 rounded-lg px-3 py-1.5 text-[12px] outline-none focus:border-primary/40 bg-white"
+                  >
+                    <option value="">— Not mapped —</option>
+                    {rawColumns.map((col) => (
+                      <option key={col} value={col}>
+                        {col}
+                        {rawRows[0]?.[col] !== undefined && rawRows[0]?.[col] !== ''
+                          ? `  (e.g. ${String(rawRows[0][col]).substring(0, 25)})`
+                          : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+
+            {/* Live preview of first 3 rows */}
+            {columnMap.pincode && columnMap.district && (
+              <div className="overflow-hidden rounded-lg border border-amber-200">
+                <table className="w-full text-[11px]">
+                  <thead className="bg-amber-100">
+                    <tr>
+                      {SYSTEM_FIELDS.map(({ key, label }) => (
+                        <th key={key} className="px-3 py-1.5 text-left font-bold uppercase tracking-wide text-amber-800">
+                          {label}
+                          {columnMap[key] && <span className="normal-case font-normal ml-1 text-amber-600">← {columnMap[key]}</span>}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-100">
+                    {rawRows.slice(0, 3).map((r, i) => (
+                      <tr key={i} className="bg-white">
+                        <td className="px-3 py-1.5 font-mono text-[#1c1410]">{columnMap.pincode ? String(r[columnMap.pincode] ?? '').trim() || '—' : '—'}</td>
+                        <td className="px-3 py-1.5 text-[#1c1410]">{columnMap.district ? String(r[columnMap.district] ?? '').trim() || '—' : '—'}</td>
+                        <td className="px-3 py-1.5 text-[#7a6b5c]">{columnMap.state ? String(r[columnMap.state] ?? '').trim() || '—' : '—'}</td>
+                        <td className="px-3 py-1.5 text-[#7a6b5c]">{columnMap.pipeline ? String(r[columnMap.pipeline] ?? '').trim() || '—' : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="px-3 py-1.5 text-[10px] text-amber-700 bg-amber-50 border-t border-amber-100">
+                  Preview of first 3 rows from {rawRows.length.toLocaleString()} total
+                </p>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <Button variant="outline" size="sm" onClick={() => setMapperOpen(false)}>Cancel</Button>
+              <Button
+                size="sm"
+                onClick={applyColumnMap}
+                disabled={!columnMap.pincode || !columnMap.district}
+                style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)' }}
+              >
+                Apply Mapping → Preview
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Preview */}
         {preview.length > 0 && (
