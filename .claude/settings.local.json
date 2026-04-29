@@ -30,7 +30,30 @@
       "Bash(./node_modules/.bin/vite build *)",
       "Bash(ls ~/AppData/Local/Temp/*.tsx)",
       "Bash(git init *)",
-      "Bash(git remote *)"
+      "Bash(git remote *)",
+      "Bash(git fetch *)",
+      "Bash(git checkout *)",
+      "Bash(git stash *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(sshpass *)",
+      "Bash(python -c \"import paramiko; print\\('paramiko OK'\\)\")",
+      "Bash(where plink *)",
+      "Bash(where ssh *)",
+      "Bash(pip install *)",
+      "Bash(python *)",
+      "Bash(where pg_dump)",
+      "Bash(pg_dump --version)",
+      "Read(//c/Program Files/PostgreSQL/**)",
+      "Read(//c/Program Files \\(x86\\)/**)",
+      "Bash(PGPASSWORD=digygo123 C:/Program Files/PostgreSQL/18/bin/psql.exe *)",
+      "Bash('C:/Program Files/PostgreSQL/18/bin/pg_dump.exe' -U digygo_user -h localhost -d digygocrm --data-only --inserts --no-privileges --no-owner -f C:/Users/rosin/Desktop/digygocrm/digygocrm_data.sql)",
+      "Bash(grep -n \"transaction_timeout\\\\|\\\\\\\\\\\\\\\\restrict\\\\|\\\\\\\\\\\\\\\\connect\\\\|pg_catalog.set_config\" \"C:/Users/rosin/Desktop/digygocrm/digygocrm_data.sql\")",
+      "Bash(git ls-files *)",
+      "Bash('C:/Program Files/PostgreSQL/18/bin/pg_dump.exe' -U digygo_user -h localhost -d digygocrm --data-only --column-inserts --no-privileges --no-owner -f C:/Users/rosin/Desktop/digygocrm/digygocrm_data_v2.sql)",
+      "Bash(git commit *)",
+      "Bash(python3 *)"
     ]
   }
 }

@@ -12,7 +12,7 @@ import {
   FilePlus, UserPlus, UserCog, BookMarked, CalendarX, CalendarOff,
   ListChecks, Code2, CalendarDays, CalendarClock, CalendarRange, ArrowRight,
   UserMinus, UserX, FolderX, PlayCircle, PauseCircle, LogOut, SquareMinus, Users, UserRoundCog,
-  RotateCcw, ChevronRight, Copy, Power, Info, ExternalLink, Loader2, TrendingUp,
+  RotateCcw, ChevronRight, Copy, Power, Info, ExternalLink, Loader2, TrendingUp, MapPin,
 } from 'lucide-react';
 import type { ElementType } from 'react';
 import { Button } from '@/components/ui/button';
@@ -140,6 +140,7 @@ const ACTION_LIST: { id: string; label: string; desc: string; category: ActionCa
   { id: 'execute_automation',   label: 'Execute Automation',          desc: 'Can run another automation workflow',                 category: 'Operation',     Icon: Play,          color: 'bg-primary/10 text-primary' },
   { id: 'exit_workflow',        label: 'Exit Workflow',               desc: 'Stop executing the workflow',                        category: 'Operation',     Icon: LogOut,        color: 'bg-gray-100 text-gray-600' },
   { id: 'remove_workflow',      label: 'Remove Workflow',             desc: 'Remove a contact from the current workflow',         category: 'Operation',     Icon: X,             color: 'bg-slate-100 text-slate-600' },
+  { id: 'pincode_routing',      label: 'Pincode Routing',             desc: 'Route lead to pipeline based on pincode',            category: 'Operation',     Icon: MapPin,        color: 'bg-green-100 text-green-700' },
   // ── Communication ───────────────────────────────────────────────────────────
   { id: 'send_email',           label: 'Send Email',                  desc: 'Send an automated email',                            category: 'Communication', Icon: Mail,          color: 'bg-blue-100 text-blue-600' },
   { id: 'send_sms',             label: 'Send SMS',                    desc: 'Send an automated SMS',                              category: 'Communication', Icon: Smartphone,    color: 'bg-green-100 text-green-700' },
@@ -211,6 +212,7 @@ const ACTION_ACCENT: Record<string, { bar: string; icon: string; badge: string }
   execute_automation:    { bar: 'bg-primary',     icon: 'bg-primary/10 text-primary',    badge: 'bg-primary/10 text-primary' },
   exit_workflow:         { bar: 'bg-gray-500',    icon: 'bg-gray-100 text-gray-600',     badge: 'bg-gray-100 text-gray-700' },
   remove_workflow:       { bar: 'bg-slate-500',   icon: 'bg-slate-50 text-slate-600',    badge: 'bg-slate-100 text-slate-700' },
+  pincode_routing:       { bar: 'bg-green-600',   icon: 'bg-green-50 text-green-700',    badge: 'bg-green-100 text-green-800' },
   // Communication
   send_email:            { bar: 'bg-blue-500',    icon: 'bg-blue-50 text-blue-600',      badge: 'bg-blue-100 text-blue-700' },
   send_sms:              { bar: 'bg-green-500',   icon: 'bg-green-50 text-green-700',    badge: 'bg-green-100 text-green-800' },
@@ -1496,6 +1498,24 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
         </div>
       </>)}
 
+      {node.actionType === 'pincode_routing' && (<>
+        <div className="bg-green-50 border border-green-200 rounded-xl p-3">
+          <p className="text-xs text-green-800 flex items-start gap-1.5">
+            <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            Looks up the lead's pincode in your mapping table and automatically sets the district and moves the lead to the mapped pipeline. Upload your pincode data in <strong>Settings → Pincode Routing</strong>.
+          </p>
+        </div>
+        <FieldRow label="Pincode Field (custom field slug)">
+          <input
+            className={inputCls}
+            placeholder="pincode"
+            value={(cfg.pincode_field as string) ?? 'pincode'}
+            onChange={sel('pincode_field')}
+          />
+          <p className="text-[11px] text-muted-foreground mt-1">The slug of the custom field on the lead that contains the pincode. Default: <span className="font-mono">pincode</span></p>
+        </FieldRow>
+      </>)}
+
       {/* No-config actions */}
       {['exit_workflow', 'remove_workflow', 'remove_staff', 'remove_from_crm'].includes(node.actionType) && (
         <div className="py-6 text-center text-sm text-muted-foreground bg-muted/40 rounded-xl">
@@ -1508,7 +1528,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
       )}
 
       {/* Fallback */}
-      {!['add_to_crm','assign_ai','assign_staff','change_appointment','change_lead_quality','contact_group_access','contact_group','change_stage','add_tag','remove_tag','remove_contact','remove_from_crm','execute_automation','update_attributes','create_followup','create_note','event_start_time','internal_notify','send_email','send_sms','send_whatsapp','delay','if_else','tag_contact','post_instagram','facebook_post','webhook_call','api_call','exit_workflow','remove_workflow','remove_staff'].includes(node.actionType) && (
+      {!['add_to_crm','assign_ai','assign_staff','change_appointment','change_lead_quality','contact_group_access','contact_group','change_stage','add_tag','remove_tag','remove_contact','remove_from_crm','execute_automation','update_attributes','create_followup','create_note','event_start_time','internal_notify','send_email','send_sms','send_whatsapp','delay','if_else','tag_contact','post_instagram','facebook_post','webhook_call','api_call','exit_workflow','remove_workflow','remove_staff','pincode_routing'].includes(node.actionType) && (
         <div className="py-4 text-center text-sm text-muted-foreground">
           <p className="text-xs">Select an action to configure it.</p>
         </div>

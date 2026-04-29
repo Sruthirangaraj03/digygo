@@ -38,6 +38,7 @@ import CalendarPage from "./pages/CalendarPage";
 import CalendarEditPage from "./pages/CalendarEditPage";
 import PublicBookingPage from "./pages/PublicBookingPage";
 import NotFound from "./pages/NotFound";
+import PincodeRoutingPage from "./pages/PincodeRoutingPage";
 
 const queryClient = new QueryClient();
 
@@ -92,6 +93,7 @@ const App = () => (
             <Route path="/settings/notifications" element={<NotificationsPage />} />
             <Route path="/settings/assignment-rules" element={<AssignmentRulesPage />} />
             <Route path="/settings/integrations" element={<IntegrationsPage />} />
+            <Route path="/settings/pincode-routing" element={<PincodeRoutingPage />} />
 
             {/* Super Admin */}
             <Route path="/admin" element={<SuperAdminPage />} />

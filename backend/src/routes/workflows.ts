@@ -847,6 +847,85 @@ export async function executeNodes(
           return stats;
         }
 
+        // ── Pincode Routing ───────────────────────────────────────────────────
+        case 'pincode_routing': {
+          // Which custom-field slug holds the pincode (default: 'pincode')
+          const pincodeSlug = ((node.config.pincode_field ?? 'pincode') as string).trim();
+
+          // Resolve pincode value: check top-level lead fields, then custom_fields
+          const pincodeValue = String(
+            (lead as any)[pincodeSlug] ?? lead.custom_fields?.[pincodeSlug] ?? ''
+          ).trim();
+
+          if (!pincodeValue) {
+            status = 'skipped';
+            message = `pincode_routing: no value found for field "${pincodeSlug}" on this lead`;
+            break;
+          }
+
+          const mapRes = await query(
+            `SELECT district, state, pipeline_name
+             FROM pincode_district_map
+             WHERE tenant_id=$1 AND pincode=$2`,
+            [tenantId, pincodeValue]
+          ).catch(() => ({ rows: [] as any[] }));
+
+          if (!mapRes.rows[0]) {
+            status = 'skipped';
+            message = `pincode_routing: pincode "${pincodeValue}" not found in mapping table`;
+            break;
+          }
+
+          const { district, state, pipeline_name } = mapRes.rows[0];
+
+          // Set district (and state) on the lead's custom_fields JSONB
+          if (lead.id) {
+            const patch: Record<string, string> = { district };
+            if (state) patch.state = state;
+            await query(
+              `UPDATE leads SET custom_fields = custom_fields || $1::jsonb, updated_at=NOW()
+               WHERE id=$2 AND tenant_id=$3`,
+              [JSON.stringify(patch), lead.id, tenantId]
+            ).catch(() => null);
+            if (!lead.custom_fields) lead.custom_fields = {};
+            lead.custom_fields['district'] = district;
+            if (state) lead.custom_fields['state'] = state;
+          }
+
+          // Move lead to the mapped pipeline (first stage of that pipeline)
+          if (pipeline_name) {
+            const pipeRes = await query(
+              `SELECT p.id AS pipeline_id, ps.id AS stage_id, ps.name AS stage_name
+               FROM pipelines p
+               JOIN pipeline_stages ps ON ps.pipeline_id = p.id
+               WHERE p.tenant_id=$1 AND LOWER(p.name)=LOWER($2)
+               ORDER BY ps.sort_order ASC NULLS LAST
+               LIMIT 1`,
+              [tenantId, pipeline_name]
+            ).catch(() => ({ rows: [] as any[] }));
+
+            if (pipeRes.rows[0]) {
+              const { pipeline_id, stage_id, stage_name } = pipeRes.rows[0];
+              if (lead.id) {
+                await query(
+                  `UPDATE leads SET pipeline_id=$1, stage_id=$2, updated_at=NOW()
+                   WHERE id=$3 AND tenant_id=$4`,
+                  [pipeline_id, stage_id, lead.id, tenantId]
+                );
+                lead.pipeline_id = pipeline_id;
+                lead.stage_id = stage_id;
+                lead.stage_name = stage_name;
+              }
+              message = `Pincode ${pincodeValue} → ${district}${state ? ', ' + state : ''} → Pipeline: ${pipeline_name} (Stage: ${stage_name})`;
+            } else {
+              message = `Pincode ${pincodeValue} → ${district} (pipeline "${pipeline_name}" not found — district set)`;
+            }
+          } else {
+            message = `Pincode ${pincodeValue} → ${district}${state ? ', ' + state : ''} (district set on lead)`;
+          }
+          break;
+        }
+
         // ── If / Else Condition ────────────────────────────────────────────────
         case 'if_else': {
           // Support both legacy single-condition and new multi-condition (conditions array)

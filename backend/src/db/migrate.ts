@@ -46,6 +46,7 @@ const MIGRATIONS = [
   'migration_044_integrations_permissions.sql',
   'migration_045_owner_role.sql',
   'migration_046_schema_drift_fix.sql',
+  'migration_047_pincode_routing.sql',
 ];
 
 // Split SQL file into individual statements and execute each one separately.
