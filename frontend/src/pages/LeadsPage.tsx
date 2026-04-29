@@ -3591,7 +3591,7 @@ export default function LeadsPage() {
         </DndContext>
       ) : (
         /* ── List View ── */
-        <div className="bg-white rounded-2xl border border-black/5 card-shadow overflow-hidden overflow-x-auto">
+        <div className="bg-white rounded-2xl border border-black/5 card-shadow overflow-x-auto overflow-y-auto flex-1 min-h-0">
           <table className="w-full text-[13px] min-w-[900px]">
             <thead>
               <tr className="bg-[#faf8f6] border-b border-black/5">
