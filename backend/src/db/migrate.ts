@@ -116,12 +116,22 @@ function splitStatements(sql: string): string[] {
   return stmts;
 }
 
+// When compiled to dist/db/, SQL files are still in src/db/ — resolve the right base dir.
+function sqlDir(): string {
+  const d = __dirname.replace(/\\/g, '/');
+  if (d.includes('/dist/')) {
+    return path.join(__dirname, '../../src/db');
+  }
+  return __dirname;
+}
+
 export async function runMigrations() {
   const client = await pool.connect();
   console.log('\n📦  Running migrations...');
+  const baseDir = sqlDir();
   try {
     for (const file of MIGRATIONS) {
-      const filePath = path.join(__dirname, file);
+      const filePath = path.join(baseDir, file);
       if (!fs.existsSync(filePath)) {
         console.warn(`  ⚠️  Skipping ${file} (not found)`);
         continue;
