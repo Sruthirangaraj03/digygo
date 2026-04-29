@@ -26,6 +26,8 @@ import { CSS } from '@dnd-kit/utilities';
 interface MetaStatus {
   connected: boolean;
   tokenExpiry?: string;
+  tokenExpired?: boolean;
+  tokenDaysLeft?: number | null;
   connectedAt?: string | null;
   connectedPages?: Array<{ id: string; name: string }>;
   blockedPages?: Array<{ id: string; name: string }>;
@@ -957,10 +959,18 @@ export default function MetaFormsPage() {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const fresh = await api.get<MetaFormRow[]>('/api/integrations/meta/sync-forms?force=1');
-      setForms(fresh);
-      toast.success('Forms refreshed');
-    } catch { toast.error('Sync failed'); }
+      const res = await api.get<{ forms: MetaFormRow[]; synced: number; failed: number; errors: string[] }>(
+        '/api/integrations/meta/sync-forms?force=1'
+      );
+      setForms(res.forms);
+      if (res.failed > 0 && res.errors.length > 0) {
+        toast.error(`Sync issue: ${res.errors[0]}${res.errors.length > 1 ? ` (+${res.errors.length - 1} more)` : ''}`);
+      } else if (res.forms.length === 0) {
+        toast.warning('No forms found — create a Lead Ad form in Meta Ads Manager first, then sync again.');
+      } else {
+        toast.success(`Forms synced — ${res.synced} form${res.synced !== 1 ? 's' : ''} found across all pages`);
+      }
+    } catch { toast.error('Sync failed — your Meta token may have expired. Reconnect to fix.'); }
     finally { setSyncing(false); }
   };
 
@@ -1214,6 +1224,34 @@ export default function MetaFormsPage() {
         </div>
 
         {/* Forms list */}
+        {/* Token expiry warning banner */}
+        {status?.tokenExpired && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex items-start gap-3">
+            <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-bold text-red-800">Meta token expired — leads are no longer syncing</p>
+              <p className="text-[11px] text-red-700 mt-0.5">Reconnect your Facebook account to resume automatic lead capture.</p>
+            </div>
+            <button
+              onClick={() => setDetailPage(null)}
+              className="text-[11px] font-semibold text-red-700 underline shrink-0"
+            >Reconnect</button>
+          </div>
+        )}
+        {!status?.tokenExpired && status?.tokenDaysLeft !== null && status?.tokenDaysLeft !== undefined && status.tokenDaysLeft <= 7 && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
+            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-bold text-amber-800">Meta token expires in {status.tokenDaysLeft} day{status.tokenDaysLeft !== 1 ? 's' : ''}</p>
+              <p className="text-[11px] text-amber-700 mt-0.5">Reconnect now to avoid disruption to lead capture.</p>
+            </div>
+            <button
+              onClick={() => setDetailPage(null)}
+              className="text-[11px] font-semibold text-amber-700 underline shrink-0"
+            >Reconnect</button>
+          </div>
+        )}
+
         {/* Push-to-automation result banner */}
         {pushResult && (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-start gap-3">

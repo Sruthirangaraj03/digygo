@@ -148,13 +148,11 @@ async function syncPageForms(
   tenantId: string,
   page: { id: string; name: string; access_token: string }
 ): Promise<number> {
+  // Let errors propagate — callers handle per-page failures individually
   const metaForms: Array<{ id: string; name: string }> = await graphGetAll(
     `/${page.id}/leadgen_forms?fields=id,name,status`,
     page.access_token
-  ).catch((err: any) => {
-    console.warn(`[syncPageForms] page ${page.id}:`, err.message);
-    return [];
-  });
+  );
   for (const form of metaForms) {
     await query(
       `INSERT INTO meta_forms (tenant_id, page_id, page_name, form_id, form_name, is_active)
@@ -641,20 +639,38 @@ router.post('/meta/manual-connect', checkPermission('meta_forms:create'), async 
     for (const p of blockedPages) blockedMap[p.id] = p.name;
     const encrypted = encrypt(access_token);
 
+    // Inspect token to get expiry date
+    const appId = process.env.META_APP_ID;
+    const appSecret = process.env.META_APP_SECRET;
+    let expiry: Date | null = null;
+    if (appId && appSecret) {
+      const debugData = await graphGet(
+        `/debug_token?input_token=${access_token}&access_token=${appId}|${appSecret}`, ''
+      ).catch(() => null);
+      if (debugData?.data?.expires_at) {
+        expiry = new Date(debugData.data.expires_at * 1000);
+      }
+    }
+
     await query(
-      `INSERT INTO meta_integrations (tenant_id, access_token, page_ids, page_names, blocked_page_ids)
-       VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb)
-       ON CONFLICT (tenant_id) DO UPDATE SET access_token=$2, page_ids=$3::jsonb, page_names=$4::jsonb, blocked_page_ids=$5::jsonb, updated_at=NOW()`,
-      [tenantId, encrypted, JSON.stringify(mergedIds), JSON.stringify(mergedNames), JSON.stringify(blockedMap)]
+      `INSERT INTO meta_integrations (tenant_id, access_token, token_expiry, page_ids, page_names, blocked_page_ids)
+       VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb)
+       ON CONFLICT (tenant_id) DO UPDATE SET access_token=$2, token_expiry=$3, page_ids=$4::jsonb, page_names=$5::jsonb, blocked_page_ids=$6::jsonb, updated_at=NOW()`,
+      [tenantId, encrypted, expiry, JSON.stringify(mergedIds), JSON.stringify(mergedNames), JSON.stringify(blockedMap)]
     );
 
+    const syncErrors: string[] = [];
     for (const page of pages) {
-      await syncPageForms(tenantId!, page).catch(() => null);
+      await syncPageForms(tenantId!, page).catch((e: any) => {
+        console.warn(`[manual-connect] form sync failed for page ${page.id}:`, e.message);
+        syncErrors.push(page.name);
+      });
     }
     res.json({
       success: true,
       pages: mergedIds.map((id) => ({ id, name: mergedNames[id] ?? id })),
       needsToken: blockedPages,
+      syncErrors,
     });
   } catch (err: any) {
     console.error('Meta manual connect error:', err);
@@ -680,9 +696,16 @@ router.get('/meta/status', checkPermission('integrations:view'), async (req: Aut
     const nameMap: Record<string, string> = row.page_names ?? {};
     const blockedMap: Record<string, string> = row.blocked_page_ids ?? {};
 
+    const expiry = row.token_expiry ? new Date(row.token_expiry) : null;
+    const now = new Date();
+    const tokenExpired = expiry ? expiry < now : false;
+    const tokenDaysLeft = expiry ? Math.ceil((expiry.getTime() - now.getTime()) / 86400000) : null;
+
     res.json({
       connected: true,
       tokenExpiry: row.token_expiry,
+      tokenExpired,
+      tokenDaysLeft,
       connectedAt: row.created_at ?? null,
       connectedPages: pageIds.map((id) => ({ id, name: nameMap[id] ?? id })),
       blockedPages: Object.entries(blockedMap).map(([id, name]) => ({ id, name })),
@@ -1037,6 +1060,10 @@ router.get('/meta/sync-forms', checkPermission('meta_forms:read'), async (req: A
   const tenantId = req.user!.tenantId as string;
   const force = req.query.force === '1';
   try {
+    let synced = 0;
+    let failed = 0;
+    const syncErrors: string[] = [];
+
     if (force) {
       const miRes = await query(
         'SELECT access_token FROM meta_integrations WHERE tenant_id=$1',
@@ -1047,13 +1074,23 @@ router.get('/meta/sync-forms', checkPermission('meta_forms:read'), async (req: A
         try {
           const { connected: pages } = await fetchAllPages(token);
           for (const page of pages) {
-            await syncPageForms(tenantId, page).catch((pageErr: any) => {
+            try {
+              const count = await syncPageForms(tenantId, page);
+              synced += count;
+            } catch (pageErr: any) {
               console.warn(`[sync-forms] skipped page ${page.id}:`, pageErr.message);
-            });
+              failed++;
+              syncErrors.push(`${page.name}: ${pageErr.message}`);
+            }
           }
         } catch (metaErr: any) {
           console.warn('[sync-forms] Meta API error:', metaErr.message);
+          syncErrors.push('Meta API: ' + metaErr.message);
+          failed++;
         }
+      } else {
+        syncErrors.push('Meta not connected');
+        failed++;
       }
     }
 
@@ -1068,7 +1105,11 @@ router.get('/meta/sync-forms', checkPermission('meta_forms:read'), async (req: A
       [tenantId]
     );
 
-    res.json(result.rows);
+    if (force) {
+      res.json({ forms: result.rows, synced, failed, errors: syncErrors });
+    } else {
+      res.json(result.rows);
+    }
   } catch (err: any) {
     console.error('[sync-forms]', err.message);
     res.status(500).json({ error: 'Server error' });
