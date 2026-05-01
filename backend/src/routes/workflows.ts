@@ -916,7 +916,7 @@ export async function executeNodes(
              FROM pipelines p
              JOIN pipeline_stages ps ON ps.pipeline_id = p.id
              WHERE p.tenant_id=$1 AND LOWER(p.name)=LOWER($2)
-             ORDER BY ps.sort_order ASC NULLS LAST
+             ORDER BY ps.stage_order ASC NULLS LAST
              LIMIT 1`,
             [tenantId, effectivePipeline]
           ).catch(() => ({ rows: [] as any[] }));
