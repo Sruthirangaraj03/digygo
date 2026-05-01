@@ -492,7 +492,7 @@ router.get('/:id/followups', async (req: AuthRequest, res: Response) => {
 // POST /api/leads/:id/followups
 router.post('/:id/followups', async (req: AuthRequest, res: Response) => {
   const { tenantId, userId } = req.user!;
-  const { title, description, due_at, assigned_to } = req.body;
+  const { title, description, due_at, assigned_to, type: followupType } = req.body;
   if (!title || !due_at) { res.status(400).json({ error: 'Title and due_at are required' }); return; }
   try {
     const result = await query(
@@ -506,7 +506,9 @@ router.post('/:id/followups', async (req: AuthRequest, res: Response) => {
       [req.params.id, tenantId, `Follow-up scheduled: ${title}`, userId]
     );
     res.status(201).json(result.rows[0]);
-    setImmediate(() => triggerWorkflows('follow_up', { id: req.params.id, name: '' }, tenantId!, userId).catch(() => null));
+    setImmediate(() => triggerWorkflows('follow_up', { id: req.params.id, name: '' }, tenantId!, userId,
+      { triggerContext: { followupType: followupType ?? '', assignedTo: assigned_to ?? userId } }
+    ).catch(() => null));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });

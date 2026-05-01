@@ -439,13 +439,20 @@ export async function executeNodes(
               [stageId, lead.id, tenantId]
             );
             const sr = await query('SELECT name FROM pipeline_stages WHERE id=$1', [stageId]);
+            const stageName = sr.rows[0]?.name ?? stageId;
             const vStage = await query('SELECT stage_id FROM leads WHERE id=$1 AND tenant_id=$2', [lead.id, tenantId]);
             if (vStage.rows[0]?.stage_id !== stageId) {
               status = 'failed'; message = 'change_stage: stage was not updated on lead';
             } else {
-              message = `Moved to ${sr.rows[0]?.name ?? stageId}`;
-              const updatedLead = (await query('SELECT * FROM leads WHERE id=$1', [lead.id])).rows[0];
-              if (updatedLead) setImmediate(() => triggerWorkflows('stage_changed', { ...updatedLead, stage_name: sr.rows[0]?.name ?? stageId }, tenantId, safeUserId ?? userId).catch(() => null));
+              message = `Moved to ${stageName}`;
+              // Re-fetch with JOIN so socket carries assigned_name display field
+              const updatedLead = await query(
+                `SELECT l.*, u.name AS assigned_name FROM leads l LEFT JOIN users u ON u.id=l.assigned_to WHERE l.id=$1`,
+                [lead.id]
+              ).catch(() => ({ rows: [] as any[] }));
+              if (updatedLead.rows[0]) emitToTenant(tenantId, 'lead:updated', updatedLead.rows[0]);
+              const raw = (await query('SELECT * FROM leads WHERE id=$1', [lead.id])).rows[0];
+              if (raw) setImmediate(() => triggerWorkflows('stage_changed', { ...raw, stage_name: stageName }, tenantId, safeUserId ?? userId).catch(() => null));
             }
           } else {
             status = 'skipped'; message = 'change_stage: no stage_id configured';
@@ -595,36 +602,37 @@ export async function executeNodes(
 
         // ── Update Contact Attributes ──────────────────────────────────────────
         case 'update_attributes': {
-          if (lead.id) {
-            const allowed = ['name', 'email', 'phone', 'source'];
-            const sets: string[] = ['updated_at=NOW()'];
-            const vals: any[] = [];
+          if (!lead.id) { status = 'skipped'; message = 'update_attributes: no lead ID'; break; }
+          const allowed = ['name', 'email', 'phone', 'source'];
+          const sets: string[] = ['updated_at=NOW()'];
+          const vals: any[] = [];
+
+          // New UI sends attrField/attrValue (single field at a time)
+          // Old UI sent name/email/phone/source directly on config
+          if (node.config.attrField && node.config.attrValue !== undefined) {
+            const f = (node.config.attrField as string).trim();
+            if (allowed.includes(f)) {
+              const v = interpolate(node.config.attrValue as string, lead);
+              vals.push(v); sets.push(`${f}=$${vals.length}`);
+            }
+          } else {
             for (const field of allowed) {
               if (node.config[field] !== undefined && node.config[field] !== '') {
-                vals.push(node.config[field]);
+                vals.push(interpolate(node.config[field] as string, lead));
                 sets.push(`${field}=$${vals.length}`);
               }
             }
-            if (sets.length > 1) {
-              vals.push(lead.id, tenantId);
-              await query(
-                `UPDATE leads SET ${sets.join(',')} WHERE id=$${vals.length - 1} AND tenant_id=$${vals.length}`,
-                vals
-              );
-              // Verify each updated field
-              const vAttr = await query('SELECT * FROM leads WHERE id=$1 AND tenant_id=$2', [lead.id, tenantId]);
-              const updatedRow = vAttr.rows[0];
-              const failedFields = allowed.filter(
-                (f) => node.config[f] !== undefined && node.config[f] !== '' && updatedRow?.[f] !== node.config[f]
-              );
-              if (failedFields.length > 0) {
-                status = 'failed'; message = `update_attributes: fields not updated: ${failedFields.join(', ')}`;
-              } else {
-                message = `Updated: ${sets.slice(1).map((s) => s.split('=')[0]).join(', ')}`;
-              }
-            } else {
-              status = 'skipped'; message = 'update_attributes: nothing to update';
-            }
+          }
+
+          if (sets.length > 1) {
+            vals.push(lead.id, tenantId);
+            await query(
+              `UPDATE leads SET ${sets.join(',')} WHERE id=$${vals.length - 1} AND tenant_id=$${vals.length}`,
+              vals
+            );
+            message = `Updated: ${sets.slice(1).map((s) => s.split('=')[0]).join(', ')}`;
+          } else {
+            status = 'skipped'; message = 'update_attributes: no field/value configured';
           }
           break;
         }
@@ -750,19 +758,33 @@ export async function executeNodes(
 
         // ── Webhook Call ───────────────────────────────────────────────────────
         case 'webhook_call': {
-          const url = interpolate(node.config.url as string, lead);
-          if (url) {
-            const resp = await fetch(url, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ lead, triggeredAt: new Date().toISOString() }),
-              signal: AbortSignal.timeout(10000),
-            });
-            if (!resp.ok) throw new Error(`Webhook ${url} returned ${resp.status}`);
-            message = `Webhook called: ${url} → ${resp.status}`;
-          } else {
-            status = 'skipped'; message = 'webhook_call: no URL configured';
+          const url = interpolate((node.config.url ?? '') as string, lead);
+          if (!url) { status = 'skipped'; message = 'webhook_call: no URL configured'; break; }
+
+          const method = ((node.config.method ?? 'POST') as string).toUpperCase();
+          let headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (node.config.headers) {
+            try { headers = { ...headers, ...JSON.parse(interpolate(node.config.headers as string, lead)) }; }
+            catch { /* ignore malformed JSON headers */ }
           }
+
+          const hasBody = ['POST', 'PUT', 'PATCH'].includes(method);
+          let bodyStr: string | undefined;
+          if (hasBody) {
+            const rawPayload = (node.config.payload ?? node.config.body ?? '') as string;
+            bodyStr = rawPayload
+              ? interpolate(rawPayload, lead)
+              : JSON.stringify({ lead, triggeredAt: new Date().toISOString() });
+          }
+
+          const resp = await fetch(url, {
+            method,
+            headers,
+            body: bodyStr,
+            signal: AbortSignal.timeout(10000),
+          });
+          if (!resp.ok) throw new Error(`Webhook ${method} ${url} returned ${resp.status}`);
+          message = `Webhook ${method} ${url} → ${resp.status}`;
           break;
         }
 
@@ -1443,12 +1465,23 @@ export async function enrichLead(lead: LeadContext): Promise<LeadContext> {
 
 // ── Public trigger entry point ────────────────────────────────────────────────
 
+export interface TriggerContext {
+  followupType?: string;   // for follow_up trigger
+  assignedTo?:   string;   // for follow_up trigger (staff ID)
+  source?:       string;   // for contact_created trigger
+  fieldChanged?: string;   // for contact_updated trigger
+  tag?:          string;   // for contact_tagged trigger
+  channel?:      string;   // for inbox_message trigger (e.g. 'whatsapp')
+  messageBody?:  string;   // for inbox_message keyword matching
+  apptType?:     string;   // for appointment_* triggers (event type name)
+}
+
 export async function triggerWorkflows(
   triggerType: string,
   lead: LeadContext,
   tenantId: string,
   userId: string,
-  options?: { forceReEntry?: boolean }
+  options?: { forceReEntry?: boolean; triggerContext?: TriggerContext }
 ): Promise<void> {
   try {
     const enrichedLead = await enrichLead(lead);
@@ -1483,10 +1516,8 @@ export async function triggerWorkflows(
     );
 
     console.log(`[WF] trigger="${triggerType}" form="${formName || formId || '-'}" → ${result.rows.length} matching workflow(s)`);
+    const ctx = options?.triggerContext ?? {};
     for (const wf of result.rows) {
-      // Trigger/form matching is already done by the SQL query above.
-      // Only keep the lightweight per-lead filters that can't be expressed in SQL
-      // (pipeline/stage/source/tag on the lead itself, not the workflow config).
       const nodes: WFNode[] = Array.isArray(wf.nodes) ? wf.nodes : (typeof wf.nodes === 'string' ? JSON.parse(wf.nodes) : []);
       const triggerNode = nodes.find((n: WFNode) => n.type === 'trigger');
       if (!triggerNode) continue;
@@ -1494,18 +1525,50 @@ export async function triggerWorkflows(
       // ── max_contacts cap ──────────────────────────────────────────────────
       if (wf.max_contacts && (wf.total_contacts ?? 0) >= wf.max_contacts) continue;
 
-      // ── Trigger condition filtering (lead-level, not form-level) ─────────
-      if (triggerType === 'stage_changed') {
+      // ── Unified trigger filter enforcement ────────────────────────────────
+      // Each trigger type checks its own node config against the context that
+      // was passed at the call site. Blank config = "any" (no filter).
+
+      if (triggerType === 'stage_changed' || triggerType === 'lead_created') {
         const cfgPipeline = triggerNode.config?.pipeline_id as string;
         const cfgStage    = triggerNode.config?.stage_id    as string;
         if (cfgPipeline && cfgPipeline !== enrichedLead.pipeline_id) continue;
         if (cfgStage    && cfgStage    !== enrichedLead.stage_id)    continue;
       }
-      if (triggerType === 'lead_created') {
-        const cfgPipeline = triggerNode.config?.pipeline_id as string;
-        const cfgStage    = triggerNode.config?.stage_id    as string;
-        if (cfgPipeline && cfgPipeline !== enrichedLead.pipeline_id) continue;
-        if (cfgStage    && cfgStage    !== enrichedLead.stage_id)    continue;
+
+      if (triggerType === 'follow_up') {
+        const cfgType  = (triggerNode.config?.followupType as string) ?? '';
+        const cfgStaff = (triggerNode.config?.assignedTo   as string) ?? '';
+        if (cfgType  && cfgType  !== (ctx.followupType ?? '')) continue;
+        if (cfgStaff && cfgStaff !== (ctx.assignedTo   ?? '')) continue;
+      }
+
+      if (triggerType === 'contact_created') {
+        const cfgSource = (triggerNode.config?.source as string) ?? '';
+        if (cfgSource && cfgSource !== (ctx.source ?? '')) continue;
+      }
+
+      if (triggerType === 'contact_updated') {
+        const cfgField = (triggerNode.config?.fieldChanged as string) ?? '';
+        if (cfgField && cfgField !== (ctx.fieldChanged ?? '')) continue;
+      }
+
+      if (triggerType === 'contact_tagged') {
+        const cfgTag = (triggerNode.config?.tag as string) ?? '';
+        if (cfgTag && cfgTag !== (ctx.tag ?? '')) continue;
+      }
+
+      if (['appointment_booked','appointment_cancelled','appointment_rescheduled',
+           'appointment_noshow','appointment_showup'].includes(triggerType)) {
+        const cfgType = (triggerNode.config?.apptType as string) ?? '';
+        if (cfgType && cfgType !== (ctx.apptType ?? '')) continue;
+      }
+
+      if (triggerType === 'inbox_message') {
+        const cfgChannel = (triggerNode.config?.channel  as string) ?? '';
+        const cfgKeyword = (triggerNode.config?.keyword  as string) ?? '';
+        if (cfgChannel && cfgChannel !== (ctx.channel ?? '')) continue;
+        if (cfgKeyword && !(ctx.messageBody ?? '').toLowerCase().includes(cfgKeyword.toLowerCase())) continue;
       }
 
       // Calendar form submitted — must select at least one calendar; blank = don't fire
@@ -1625,6 +1688,59 @@ export async function triggerWorkflows(
     }
   } catch (err) {
     console.error('[Workflow Engine] Error:', err);
+  }
+}
+
+// ── Schedule trigger worker ────────────────────────────────────────────────────
+// Called every 60 seconds from index.ts. Checks workflows whose trigger is a
+// time-based schedule and fires them if the current time matches the config.
+export async function processScheduledTriggers(): Promise<void> {
+  try {
+    const now   = new Date();
+    const hhmm  = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+    const today = now.toISOString().slice(0, 10);  // "2026-05-01"
+    const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
+    const dayOfMonth = now.getDate();
+
+    const wfs = await query(
+      `SELECT * FROM workflows WHERE status='active'
+       AND trigger_key IN ('specific_date','weekly_recurring','monthly_recurring')`,
+      []
+    ).catch(() => ({ rows: [] as any[] }));
+
+    for (const wf of wfs.rows) {
+      const nodes: WFNode[] = Array.isArray(wf.nodes) ? wf.nodes : (typeof wf.nodes === 'string' ? JSON.parse(wf.nodes) : []);
+      const tn = nodes.find((n: WFNode) => n.type === 'trigger');
+      if (!tn) continue;
+      const cfg = tn.config ?? {};
+
+      // Check whether this workflow fires right now
+      let shouldFire = false;
+      if (wf.trigger_key === 'specific_date') {
+        shouldFire = (cfg.date as string) === today && (cfg.time as string) === hhmm;
+      } else if (wf.trigger_key === 'weekly_recurring') {
+        const days: string[] = Array.isArray(cfg.days) ? cfg.days as string[] : [];
+        shouldFire = days.includes(dayName) && (cfg.time as string) === hhmm;
+      } else if (wf.trigger_key === 'monthly_recurring') {
+        const dom = parseInt(String(cfg.dayOfMonth ?? '0'));
+        shouldFire = dom === dayOfMonth && (cfg.time as string) === hhmm;
+      }
+      if (!shouldFire) continue;
+
+      // Fire for all active leads of this tenant (up to 500 at a time)
+      const leadsRes = await query(
+        `SELECT id, name, email, phone, pipeline_id, stage_id, assigned_to, tags, source
+         FROM leads WHERE tenant_id=$1 AND is_deleted=FALSE LIMIT 500`,
+        [wf.tenant_id]
+      ).catch(() => ({ rows: [] as any[] }));
+
+      console.log(`[Scheduler] "${wf.name}" firing for ${leadsRes.rows.length} leads`);
+      for (const lead of leadsRes.rows) {
+        await triggerWorkflows(wf.trigger_key, lead, wf.tenant_id, 'scheduler').catch(() => null);
+      }
+    }
+  } catch (err) {
+    console.error('[Scheduler] processScheduledTriggers error:', err);
   }
 }
 

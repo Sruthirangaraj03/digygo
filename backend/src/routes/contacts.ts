@@ -50,9 +50,12 @@ router.post('/', checkPermission('contacts:create'), checkUsage('contacts'), asy
     const contact = result.rows[0];
     res.status(201).json(contact);
     const lead = { id: contact.lead_id, name: contact.name, email: contact.email, phone: contact.phone };
+    const source = (req.body.source as string) ?? 'Manual';
     setImmediate(() => {
       incrementUsage(req.user!.tenantId!, 'contacts').catch(() => null);
-      triggerWorkflows('contact_created', lead, req.user!.tenantId!, req.user!.userId).catch(() => null);
+      triggerWorkflows('contact_created', lead, req.user!.tenantId!, req.user!.userId,
+        { triggerContext: { source } }
+      ).catch(() => null);
     });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
@@ -78,8 +81,14 @@ router.patch('/:id', checkPermission('contacts:edit'), async (req: AuthRequest, 
     const contact = result.rows[0];
     res.json(contact);
     const lead = { id: contact.lead_id, name: contact.name, email: contact.email, phone: contact.phone };
-    const triggerType = tags !== undefined ? 'contact_tagged' : 'contact_updated';
-    setImmediate(() => triggerWorkflows(triggerType, lead, req.user!.tenantId!, req.user!.userId).catch(() => null));
+    const isTagUpdate = tags !== undefined;
+    const triggerType = isTagUpdate ? 'contact_tagged' : 'contact_updated';
+    // Determine which field changed (first key present in request body)
+    const changedField = isTagUpdate ? '' : (['name','email','phone','company'].find((k) => req.body[k] !== undefined) ?? '');
+    const tagAdded = isTagUpdate ? (Array.isArray(tags) ? (tags as string[])[0] ?? '' : '') : '';
+    setImmediate(() => triggerWorkflows(triggerType, lead, req.user!.tenantId!, req.user!.userId,
+      { triggerContext: { fieldChanged: changedField, tag: tagAdded } }
+    ).catch(() => null));
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 

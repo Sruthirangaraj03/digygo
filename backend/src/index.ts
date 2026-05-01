@@ -16,7 +16,7 @@ import calendarRoutes     from './routes/calendar';
 import formsRoutes        from './routes/forms';
 import settingsRoutes     from './routes/settings';
 import pipelinesRoutes    from './routes/pipelines';
-import workflowsRoutes, { processDelayedSteps, publicWorkflowRouter } from './routes/workflows';
+import workflowsRoutes, { processDelayedSteps, processScheduledTriggers, publicWorkflowRouter } from './routes/workflows';
 import tagsRoutes         from './routes/tags';
 import opportunitiesRoutes from './routes/opportunities';
 import templatesRoutes    from './routes/templates';
@@ -154,6 +154,9 @@ runMigrations()
 
     setInterval(() => pollMetaLeads().catch(() => null), 5 * 60_000);
     console.log('📘  Meta leads poll worker started (5min interval)');
+
+    setInterval(() => processScheduledTriggers().catch(() => null), 60_000);
+    console.log('📅  Schedule trigger worker started (60s interval)');
 
     httpServer.listen(PORT, () => {
       console.log(`\n🚀  DigyGo CRM Backend running on http://localhost:${PORT}`);

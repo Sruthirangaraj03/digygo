@@ -314,7 +314,9 @@ async function processWhatsAppMessage(payload: any) {
 
           const lead = { id: leadId, tenant_id: tenantId, phone: waPhone, name: waPhone };
           setImmediate(() =>
-            triggerWorkflows('inbound_message', lead, tenantId, 'webhook').catch(() => null)
+            triggerWorkflows('inbox_message', lead, tenantId, 'webhook',
+              { triggerContext: { channel: 'whatsapp', messageBody: content } }
+            ).catch(() => null)
           );
         }
       }

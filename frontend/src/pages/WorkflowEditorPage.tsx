@@ -394,15 +394,15 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
       {/* CRM — stage changed */}
       {node.actionType === 'stage_changed' && (<>
         <FieldRow label="Select Pipeline">
-          <select className={selectCls} value={(cfg.pipeline_id as string) ?? ''} onChange={sel('pipeline_id')}>
+          <select className={selectCls} value={(cfg.pipeline_id as string) ?? ''} onChange={(e) => onUpdate({ config: { ...cfg, pipeline_id: e.target.value, stage_id: '' } })}>
             <option value="">Any pipeline</option>
             {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </FieldRow>
         <FieldRow label="Select Pipeline Stage">
           <select className={selectCls} value={(cfg.stage_id as string) ?? ''} onChange={sel('stage_id')}>
-            <option value="">-- Select Stage --</option>
-            {(pipelines.find(p => p.id === (cfg.pipeline_id as string)) ?? pipelines[0])?.stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            <option value="">Any stage</option>
+            {(pipelines.find(p => p.id === (cfg.pipeline_id as string)))?.stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </FieldRow>
       </>)}
@@ -410,15 +410,15 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
       {/* CRM — lead created */}
       {node.actionType === 'lead_created' && (<>
         <FieldRow label="Select Pipeline">
-          <select className={selectCls} value={(cfg.pipeline_id as string) ?? ''} onChange={sel('pipeline_id')}>
+          <select className={selectCls} value={(cfg.pipeline_id as string) ?? ''} onChange={(e) => onUpdate({ config: { ...cfg, pipeline_id: e.target.value, stage_id: '' } })}>
             <option value="">Any pipeline</option>
             {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </FieldRow>
         <FieldRow label="Select Pipeline Stage">
           <select className={selectCls} value={(cfg.stage_id as string) ?? ''} onChange={sel('stage_id')}>
-            <option value="">Any Stage</option>
-            {(pipelines.find(p => p.id === (cfg.pipeline_id as string)) ?? pipelines[0])?.stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            <option value="">Any stage</option>
+            {(pipelines.find(p => p.id === (cfg.pipeline_id as string)))?.stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </FieldRow>
       </>)}
@@ -1213,20 +1213,14 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
       </>)}
 
       {/* Change Lead Quality */}
-      {node.actionType === 'change_lead_quality' && (<>
-        <FieldRow label="Select Pipeline">
-          <select className={selectCls} value={(cfg.pipeline_id as string) ?? ''} onChange={sel('pipeline_id')}>
-            <option value="">Choose pipeline...</option>
-            {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </FieldRow>
-        <FieldRow label="Select Lead Quality">
+      {node.actionType === 'change_lead_quality' && (
+        <FieldRow label="Select Lead Quality" required>
           <select className={selectCls} value={(cfg.quality as string) ?? ''} onChange={sel('quality')}>
             <option value="">Select quality...</option>
             {LEAD_QUALITIES.map((q) => <option key={q}>{q}</option>)}
           </select>
         </FieldRow>
-      </>)}
+      )}
 
       {/* Contact Group Access */}
       {node.actionType === 'contact_group_access' && (
@@ -1319,15 +1313,21 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
 
       {/* Update Attributes */}
       {node.actionType === 'update_attributes' && (<>
-        <FieldRow label="Field">
+        <p className="text-sm text-muted-foreground">Set a specific field on this contact to a fixed or dynamic value.</p>
+        <FieldRow label="Field to Update" required>
           <select className={selectCls} value={(cfg.attrField as string) ?? ''} onChange={sel('attrField')}>
             <option value="">Select field...</option>
-            {['first_name', 'last_name', 'email', 'phone', 'city', 'company'].map((f) => <option key={f}>{f}</option>)}
+            <option value="name">Full Name</option>
+            <option value="email">Email</option>
+            <option value="phone">Phone</option>
+            <option value="source">Source</option>
           </select>
         </FieldRow>
-        <FieldRow label="Value">
-          <input className={inputCls} placeholder="Enter value or use {%variable%}" value={(cfg.attrValue as string) ?? ''} onChange={sel('attrValue')} />
-          <p className="text-xs text-muted-foreground mt-1">Use <code className="bg-muted px-1 rounded">{'{%first_name%}'}</code> for dynamic values.</p>
+        <FieldRow label="New Value" required>
+          <div>
+            <input className={inputCls} placeholder="Enter value or use {first_name}" value={(cfg.attrValue as string) ?? ''} onChange={sel('attrValue')} />
+            <VarHints onInsert={(v) => onUpdate({ config: { ...cfg, attrValue: ((cfg.attrValue as string) ?? '') + v } })} />
+          </div>
         </FieldRow>
       </>)}
 
@@ -1403,12 +1403,8 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
           <input className={inputCls} value={(cfg.actionName as string) ?? 'Internal Notification'} onChange={sel('actionName')} />
         </FieldRow>
         <FieldRow label="Type of Notification">
-          <select className={selectCls} value={(cfg.notifType as string) ?? ''} onChange={sel('notifType')}>
-            <option value="">Select a type</option>
-            <option value="email">Email</option>
-            <option value="whatsapp">WhatsApp</option>
-            <option value="whatsapp_official">WhatsApp Official</option>
-            <option value="in_app">In App</option>
+          <select className={selectCls} value={(cfg.notifType as string) ?? 'in_app'} onChange={sel('notifType')}>
+            <option value="in_app">In App (Bell notification)</option>
           </select>
         </FieldRow>
         <FieldRow label="Send To">

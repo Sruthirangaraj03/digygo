@@ -763,7 +763,10 @@ router.patch('/:id', checkPermission('calendar:manage'), async (req: AuthRequest
       if (wfTrigger) {
         const leadRes = await query('SELECT * FROM leads WHERE id=$1', [event.lead_id]).catch(() => null);
         const lead = leadRes?.rows[0] ?? { id: event.lead_id, name: '' };
-        setImmediate(() => triggerWorkflows(wfTrigger, lead, req.user!.tenantId!, req.user!.userId).catch(() => null));
+        const apptType = (event.type as string) ?? '';
+        setImmediate(() => triggerWorkflows(wfTrigger, lead, req.user!.tenantId!, req.user!.userId,
+          { triggerContext: { apptType } }
+        ).catch(() => null));
       }
     }
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
