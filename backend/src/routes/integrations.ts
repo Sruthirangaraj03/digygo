@@ -451,9 +451,39 @@ router.post('/meta/webhook', async (req: Request, res: Response) => {
                WHERE id=$1 RETURNING *`,
               [leadId, name, email, phone, leadgenId, mf.form_id]
             );
-            // Trigger automation even for existing leads — they submitted the form now
+
+            // Detect which custom fields changed before storeCustomValues overwrites them
+            const changedFields: string[] = [];
+            for (const [slug, newVal] of Object.entries(customValues)) {
+              if (!newVal) continue;
+              const prev = await query(
+                `SELECT lfv.value FROM lead_field_values lfv
+                 JOIN custom_fields cf ON cf.id = lfv.field_id
+                 WHERE lfv.lead_id=$1 AND cf.tenant_id=$2 AND cf.slug=$3 LIMIT 1`,
+                [leadId, mf.tenant_id, slug]
+              ).catch(() => ({ rows: [] as any[] }));
+              const oldVal = prev.rows[0]?.value;
+              if (oldVal !== undefined && oldVal !== String(newVal)) {
+                changedFields.push(`${slug}: "${oldVal}" → "${newVal}"`);
+              }
+            }
+
+            // Always create a note so CRM staff can see re-submission history
+            const noteTitle = changedFields.length > 0
+              ? `Re-submitted via "${mf.form_name}" — ${changedFields.length} field(s) changed`
+              : `Re-submitted via "${mf.form_name}"`;
+            const noteContent = changedFields.length > 0
+              ? `Changed: ${changedFields.join(', ')}`
+              : `No field changes — same data as previous submission.`;
+            await query(
+              `INSERT INTO lead_notes (lead_id, tenant_id, title, content) VALUES ($1,$2,$3,$4)`,
+              [leadId, mf.tenant_id, noteTitle, noteContent]
+            ).catch(() => null);
+
+            const dataChanged = changedFields.length > 0;
             const existingCtx = { ...(updated.rows[0] ?? existing.rows[0]), form_id: mf.form_id, form_name: mf.form_name };
-            setImmediate(() => triggerWorkflows('meta_form', existingCtx, mf.tenant_id, 'webhook').catch((e) => console.error('[webhook trigger existing]', e)));
+            // Force re-entry only when field data actually changed — new pincode triggers fresh routing
+            setImmediate(() => triggerWorkflows('meta_form', existingCtx, mf.tenant_id, 'webhook', { forceReEntry: dataChanged }).catch((e) => console.error('[webhook trigger existing]', e)));
           } else {
             isNew = true;
             // Insert with leadgen_id as source_ref — guarantees idempotency on re-delivery
@@ -1446,6 +1476,11 @@ router.post('/meta/forms/:formId/push-automation', checkPermission('meta_forms:e
               totalFailed++;
             }
           } catch (e: any) {
+            if (e.code === '23505') {
+              // Lead already enrolled in this workflow — skip silently (not an error)
+              totalSkipped++;
+              continue;
+            }
             console.error('[push-automation] lead error:', wf.name, e.message);
             totalFailed++;
           }

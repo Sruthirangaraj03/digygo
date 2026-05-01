@@ -8,6 +8,7 @@ import { checkPlan, checkUsage, incrementUsage } from '../middleware/plan';
 import { sendEmail, isSmtpConfigured } from '../services/email';
 import { decrypt } from '../utils/crypto';
 import { maskPhone } from '../utils/phone';
+import { emitToTenant } from '../socket';
 
 const router = Router();
 router.use(requireAuth);
@@ -377,11 +378,26 @@ export async function executeNodes(
 
         // ── Add / Update to CRM ────────────────────────────────────────────────
         case 'add_to_crm': {
+          // Skip if lead already has a pipeline and "only_if_no_pipeline" is toggled
+          if (node.config.only_if_no_pipeline && lead.pipeline_id) {
+            status = 'skipped';
+            message = `add_to_crm: lead already in a pipeline — skipped (only_if_no_pipeline is ON)`;
+            break;
+          }
+          if (!lead.id) {
+            status = 'failed';
+            message = 'add_to_crm: lead has no id — cannot update';
+            break;
+          }
           const sets: string[] = ['updated_at=NOW()'];
           const vals: any[] = [];
           if (node.config.pipeline_id) { vals.push(node.config.pipeline_id); sets.push(`pipeline_id=$${vals.length}`); }
           if (node.config.stage_id)    { vals.push(node.config.stage_id);    sets.push(`stage_id=$${vals.length}`); }
-          if (lead.id && sets.length > 1) {
+          if (node.config.deal_value !== undefined && node.config.deal_value !== '') {
+            vals.push(Number(node.config.deal_value));
+            sets.push(`deal_value=$${vals.length}`);
+          }
+          if (sets.length > 1) {
             vals.push(lead.id, tenantId);
             const updateRes = await query(
               `UPDATE leads SET ${sets.join(',')} WHERE id=$${vals.length - 1} AND tenant_id=$${vals.length} RETURNING pipeline_id, stage_id`,
@@ -409,7 +425,7 @@ export async function executeNodes(
             }
           } else {
             status = 'skipped';
-            message = 'add_to_crm: no pipeline_id or stage_id configured';
+            message = 'add_to_crm: no pipeline_id or stage_id configured — select a pipeline and stage in the node config';
           }
           break;
         }
@@ -907,19 +923,60 @@ export async function executeNodes(
 
           if (pipeRes.rows[0]) {
             const { pipeline_id, stage_id, stage_name } = pipeRes.rows[0];
+            if (!lead.id) {
+              status = 'failed';
+              message = `pincode_routing: lead has no id — cannot move to pipeline`;
+              break;
+            }
+            const moveRes = await query(
+              `UPDATE leads SET pipeline_id=$1, stage_id=$2, updated_at=NOW()
+               WHERE id=$3 AND tenant_id=$4`,
+              [pipeline_id, stage_id, lead.id, tenantId]
+            );
+            if ((moveRes.rowCount ?? 0) === 0) {
+              status = 'failed';
+              message = `pincode_routing: UPDATE affected 0 rows — lead not moved to pipeline "${effectivePipeline}"`;
+              break;
+            }
+            lead.pipeline_id = pipeline_id;
+            lead.stage_id = stage_id;
+            lead.stage_name = stage_name;
+
+            // Emit socket so frontend pipeline view updates in real-time
+            const updatedLead = await query(
+              `SELECT l.*, u.name AS assigned_name
+               FROM leads l LEFT JOIN users u ON u.id = l.assigned_to
+               WHERE l.id=$1`,
+              [lead.id]
+            ).catch(() => ({ rows: [] as any[] }));
+            if (updatedLead.rows[0]) emitToTenant(tenantId, 'lead:updated', updatedLead.rows[0]);
+
+            // Auto-tag with district name if configured
+            if (node.config.auto_tag) {
+              await query(
+                `UPDATE leads SET tags=array_append(tags, $1::text), updated_at=NOW()
+                 WHERE id=$2 AND tenant_id=$3 AND NOT ($1=ANY(tags))`,
+                [district, lead.id, tenantId]
+              ).catch(() => null);
+              await syncTagToJunction(tenantId, lead.id, district).catch(() => null);
+              if (!Array.isArray(lead.tags)) lead.tags = [];
+              if (!lead.tags.includes(district)) lead.tags.push(district);
+            }
+            message = `Pincode ${pincodeValue} → ${district}${state ? ', ' + state : ''} → Pipeline: ${effectivePipeline} (Stage: ${stage_name})${node.config.auto_tag ? ` · tagged "${district}"` : ''}`;
+          } else {
+            status = 'failed';
+            message = `pincode_routing: pipeline "${effectivePipeline}" not found — district "${district}" set on lead but not moved`;
             if (lead.id) {
               await query(
-                `UPDATE leads SET pipeline_id=$1, stage_id=$2, updated_at=NOW()
-                 WHERE id=$3 AND tenant_id=$4`,
-                [pipeline_id, stage_id, lead.id, tenantId]
-              );
-              lead.pipeline_id = pipeline_id;
-              lead.stage_id = stage_id;
-              lead.stage_name = stage_name;
+                `INSERT INTO lead_notes (lead_id, tenant_id, title, content)
+                 VALUES ($1, $2, $3, $4)`,
+                [
+                  lead.id, tenantId,
+                  `Pincode routing: no pipeline found`,
+                  `Pincode ${pincodeValue} maps to ${district}${state ? ', ' + state : ''} but pipeline "${effectivePipeline}" does not exist in your CRM. Create it or update your pincode mapping.`,
+                ]
+              ).catch(() => null);
             }
-            message = `Pincode ${pincodeValue} → ${district}${state ? ', ' + state : ''} → Pipeline: ${effectivePipeline} (Stage: ${stage_name})`;
-          } else {
-            message = `Pincode ${pincodeValue} → ${district}${state ? ', ' + state : ''} (pipeline "${effectivePipeline}" not found — district set)`;
           }
           break;
         }
@@ -1348,7 +1405,8 @@ export async function triggerWorkflows(
   triggerType: string,
   lead: LeadContext,
   tenantId: string,
-  userId: string
+  userId: string,
+  options?: { forceReEntry?: boolean }
 ): Promise<void> {
   try {
     const enrichedLead = await enrichLead(lead);
@@ -1414,8 +1472,19 @@ export async function triggerWorkflows(
         if (cfgCalendars.length === 0 || !cfgCalendars.includes(enrichedLead.event_type_id ?? '')) continue;
       }
 
-      // ── allowReentry check ────────────────────────────────────────────────
-      if (!wf.allow_reentry) {
+      // ── Re-entry handling ─────────────────────────────────────────────────
+      if (options?.forceReEntry || wf.allow_reentry) {
+        // Supersede any existing completed/running execution so re-entry works cleanly.
+        // forceReEntry=true: triggered by a re-submission with changed data (e.g. new pincode).
+        // allow_reentry=true: workflow is configured for unlimited re-entry.
+        // Without this, the DB unique guard (idx_wf_exec_one_enrollment) would silently block re-entry.
+        await query(
+          `UPDATE workflow_executions SET status='superseded'
+           WHERE workflow_id=$1 AND lead_id=$2 AND status IN ('running', 'completed')`,
+          [wf.id, enrichedLead.id]
+        ).catch(() => null);
+      } else {
+        // allow_reentry=false and no force: skip if any execution exists for this lead
         const existing = await query(
           `SELECT id FROM workflow_executions WHERE workflow_id=$1 AND lead_id=$2 LIMIT 1`,
           [wf.id, enrichedLead.id]

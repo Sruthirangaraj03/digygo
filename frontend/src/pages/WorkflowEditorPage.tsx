@@ -12,7 +12,7 @@ import {
   FilePlus, UserPlus, UserCog, BookMarked, CalendarX, CalendarOff,
   ListChecks, Code2, CalendarDays, CalendarClock, CalendarRange, ArrowRight,
   UserMinus, UserX, FolderX, PlayCircle, PauseCircle, LogOut, SquareMinus, Users, UserRoundCog,
-  RotateCcw, ChevronRight, Copy, Power, Info, ExternalLink, Loader2, TrendingUp, MapPin,
+  RotateCcw, ChevronRight, Copy, Power, Info, ExternalLink, Loader2, TrendingUp, MapPin, RefreshCw,
 } from 'lucide-react';
 import type { ElementType } from 'react';
 import { Button } from '@/components/ui/button';
@@ -970,18 +970,20 @@ function AssignStaffPanel({ cfg, staff, onUpdate }: {
 }
 
 // ── Action Config Panel ────────────────────────────────────────────────────────
-function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workflows }: {
+function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workflows, onRefreshPipelines, refreshingPipelines }: {
   node: WFNode;
   onUpdate: (updates: Partial<WFNode>) => void;
   pipelines: PipelineOpt[];
   staff: StaffOpt[];
   templates: TemplateOpt[];
   workflows: { id: string; name: string }[];
+  onRefreshPipelines?: () => void;
+  refreshingPipelines?: boolean;
 }) {
   const sel = (field: string) => (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement | HTMLTextAreaElement>) =>
     onUpdate({ config: { ...node.config, [field]: e.target.value } });
   const cfg = node.config;
-  const actionPipelineStages = (pipelines.find(p => p.id === cfg.pipeline_id) ?? pipelines[0])?.stages ?? [];
+  const actionPipelineStages = pipelines.find(p => p.id === (cfg.pipeline_id as string))?.stages ?? [];
   const customFields = useCrmStore((s) => s.customFields);
 
   return (
@@ -989,12 +991,21 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
 
       {/* Add/Update to CRM */}
       {node.actionType === 'add_to_crm' && (<>
-        <FieldRow label="Select Pipeline">
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-sm font-semibold">Select Pipeline</span>
+            {onRefreshPipelines && (
+              <button onClick={onRefreshPipelines} className="text-[11px] text-primary flex items-center gap-1 hover:underline">
+                <RefreshCw className={`w-3 h-3 ${refreshingPipelines ? 'animate-spin' : ''}`} />
+                {refreshingPipelines ? 'Refreshing…' : 'Refresh'}
+              </button>
+            )}
+          </div>
           <select className={selectCls} value={(cfg.pipeline_id as string) ?? ''} onChange={sel('pipeline_id')}>
             <option value="">Choose pipeline...</option>
             {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
-        </FieldRow>
+        </div>
         <FieldRow label="Select Pipeline Stage">
           <select className={selectCls} value={(cfg.stage_id as string) ?? ''} onChange={sel('stage_id')}>
             <option value="">Select stage...</option>
@@ -1002,11 +1013,18 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
           </select>
         </FieldRow>
         <div className="flex items-center justify-between">
+          <div>
+            <span className="text-sm font-semibold block">Only if lead has no pipeline</span>
+            <span className="text-xs text-muted-foreground">Skip this step if the lead is already in a pipeline (use as fallback)</span>
+          </div>
+          <Switch checked={!!(cfg.only_if_no_pipeline)} onCheckedChange={(v) => onUpdate({ config: { ...cfg, only_if_no_pipeline: v } })} />
+        </div>
+        <div className="flex items-center justify-between">
           <span className="text-sm font-semibold">Skip Lead Value Change</span>
           <Switch checked={!!(cfg.skipLeadValue)} onCheckedChange={(v) => onUpdate({ config: { ...cfg, skipLeadValue: v } })} />
         </div>
-        <FieldRow label="Lead Value">
-          <input type="number" className={inputCls} value={(cfg.leadValue as string) ?? '0'} onChange={sel('leadValue')} min="0" />
+        <FieldRow label="Deal Value">
+          <input type="number" className={inputCls} value={(cfg.deal_value as string) ?? ''} onChange={sel('deal_value')} min="0" placeholder="0" />
         </FieldRow>
       </>)}
 
@@ -1514,7 +1532,11 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
           {noFields ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
               <p className="text-xs text-amber-800 font-semibold">No custom fields found</p>
-              <p className="text-xs text-amber-700 mt-0.5">Go to <strong>Settings → Fields</strong> and create a field (e.g. "Pincode") to hold the pincode value from your form.</p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                Go to{' '}
+                <a href="/settings/fields" target="_blank" rel="noopener noreferrer" className="font-bold underline hover:text-amber-900">Settings → Fields</a>
+                {' '}and create a field (e.g. "Pincode") to hold the pincode value from your form.
+              </p>
             </div>
           ) : (
             <FieldRow label="Pincode Field">
@@ -1538,6 +1560,14 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
               )}
             </FieldRow>
           )}
+
+          <div className="flex items-center justify-between pt-1">
+            <div>
+              <span className="text-sm font-semibold block">Auto-tag with district name</span>
+              <span className="text-xs text-muted-foreground">Adds e.g. "Coimbatore" as a tag on the lead after routing</span>
+            </div>
+            <Switch checked={!!(cfg.auto_tag)} onCheckedChange={(v) => onUpdate({ config: { ...cfg, auto_tag: v } })} />
+          </div>
         </>);
       })()}
 
@@ -2116,7 +2146,7 @@ function NodeConfigModal({
   pipelines, staff, forms, metaForms, eventTypes, templates, workflows,
   showAIPanel, setShowAIPanel,
   aiPrompt, setAIPrompt, aiTone, setAITone, aiFormat, setAIFormat, aiLength, setAILength,
-  onAIGenerate, allowReentry, onToggleReentry,
+  onAIGenerate, allowReentry, onToggleReentry, onRefreshPipelines, refreshingPipelines,
 }: {
   node: WFNode;
   branchCtx: BranchNodeContext | null;
@@ -2141,6 +2171,8 @@ function NodeConfigModal({
   onAIGenerate: () => void;
   allowReentry: boolean;
   onToggleReentry: (val: boolean) => void;
+  onRefreshPipelines?: () => void;
+  refreshingPipelines?: boolean;
 }) {
   const [tab, setTab] = useState<'settings' | 'ai'>('settings');
   const { icon: iconStyle, badge: badgeStyle, bar: accentBar } = nodeAccent(node.type, node.actionType);
@@ -2261,7 +2293,7 @@ function NodeConfigModal({
                 ? <TriggerConfigPanel node={node} onUpdate={onUpdate} onChangeTrigger={onChangeTrigger} pipelines={pipelines} staff={staff} forms={forms} metaForms={metaForms} eventTypes={eventTypes} allowReentry={allowReentry} onToggleReentry={onToggleReentry} />
                 : node.type === 'condition'
                 ? <ConditionConfigPanel node={node} onUpdate={onUpdate} />
-                : <ActionConfigPanel node={node} onUpdate={onUpdate} pipelines={pipelines} staff={staff} templates={templates} workflows={workflows} />
+                : <ActionConfigPanel node={node} onUpdate={onUpdate} pipelines={pipelines} staff={staff} templates={templates} workflows={workflows} onRefreshPipelines={onRefreshPipelines} refreshingPipelines={refreshingPipelines} />
               }
             </>
           )}
@@ -2557,16 +2589,23 @@ export default function WorkflowEditorPage() {
   const [editorTemplates, setEditorTemplates] = useState<TemplateOpt[]>([]);
   const [editorWorkflows, setEditorWorkflows] = useState<{ id: string; name: string }[]>([]);
   const [editorEventTypes, setEditorEventTypes] = useState<FormOpt[]>([]);
-  useEffect(() => {
-    api.get<any[]>('/api/calendar/event-types').then((rows) => {
-      setEditorEventTypes((rows ?? []).map((et) => ({ id: et.id, name: et.name })));
-    }).catch(() => {});
+  const [refreshingPipelines, setRefreshingPipelines] = useState(false);
+
+  const refreshPipelines = () => {
+    setRefreshingPipelines(true);
     api.get<any[]>('/api/pipelines').then((rows) => {
       setEditorPipelines((rows ?? []).map((p) => ({
         id: p.id, name: p.name,
         stages: (p.stages ?? []).map((s: any) => ({ id: s.id, name: s.name })),
       })));
+    }).catch(() => {}).finally(() => setRefreshingPipelines(false));
+  };
+
+  useEffect(() => {
+    api.get<any[]>('/api/calendar/event-types').then((rows) => {
+      setEditorEventTypes((rows ?? []).map((et) => ({ id: et.id, name: et.name })));
     }).catch(() => {});
+    refreshPipelines();
     api.get<any[]>('/api/settings/staff').then((rows) => {
       setEditorStaff((rows ?? []).map((s) => ({ id: s.id, name: s.name })));
     }).catch(() => {});
@@ -2602,6 +2641,8 @@ export default function WorkflowEditorPage() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState('just now');
+  const [isDirty, setIsDirty] = useState(false);
+  const isDirtyFirstRender = useRef(true);
   const [loadingWF, setLoadingWF] = useState(!passedWorkflow && !!id && id !== 'new');
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFirstRender = useRef(true);
@@ -2629,6 +2670,30 @@ export default function WorkflowEditorPage() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  // Refresh pipelines every time node config panel opens — catches pipelines created after editor loaded
+  useEffect(() => {
+    if (showNodeModal) refreshPipelines();
+  }, [showNodeModal]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Refresh pipelines when an add_to_crm node is selected in the sidebar panel
+  useEffect(() => {
+    if (selectedNode?.actionType === 'add_to_crm' && !showNodeModal) refreshPipelines();
+  }, [selectedNodeId, selectedBranchCtx?.nodeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Track unsaved changes
+  useEffect(() => {
+    if (isDirtyFirstRender.current) { isDirtyFirstRender.current = false; return; }
+    setIsDirty(true);
+  }, [workflow.nodes, workflow.name]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Warn before navigating away with unsaved changes
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
 
   const onDragStart = useCallback((e: React.MouseEvent) => {
     isDragging.current = true;
@@ -2710,6 +2775,7 @@ export default function WorkflowEditorPage() {
         nodes: workflow.nodes,
       }).catch(() => null);
       setLastSaved('just now');
+      setIsDirty(false);
       if (workflow.status === 'inactive') {
         toast.success('Workflow saved — click Publish to activate it');
       } else {
@@ -2875,6 +2941,22 @@ export default function WorkflowEditorPage() {
   const selectedNodeIsCondition = selectedNode?.type === 'condition';
 
   const isCommNode = selectedNode && ['send_email','send_sms','send_whatsapp','internal_notify','create_note'].includes(selectedNode.actionType);
+
+  // ── Go-Live gate ──────────────────────────────────────────────────────────────
+  const FORM_TRIGGER_TYPES = ['opt_in_form', 'meta_form', 'product_enquired'];
+  const triggerNode = workflow.nodes.find((n) => n.type === 'trigger');
+  const triggerType = triggerNode?.actionType ?? '';
+  const triggerCfg  = triggerNode?.config ?? {};
+  const goLiveBlockReason = (() => {
+    if (!triggerType) return 'Select a trigger before going live';
+    if (FORM_TRIGGER_TYPES.includes(triggerType) && ((triggerCfg.forms as string[]) ?? []).length === 0)
+      return 'Select at least one form before going live';
+    if (triggerType === 'calendar_form_submitted' && ((triggerCfg.calendars as string[]) ?? []).length === 0)
+      return 'Select at least one calendar before going live';
+    return null;
+  })();
+  const canGoLive = goLiveBlockReason === null;
+
   const publishStyle = workflow.status === 'active'
     ? { background: '#1c1410' }
     : { background: 'linear-gradient(135deg,#c2410c,#ea580c)', boxShadow: '0 2px 8px rgba(234,88,12,0.3)' };
@@ -2905,11 +2987,23 @@ export default function WorkflowEditorPage() {
         </div>
 
         {/* Center: testing mode pill */}
-        <div className="flex items-center gap-2 bg-[#faf8f6] border border-black/[0.06] rounded-xl px-3.5 py-1.5">
+        <div
+          className="flex items-center gap-2 bg-[#faf8f6] border border-black/[0.06] rounded-xl px-3.5 py-1.5"
+          title={!canGoLive && workflow.status !== 'active' ? goLiveBlockReason ?? undefined : undefined}
+        >
           <span className="text-[11px] font-semibold text-[#7a6b5c]">Testing mode</span>
-          <Switch checked={workflow.status === 'active'} onCheckedChange={(v) => setWorkflow((w) => ({ ...w, status: v ? 'active' : 'inactive' }))} />
+          <span className={cn(!canGoLive && workflow.status !== 'active' && 'opacity-40 cursor-not-allowed')}>
+            <Switch
+              checked={workflow.status === 'active'}
+              disabled={!canGoLive && workflow.status !== 'active'}
+              onCheckedChange={(v) => {
+                if (v && !canGoLive) { toast.error(goLiveBlockReason!); return; }
+                setWorkflow((w) => ({ ...w, status: v ? 'active' : 'inactive' }));
+              }}
+            />
+          </span>
           <span className={cn('text-[11px] font-bold', workflow.status === 'active' ? 'text-emerald-600' : 'text-[#b09e8d]')}>
-            {workflow.status === 'active' ? 'Live' : 'Off'}
+            {workflow.status === 'active' ? 'Live' : canGoLive ? 'Off' : 'Testing'}
           </span>
         </div>
 
@@ -2930,9 +3024,9 @@ export default function WorkflowEditorPage() {
           <button
             onClick={() => {
               const hasActions = workflow.nodes.some((n) => n.type === 'action');
-              const triggerSet = workflow.nodes.find((n) => n.type === 'trigger')?.actionType;
               if (workflow.status === 'inactive') {
-                if (!triggerSet) { setShowNoTriggerPopup(true); return; }
+                if (!triggerType) { setShowNoTriggerPopup(true); return; }
+                if (goLiveBlockReason) { toast.error(goLiveBlockReason); return; }
                 if (!hasActions) { toast.error('Add at least one action node before publishing'); return; }
               }
               setWorkflow((w) => ({ ...w, status: w.status === 'active' ? 'inactive' : 'active' }));
@@ -3248,7 +3342,7 @@ export default function WorkflowEditorPage() {
                       ? <TriggerConfigPanel node={selectedNode} onUpdate={(u) => updateNode(selectedNode.id, u)} onChangeTrigger={() => setShowTriggerPicker(true)} pipelines={editorPipelines} staff={editorStaff} forms={editorForms} metaForms={editorMetaForms} eventTypes={editorEventTypes} allowReentry={workflow.allowReentry} onToggleReentry={(val) => setWorkflow((w) => ({ ...w, allowReentry: val }))} />
                       : selectedNodeIsCondition
                       ? <ConditionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedNode.id, u) : updateNode(selectedNode.id, u)} />
-                      : <ActionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedNode.id, u) : updateNode(selectedNode.id, u)} pipelines={editorPipelines} staff={editorStaff} templates={editorTemplates} workflows={editorWorkflows} />
+                      : <ActionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedNode.id, u) : updateNode(selectedNode.id, u)} pipelines={editorPipelines} staff={editorStaff} templates={editorTemplates} workflows={editorWorkflows} onRefreshPipelines={refreshPipelines} refreshingPipelines={refreshingPipelines} />
                     }
                   </>
                 )}
@@ -3303,6 +3397,8 @@ export default function WorkflowEditorPage() {
           onAIGenerate={handleAIGenerate}
           allowReentry={workflow.allowReentry}
           onToggleReentry={(val) => setWorkflow((w) => ({ ...w, allowReentry: val }))}
+          onRefreshPipelines={refreshPipelines}
+          refreshingPipelines={refreshingPipelines}
         />
       )}
 

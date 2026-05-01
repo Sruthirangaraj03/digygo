@@ -231,7 +231,11 @@ export default function InboxPage() {
         </div>
         <div className="flex-1 overflow-y-auto">
           {filtered.length === 0 && (
-            <div className="text-center py-12 text-muted-foreground text-sm">No conversations</div>
+            <div className="flex flex-col items-center justify-center py-12 px-4 text-center gap-2">
+              <MessageCircle className="w-10 h-10 text-gray-300 mb-1" />
+              <p className="text-[13px] font-semibold text-[#1c1410]">No conversations yet</p>
+              <p className="text-[12px] text-[#7a6b5c]">Connect WhatsApp in <strong>Settings → WhatsApp Setup</strong> to start receiving messages here.</p>
+            </div>
           )}
           {filtered.map((conv) => (
             <button key={conv.id} onClick={() => handleSelectConversation(conv.id)}

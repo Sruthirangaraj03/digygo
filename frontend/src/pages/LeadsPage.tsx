@@ -71,7 +71,7 @@ const TAG_COLORS: Record<string, string> = {
 
 // ─── Add Lead Modal ────────────────────────────────────────────────────────────
 function AddLeadModal({ onClose }: { onClose: () => void }) {
-  const { addLead, pipelines } = useCrmStore();
+  const { addLead, pipelines, leads } = useCrmStore();
   const currentUser = useAuthStore((s) => s.currentUser);
   const now = new Date().toISOString();
   const [saving, setSaving] = useState(false);
@@ -86,6 +86,11 @@ function AddLeadModal({ onClose }: { onClose: () => void }) {
 
   const handleSave = async () => {
     if (!form.firstName.trim() || !form.phone.trim()) { toast.error('Name and phone are required'); return; }
+    const normalizedPhone = form.phone.replace(/\D/g, '');
+    if (normalizedPhone.length > 4) {
+      const dup = leads.find((l) => l.phone.replace(/\D/g, '') === normalizedPhone);
+      if (dup) { toast.error(`Phone already exists: ${dup.firstName} ${dup.lastName}`); return; }
+    }
     setSaving(true);
     try {
       const stageId = selectedPipeline?.stages.find((s) => s.name === form.stage)?.id;
@@ -2157,9 +2162,9 @@ function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
                           <p className="text-[11px] text-[#b09e8d] flex items-center gap-1">
                             <Clock className="w-3 h-3" /> {timestampLabel(entry.timestamp)}
                           </p>
-                          {entry.createdBy && (
-                            <span className="text-[11px] text-[#7a6b5c] font-medium">~ {entry.createdBy}</span>
-                          )}
+                          <span className="text-[11px] text-[#7a6b5c] font-medium">
+                            ~ {entry.createdBy || 'Automation'}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -2617,6 +2622,21 @@ function LeadCard({ lead, onClick, onFollowUp, onNote, onAssign, showPhone }: { 
           </div>
         </div>
 
+        {/* Quality badge */}
+        {lead.leadQuality && (
+          <div className="mt-1.5">
+            <span className={`inline-flex items-center text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wide ${
+              lead.leadQuality === 'Hot' ? 'bg-red-100 text-red-700' :
+              lead.leadQuality === 'Warm' ? 'bg-amber-100 text-amber-700' :
+              lead.leadQuality === 'Cold' ? 'bg-blue-100 text-blue-700' :
+              lead.leadQuality === 'Unqualified' ? 'bg-gray-100 text-gray-500' :
+              'bg-emerald-100 text-emerald-700'
+            }`}>
+              {lead.leadQuality === 'Hot' ? '🔥' : lead.leadQuality === 'Warm' ? '☀️' : lead.leadQuality === 'Cold' ? '❄️' : ''} {lead.leadQuality}
+            </span>
+          </div>
+        )}
+
         {/* Row 2: last FU (left) | days untouched (center) | next FU (right) */}
         <div className="flex items-center justify-between gap-1 mt-2 pt-2 border-t border-black/[0.05]">
           <div className="flex flex-col items-start min-w-0">
@@ -2976,6 +2996,8 @@ function mapApiLeadsToStore(rows: any[], stageMap: Record<string, string>): Lead
 export default function LeadsPage() {
   const { leads, moveLeadStage, followUps, completeFollowUp, pipelines, updateLead, deleteLead, staff, bookingLinks } = useCrmStore();
   const currentUser = useAuthStore((s) => s.currentUser);
+  const canViewOwn    = usePermission('leads:view_own');
+  const canViewAll    = usePermission('leads:view_all');
   const canCreateLead = usePermission('leads:create');
   const canEditLead   = usePermission('leads:edit');
   const canDeleteLead = usePermission('leads:delete');
@@ -3100,6 +3122,7 @@ export default function LeadsPage() {
         assignedName: lead.assigned_name ?? '',
         dealValue: Number(lead.deal_value ?? 0),
         lastActivity: lead.updated_at ?? new Date().toISOString(),
+        leadQuality: lead.custom_fields?.lead_quality ?? undefined,
       });
     };
 
@@ -3305,6 +3328,21 @@ export default function LeadsPage() {
     setSelectedIds([]);
     setShowBulkDeleteConfirm(false);
   };
+
+  const role = currentUser?.role;
+  const noAccess = role === 'staff' && !canViewOwn && !canViewAll;
+
+  if (noAccess) {
+    return (
+      <div className="flex flex-col flex-1 items-center justify-center p-10 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
+          <EyeOff className="w-8 h-8 text-gray-400" />
+        </div>
+        <h2 className="text-[18px] font-bold text-[#1c1410] mb-2">No access to leads</h2>
+        <p className="text-[14px] text-[#7a6b5c] max-w-sm">You don't have permission to view leads. Contact your admin to request access.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col flex-1 min-h-0 animate-fade-in">

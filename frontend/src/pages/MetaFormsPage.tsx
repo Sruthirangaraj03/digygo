@@ -749,6 +749,8 @@ export default function MetaFormsPage() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [mapForm, setMapForm] = useState<MetaFormRow | null>(null);
   const [exportingId, setExportingId] = useState<string | null>(null);
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
+  const [deleteFormTarget, setDeleteFormTarget] = useState<MetaFormRow | null>(null);
   const [pushResult, setPushResult] = useState<{ formId: string; type: 'old'|'new'; pushed: number; created: number; existing: number; workflows: Array<{id:string;name:string}> } | null>(null);
   const [formLeads, setFormLeads] = useState<Lead[]>([]);
   const [leadsLoading, setLeadsLoading] = useState(false);
@@ -860,12 +862,12 @@ export default function MetaFormsPage() {
   };
 
   const handleDisconnect = async () => {
-    if (!window.confirm('Disconnect Meta? All linked forms will be removed.')) return;
     try {
       await api.delete('/api/integrations/meta/disconnect');
       setStatus({ connected: false });
       setForms([]);
       setDetailPage(null);
+      setShowDisconnectConfirm(false);
       toast.success('Meta disconnected');
     } catch { toast.error('Failed to disconnect'); }
   };
@@ -1010,7 +1012,13 @@ export default function MetaFormsPage() {
   };
 
   const deleteForm = async (form: MetaFormRow) => {
-    if (!window.confirm(`Remove "${form.form_name}"?`)) return;
+    setDeleteFormTarget(form);
+  };
+
+  const confirmDeleteForm = async () => {
+    if (!deleteFormTarget) return;
+    const form = deleteFormTarget;
+    setDeleteFormTarget(null);
     try {
       await api.delete(`/api/integrations/meta/connected-forms/${form.id}`);
       setForms((prev) => prev.filter((f) => f.id !== form.id));
@@ -1311,9 +1319,12 @@ export default function MetaFormsPage() {
                           <Check className="w-2.5 h-2.5" /> {mappedCount} fields mapped
                         </span>
                       ) : (
-                        <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                          Fields not mapped
-                        </span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setMapForm(form); }}
+                          className="text-[10px] font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer"
+                        >
+                          Fields not mapped — click to map
+                        </button>
                       )}
                       {isMapped && (
                         <span className="text-[11px] text-[#b09e8d]">{(form.leads_count ?? 0).toLocaleString()} leads</span>
@@ -1360,7 +1371,7 @@ export default function MetaFormsPage() {
                         {exportingId === `${form.form_id}-old`
                           ? <RefreshCw className="w-3 h-3 animate-spin" />
                           : <History className="w-3 h-3" />}
-                        Push Old Leads
+                        Import All Leads
                       </button>
                       <button
                         onClick={() => handlePushToAutomation(form, 'new')}
@@ -1370,7 +1381,7 @@ export default function MetaFormsPage() {
                         {exportingId === `${form.form_id}-new`
                           ? <RefreshCw className="w-3 h-3 animate-spin" />
                           : <CalendarDays className="w-3 h-3" />}
-                        Push New Leads
+                        Import New Leads
                       </button>
                       <button
                         onClick={() => { setOpenForm(form); setContactSearch(''); }}
@@ -1540,7 +1551,7 @@ export default function MetaFormsPage() {
             <RefreshCw className={cn('w-3.5 h-3.5', syncing && 'animate-spin')} />
             {syncing ? 'Syncing…' : 'Sync'}
           </Button>
-          <Button size="sm" variant="outline" onClick={handleDisconnect} className="text-red-500 hover:bg-red-50 border-red-200">
+          <Button size="sm" variant="outline" onClick={() => setShowDisconnectConfirm(true)} className="text-red-500 hover:bg-red-50 border-red-200">
             Disconnect
           </Button>
         </div>
@@ -1791,6 +1802,42 @@ export default function MetaFormsPage() {
                   {connecting ? 'Redirecting…' : 'Open Facebook →'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Disconnect confirmation modal */}
+      {showDisconnectConfirm && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <h3 className="text-[16px] font-bold text-[#1c1410] mb-2">Disconnect Meta?</h3>
+            <p className="text-[13px] text-[#7a6b5c] mb-5">All linked forms will be removed and auto-import will stop. Your existing leads will remain in the CRM.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowDisconnectConfirm(false)} className="flex-1 py-2.5 rounded-xl text-[13px] font-bold bg-gray-100 text-[#1c1410] hover:bg-gray-200 transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleDisconnect} className="flex-1 py-2.5 rounded-xl text-[13px] font-bold bg-red-500 text-white hover:bg-red-600 transition-colors">
+                Yes, Disconnect
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete form confirmation modal */}
+      {deleteFormTarget && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <h3 className="text-[16px] font-bold text-[#1c1410] mb-2">Remove Form?</h3>
+            <p className="text-[13px] text-[#7a6b5c] mb-5">Remove <strong>"{deleteFormTarget.form_name}"</strong>? Your existing leads will stay in the CRM.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteFormTarget(null)} className="flex-1 py-2.5 rounded-xl text-[13px] font-bold bg-gray-100 text-[#1c1410] hover:bg-gray-200 transition-colors">
+                Cancel
+              </button>
+              <button onClick={confirmDeleteForm} className="flex-1 py-2.5 rounded-xl text-[13px] font-bold bg-red-500 text-white hover:bg-red-600 transition-colors">
+                Remove
+              </button>
             </div>
           </div>
         </div>

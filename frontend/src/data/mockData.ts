@@ -20,6 +20,7 @@ export interface Lead {
   lastActivity: string;
   notes: string[];
   customFields?: { label: string; value: string; fieldId?: string }[];
+  leadQuality?: string;
 }
 
 export interface StaffMember {

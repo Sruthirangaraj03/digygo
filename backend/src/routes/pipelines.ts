@@ -59,6 +59,16 @@ router.post('/', checkPermission('pipeline:manage'), async (req: AuthRequest, re
   const conn = await pool.connect();
   try {
     await conn.query('BEGIN');
+    const existing = await conn.query(
+      'SELECT id FROM pipelines WHERE tenant_id=$1 AND LOWER(name)=LOWER($2) LIMIT 1',
+      [req.user!.tenantId, name]
+    );
+    if (existing.rows.length > 0) {
+      await conn.query('ROLLBACK');
+      conn.release();
+      res.status(409).json({ error: `A pipeline named "${name}" already exists` });
+      return;
+    }
     const pRes = await conn.query(
       'INSERT INTO pipelines (tenant_id, name) VALUES ($1,$2) RETURNING *',
       [req.user!.tenantId, name]
@@ -92,6 +102,13 @@ router.patch('/:id', checkPermission('pipeline:manage'), async (req: AuthRequest
   if (name !== undefined)  { params.push(name);  fields.push(`name=$${params.length}`); }
   if (color !== undefined) { params.push(color); fields.push(`color=$${params.length}`); }
   if (!fields.length) { res.status(400).json({ error: 'Nothing to update' }); return; }
+  if (name !== undefined) {
+    const dup = await query(
+      'SELECT id FROM pipelines WHERE tenant_id=$1 AND LOWER(name)=LOWER($2) AND id<>$3 LIMIT 1',
+      [req.user!.tenantId, name, req.params.id]
+    );
+    if (dup.rows.length > 0) { res.status(409).json({ error: `A pipeline named "${name}" already exists` }); return; }
+  }
   params.push(req.params.id, req.user!.tenantId);
   try {
     const result = await query(
