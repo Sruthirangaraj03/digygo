@@ -1568,6 +1568,35 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
             </div>
             <Switch checked={!!(cfg.auto_tag)} onCheckedChange={(v) => onUpdate({ config: { ...cfg, auto_tag: v } })} />
           </div>
+
+          <div className="flex items-center justify-between pt-1">
+            <div>
+              <span className="text-sm font-semibold block">If pincode doesn't match</span>
+              <span className="text-xs text-muted-foreground">Move lead to a fallback pipeline when pincode is not in your mapping</span>
+            </div>
+            <Switch
+              checked={!!(cfg.fallback_enabled)}
+              onCheckedChange={(v) => onUpdate({ config: { ...cfg, fallback_enabled: v, fallback_pipeline_id: v ? cfg.fallback_pipeline_id : undefined } })}
+            />
+          </div>
+
+          {!!(cfg.fallback_enabled) && (
+            <FieldRow label="Fallback Pipeline">
+              <select
+                className={selectCls}
+                value={(cfg.fallback_pipeline_id as string) ?? ''}
+                onChange={(e) => onUpdate({ config: { ...cfg, fallback_pipeline_id: e.target.value } })}
+              >
+                <option value="">— Select a pipeline —</option>
+                {pipelines.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              {!(cfg.fallback_pipeline_id) && (
+                <p className="text-[11px] text-amber-600 font-medium mt-1">⚠ Select a pipeline — unmatched leads will be skipped until one is chosen.</p>
+              )}
+            </FieldRow>
+          )}
         </>);
       })()}
 

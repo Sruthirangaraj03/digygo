@@ -887,8 +887,48 @@ export async function executeNodes(
           ).catch(() => ({ rows: [] as any[] }));
 
           if (!mapRes.rows[0]) {
-            status = 'skipped';
-            message = `pincode_routing: pincode "${pincodeValue}" not found in mapping table`;
+            const fallbackPipelineId = (node.config.fallback_enabled && node.config.fallback_pipeline_id)
+              ? (node.config.fallback_pipeline_id as string)
+              : null;
+
+            if (fallbackPipelineId && lead.id) {
+              const fbRes = await query(
+                `SELECT p.id AS pipeline_id, ps.id AS stage_id, ps.name AS stage_name, p.name AS pipeline_name
+                 FROM pipelines p
+                 JOIN pipeline_stages ps ON ps.pipeline_id = p.id
+                 WHERE p.id=$1 AND p.tenant_id=$2
+                 ORDER BY ps.stage_order ASC NULLS LAST
+                 LIMIT 1`,
+                [fallbackPipelineId, tenantId]
+              ).catch(() => ({ rows: [] as any[] }));
+
+              if (fbRes.rows[0]) {
+                const { pipeline_id, stage_id, stage_name, pipeline_name: fbPipelineName } = fbRes.rows[0];
+                const fbMove = await query(
+                  `UPDATE leads SET pipeline_id=$1, stage_id=$2, updated_at=NOW() WHERE id=$3 AND tenant_id=$4`,
+                  [pipeline_id, stage_id, lead.id, tenantId]
+                );
+                if ((fbMove.rowCount ?? 0) > 0) {
+                  lead.pipeline_id = pipeline_id;
+                  lead.stage_id = stage_id;
+                  const updatedFb = await query(
+                    `SELECT l.*, u.name AS assigned_name FROM leads l LEFT JOIN users u ON u.id=l.assigned_to WHERE l.id=$1`,
+                    [lead.id]
+                  ).catch(() => ({ rows: [] as any[] }));
+                  if (updatedFb.rows[0]) emitToTenant(tenantId, 'lead:updated', updatedFb.rows[0]);
+                  message = `pincode_routing: pincode "${pincodeValue}" not in mapping — moved to fallback pipeline "${fbPipelineName}" (Stage: ${stage_name})`;
+                } else {
+                  status = 'failed';
+                  message = `pincode_routing: pincode "${pincodeValue}" not in mapping — fallback pipeline move affected 0 rows`;
+                }
+              } else {
+                status = 'failed';
+                message = `pincode_routing: pincode "${pincodeValue}" not in mapping — fallback pipeline not found`;
+              }
+            } else {
+              status = 'skipped';
+              message = `pincode_routing: pincode "${pincodeValue}" not found in mapping table — no fallback configured`;
+            }
             break;
           }
 
