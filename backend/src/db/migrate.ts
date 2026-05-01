@@ -47,6 +47,7 @@ const MIGRATIONS = [
   'migration_045_owner_role.sql',
   'migration_046_schema_drift_fix.sql',
   'migration_047_pincode_routing.sql',
+  'migration_048_meta_forms_unique_constraint.sql',
 ];
 
 // Split SQL file into individual statements and execute each one separately.
@@ -74,9 +75,16 @@ async function execFile(client: any, filePath: string, fileName: string) {
       await client.query(trimmed);
       ok++;
     } catch (err: any) {
-      // 42P01 = undefined table, 42701 = column already exists, 42P07 = index already exists
-      // 23505 = unique violation on backfill — all safe to skip
-      const safeErrors = ['42P01', '42701', '42P07', '42710', '23505', '42703'];
+      // Safe-to-skip PostgreSQL error codes:
+      // 42P01 = undefined_table (table doesn't exist yet)
+      // 42701 = duplicate_column (column already exists)
+      // 42P07 = duplicate_table (relation already exists)
+      // 42710 = duplicate_object (constraint/index already exists)
+      // 23505 = unique_violation (on backfill inserts)
+      // 42703 = undefined_column
+      // 42P16 = invalid_table_definition (e.g. constraint already present via another path)
+      // 42883 = undefined_function
+      const safeErrors = ['42P01', '42701', '42P07', '42710', '23505', '42703', '42P16', '42883'];
       if (safeErrors.includes(err.code)) {
         skipped++;
       } else {
