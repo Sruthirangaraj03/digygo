@@ -166,18 +166,24 @@ const APPT_STATUSES = ['Booked', 'Cancelled', 'Completed', 'No Show', 'Reschedul
 const AI_AGENTS = ['Sales Bot', 'Support Bot', 'Onboarding Bot', 'FAQ Bot'];
 const COURSES = ['Sales Mastery', 'Marketing 101', 'Product Training', 'Onboarding Course'];
 const FOLLOWUP_TYPES = ['Call', 'Email', 'WhatsApp', 'Meeting', 'Task'];
-const CONDITION_FIELDS: { value: string; label: string }[] = [
-  { value: 'first_name',     label: 'First Name' },
-  { value: 'last_name',      label: 'Last Name' },
-  { value: 'email',          label: 'Email' },
-  { value: 'phone',          label: 'Phone' },
-  { value: 'pipeline_stage', label: 'Pipeline Stage' },
-  { value: 'lead_quality',   label: 'Lead Quality' },
-  { value: 'tag',            label: 'Tag' },
-  { value: 'source',         label: 'Source' },
-  { value: 'assigned_staff', label: 'Assigned Staff' },
+const CONDITION_FIELDS: { value: string; label: string; type: string }[] = [
+  { value: 'first_name',     label: 'First Name',     type: 'text' },
+  { value: 'last_name',      label: 'Last Name',      type: 'text' },
+  { value: 'email',          label: 'Email',           type: 'text' },
+  { value: 'phone',          label: 'Phone',           type: 'text' },
+  { value: 'pipeline',       label: 'Pipeline',        type: 'pipeline' },
+  { value: 'pipeline_stage', label: 'Pipeline Stage',  type: 'stage' },
+  { value: 'lead_quality',   label: 'Lead Quality',    type: 'quality' },
+  { value: 'tag',            label: 'Tag',             type: 'tag' },
+  { value: 'source',         label: 'Source',          type: 'source' },
+  { value: 'assigned_staff', label: 'Assigned Staff',  type: 'staff' },
+  { value: 'district',       label: 'District',        type: 'text' },
 ];
-const CONDITION_OPERATORS = ['equals', 'not equals', 'contains', 'not contains', 'starts with', 'ends with', 'is empty', 'is not empty', 'greater than', 'less than'];
+const OPS_TEXT     = ['equals', 'not equals', 'contains', 'not contains', 'starts with', 'ends with', 'is empty', 'is not empty'];
+const OPS_NUMBER   = ['equals', 'not equals', 'greater than', 'less than', 'is empty', 'is not empty'];
+const OPS_SINGLE   = ['equals', 'not equals', 'is empty', 'is not empty'];
+const OPS_TAG      = ['equals', 'not equals', 'contains', 'is empty', 'is not empty'];
+const LEAD_SOURCES = ['Custom Form', 'Meta Form', 'WhatsApp', 'Manual', 'Referral', 'Website', 'Other'];
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const INSTAGRAM_TEMPLATES = ['IG Welcome DM', 'IG Promo Offer', 'IG Event Invite'];
 const FB_TEMPLATES = ['FB Thanks Reply', 'FB Promo Reply', 'FB Support Reply'];
@@ -697,13 +703,18 @@ function VarHints({ onInsert }: { onInsert: (v: string) => void }) {
 // ── Condition Config Panel ─────────────────────────────────────────────────────
 interface CondRow { field: string; operator: string; value: string }
 
-function ConditionConfigPanel({ node, onUpdate }: { node: WFNode; onUpdate: (updates: Partial<WFNode>) => void }) {
+function ConditionConfigPanel({ node, onUpdate, pipelines, staff }: {
+  node: WFNode;
+  onUpdate: (updates: Partial<WFNode>) => void;
+  pipelines: PipelineOpt[];
+  staff: StaffOpt[];
+}) {
   const cfg = node.config;
   const customFields = useCrmStore((s) => s.customFields);
+  const tags = useCrmStore((s) => s.tags);
   const sel = (field: string) => (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement>) =>
     onUpdate({ config: { ...cfg, [field]: e.target.value } });
 
-  // Multi-condition: cfg.conditions is an array; fall back to legacy single condition
   const conditions: CondRow[] = (cfg.conditions as CondRow[] | undefined) ?? [
     { field: (cfg.field as string) ?? '', operator: (cfg.operator as string) ?? '', value: (cfg.value as string) ?? '' },
   ];
@@ -715,8 +726,135 @@ function ConditionConfigPanel({ node, onUpdate }: { node: WFNode; onUpdate: (upd
   const addCondition = () => updateConditions([...conditions, { field: '', operator: '', value: '' }]);
   const removeCondition = (i: number) => updateConditions(conditions.filter((_, idx) => idx !== i));
   const editCondition = (i: number, key: keyof CondRow, val: string) => {
-    const next = conditions.map((c, idx) => idx === i ? { ...c, [key]: val } : c);
+    const next = conditions.map((c, idx) => {
+      if (idx !== i) return c;
+      // reset operator + value when field changes
+      if (key === 'field') return { field: val, operator: '', value: '' };
+      // reset value when operator changes to empty-check
+      if (key === 'operator' && ['is empty', 'is not empty'].includes(val)) return { ...c, operator: val, value: '' };
+      return { ...c, [key]: val };
+    });
     updateConditions(next);
+  };
+
+  // Resolve field type — check standard fields first, then custom fields
+  const getFieldType = (fieldVal: string): string => {
+    const std = CONDITION_FIELDS.find((f) => f.value === fieldVal);
+    if (std) return std.type;
+    const cf = customFields.find((c) => c.slug === fieldVal);
+    if (!cf) return 'text';
+    if (cf.type === 'Number') return 'number';
+    if (cf.type === 'Dropdown') return 'custom_dropdown';
+    return 'text';
+  };
+
+  const getOperators = (fieldType: string): string[] => {
+    switch (fieldType) {
+      case 'pipeline':
+      case 'stage':
+      case 'staff':
+      case 'quality':
+      case 'source':       return OPS_SINGLE;
+      case 'tag':          return OPS_TAG;
+      case 'number':       return OPS_NUMBER;
+      default:             return OPS_TEXT;
+    }
+  };
+
+  // Preview sentence
+  const previewParts = conditions.map((c) => {
+    if (!c.field || !c.operator) return null;
+    const fieldLabel = CONDITION_FIELDS.find((f) => f.value === c.field)?.label
+      ?? customFields.find((cf) => cf.slug === c.field)?.name
+      ?? c.field;
+    const valLabel = (() => {
+      const ft = getFieldType(c.field);
+      if (ft === 'pipeline') return pipelines.find((p) => p.id === c.value)?.name ?? c.value;
+      if (ft === 'stage') {
+        for (const p of pipelines) { const s = p.stages.find((st) => st.id === c.value); if (s) return s.name; }
+        return c.value;
+      }
+      if (ft === 'staff') return staff.find((s) => s.id === c.value)?.name ?? c.value;
+      return c.value;
+    })();
+    const noVal = ['is empty', 'is not empty'].includes(c.operator);
+    return `${fieldLabel} ${c.operator}${noVal ? '' : ` "${valLabel}"`}`;
+  }).filter(Boolean);
+
+  const renderValueInput = (cond: CondRow, i: number) => {
+    const hideValue = ['is empty', 'is not empty'].includes(cond.operator);
+    if (hideValue || !cond.operator) return null;
+    const ft = getFieldType(cond.field);
+
+    if (ft === 'pipeline') return (
+      <select className={selectCls} value={cond.value} onChange={(e) => editCondition(i, 'value', e.target.value)}>
+        <option value="">— Select pipeline —</option>
+        {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>
+    );
+
+    if (ft === 'stage') {
+      const allStages = pipelines.flatMap((p) => p.stages.map((s) => ({ ...s, pipelineName: p.name })));
+      return (
+        <select className={selectCls} value={cond.value} onChange={(e) => editCondition(i, 'value', e.target.value)}>
+          <option value="">— Select stage —</option>
+          {pipelines.map((p) => (
+            <optgroup key={p.id} label={p.name}>
+              {p.stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </optgroup>
+          ))}
+        </select>
+      );
+    }
+
+    if (ft === 'staff') return (
+      <select className={selectCls} value={cond.value} onChange={(e) => editCondition(i, 'value', e.target.value)}>
+        <option value="">— Select staff —</option>
+        {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+      </select>
+    );
+
+    if (ft === 'tag') return (
+      <select className={selectCls} value={cond.value} onChange={(e) => editCondition(i, 'value', e.target.value)}>
+        <option value="">— Select tag —</option>
+        {tags.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
+      </select>
+    );
+
+    if (ft === 'source') return (
+      <select className={selectCls} value={cond.value} onChange={(e) => editCondition(i, 'value', e.target.value)}>
+        <option value="">— Select source —</option>
+        {LEAD_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+      </select>
+    );
+
+    if (ft === 'quality') return (
+      <select className={selectCls} value={cond.value} onChange={(e) => editCondition(i, 'value', e.target.value)}>
+        <option value="">— Select quality —</option>
+        {LEAD_QUALITIES.map((q) => <option key={q} value={q}>{q}</option>)}
+      </select>
+    );
+
+    if (ft === 'custom_dropdown') {
+      const cf = customFields.find((c) => c.slug === cond.field);
+      const opts: string[] = Array.isArray(cf?.options) ? cf!.options as string[] : [];
+      return (
+        <select className={selectCls} value={cond.value} onChange={(e) => editCondition(i, 'value', e.target.value)}>
+          <option value="">— Select option —</option>
+          {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>
+      );
+    }
+
+    if (ft === 'number') return (
+      <input type="number" className={inputCls} placeholder="Enter number..." value={cond.value}
+        onChange={(e) => editCondition(i, 'value', e.target.value)} />
+    );
+
+    return (
+      <input className={inputCls} placeholder="Enter value..." value={cond.value}
+        onChange={(e) => editCondition(i, 'value', e.target.value)} />
+    );
   };
 
   return (
@@ -724,12 +862,12 @@ function ConditionConfigPanel({ node, onUpdate }: { node: WFNode; onUpdate: (upd
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
         <p className="text-xs text-amber-800 flex items-start gap-1.5">
           <GitBranch className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          This step splits the workflow into <strong>YES</strong> and <strong>NO</strong> branches based on the conditions below.
+          Splits the workflow into <strong>YES</strong> and <strong>NO</strong> branches based on the conditions below.
         </p>
       </div>
 
       <FieldRow label="Condition Name">
-        <input className={inputCls} placeholder="e.g. Is the stage Qualified?" value={(cfg.conditionName as string) ?? ''} onChange={sel('conditionName')} />
+        <input className={inputCls} placeholder="e.g. Is the lead from Chennai?" value={(cfg.conditionName as string) ?? ''} onChange={sel('conditionName')} />
       </FieldRow>
 
       <div className="space-y-3">
@@ -746,8 +884,18 @@ function ConditionConfigPanel({ node, onUpdate }: { node: WFNode; onUpdate: (upd
           </div>
         </div>
 
+        {/* Plain-English preview */}
+        {previewParts.length > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+            <p className="text-[11px] text-blue-700 font-medium">
+              IF {previewParts.join(` ${logic} `)}
+            </p>
+          </div>
+        )}
+
         {conditions.map((cond, i) => {
-          const hideValue = ['is empty', 'is not empty'].includes(cond.operator);
+          const fieldType = getFieldType(cond.field);
+          const operators = getOperators(fieldType);
           return (
             <div key={i} className="border border-border rounded-lg p-3 space-y-2 bg-muted/30">
               <div className="flex items-center justify-between">
@@ -759,30 +907,30 @@ function ConditionConfigPanel({ node, onUpdate }: { node: WFNode; onUpdate: (upd
                   </button>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <select className={selectCls} value={cond.field} onChange={(e) => editCondition(i, 'field', e.target.value)}>
-                  <option value="">Select field...</option>
-                  {CONDITION_FIELDS.map((f) => (
-                    <option key={f.value} value={f.value}>{f.label}</option>
-                  ))}
-                  {customFields.length > 0 && (
-                    <>
-                      <option disabled value="">── Custom Fields ──</option>
-                      {customFields.map((cf) => (
-                        <option key={cf.id} value={cf.slug}>{cf.name}</option>
-                      ))}
-                    </>
-                  )}
-                </select>
+
+              {/* Field selector */}
+              <select className={selectCls} value={cond.field} onChange={(e) => editCondition(i, 'field', e.target.value)}>
+                <option value="">— Select field —</option>
+                <optgroup label="Lead Fields">
+                  {CONDITION_FIELDS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                </optgroup>
+                {customFields.length > 0 && (
+                  <optgroup label="Custom Fields">
+                    {customFields.map((cf) => <option key={cf.id} value={cf.slug}>{cf.name}</option>)}
+                  </optgroup>
+                )}
+              </select>
+
+              {/* Operator selector — shown only after field picked */}
+              {cond.field && (
                 <select className={selectCls} value={cond.operator} onChange={(e) => editCondition(i, 'operator', e.target.value)}>
-                  <option value="">Select...</option>
-                  {CONDITION_OPERATORS.map((o) => <option key={o}>{o}</option>)}
+                  <option value="">— Select condition —</option>
+                  {operators.map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
-              </div>
-              {!hideValue && (
-                <input className={inputCls} placeholder="Value to compare..." value={cond.value}
-                  onChange={(e) => editCondition(i, 'value', e.target.value)} />
               )}
+
+              {/* Smart value input */}
+              {cond.field && cond.operator && renderValueInput(cond, i)}
             </div>
           );
         })}
@@ -2321,7 +2469,7 @@ function NodeConfigModal({
               {node.type === 'trigger'
                 ? <TriggerConfigPanel node={node} onUpdate={onUpdate} onChangeTrigger={onChangeTrigger} pipelines={pipelines} staff={staff} forms={forms} metaForms={metaForms} eventTypes={eventTypes} allowReentry={allowReentry} onToggleReentry={onToggleReentry} />
                 : node.type === 'condition'
-                ? <ConditionConfigPanel node={node} onUpdate={onUpdate} />
+                ? <ConditionConfigPanel node={node} onUpdate={onUpdate} pipelines={pipelines} staff={staff} />
                 : <ActionConfigPanel node={node} onUpdate={onUpdate} pipelines={pipelines} staff={staff} templates={templates} workflows={workflows} onRefreshPipelines={onRefreshPipelines} refreshingPipelines={refreshingPipelines} />
               }
             </>
@@ -3370,7 +3518,7 @@ export default function WorkflowEditorPage() {
                     {selectedNode.type === 'trigger'
                       ? <TriggerConfigPanel node={selectedNode} onUpdate={(u) => updateNode(selectedNode.id, u)} onChangeTrigger={() => setShowTriggerPicker(true)} pipelines={editorPipelines} staff={editorStaff} forms={editorForms} metaForms={editorMetaForms} eventTypes={editorEventTypes} allowReentry={workflow.allowReentry} onToggleReentry={(val) => setWorkflow((w) => ({ ...w, allowReentry: val }))} />
                       : selectedNodeIsCondition
-                      ? <ConditionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedNode.id, u) : updateNode(selectedNode.id, u)} />
+                      ? <ConditionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedNode.id, u) : updateNode(selectedNode.id, u)} pipelines={editorPipelines} staff={editorStaff} />
                       : <ActionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedNode.id, u) : updateNode(selectedNode.id, u)} pipelines={editorPipelines} staff={editorStaff} templates={editorTemplates} workflows={editorWorkflows} onRefreshPipelines={refreshPipelines} refreshingPipelines={refreshingPipelines} />
                     }
                   </>

@@ -1027,10 +1027,12 @@ export async function executeNodes(
           interface Condition { field: string; operator: string; value: string }
 
           const evalOne = (cond: Condition): boolean => {
-            // Map frontend CONDITION_FIELDS names → actual lead object keys
+            // Map frontend field names → actual lead object keys
+            // pipeline/stage/staff dropdowns now store IDs, so compare against ID columns
             const fieldMap: Record<string, string> = {
-              pipeline_stage: 'stage_name',
-              assigned_staff: 'assigned_staff_name',
+              pipeline:       'pipeline_id',
+              pipeline_stage: 'stage_id',
+              assigned_staff: 'assigned_to',
             };
             const resolvedField = fieldMap[cond.field] ?? cond.field;
 
