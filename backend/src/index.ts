@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { pool } from './db';
 import { runMigrations } from './db/migrate';
+import { validateSchema } from './db/schema-validator';
 import { config } from './config';
 import { initSocket } from './socket';
 
@@ -147,6 +148,7 @@ runMigrations()
   .catch((err) => {
     console.error('Startup migration failed — continuing anyway:', err.message);
   })
+  .then(() => validateSchema())
   .finally(() => {
     // ── Delay queue worker: runs every 30 seconds ─────────────────────────────
     setInterval(() => processDelayedSteps().catch(() => null), 30_000);
