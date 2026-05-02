@@ -1474,6 +1474,7 @@ export interface TriggerContext {
   channel?:      string;   // for inbox_message trigger (e.g. 'whatsapp')
   messageBody?:  string;   // for inbox_message keyword matching
   apptType?:     string;   // for appointment_* triggers (event type name)
+  calendarId?:   string;   // for calendar_form_submitted (booking_link.id)
 }
 
 export async function triggerWorkflows(
@@ -1571,10 +1572,11 @@ export async function triggerWorkflows(
         if (cfgKeyword && !(ctx.messageBody ?? '').toLowerCase().includes(cfgKeyword.toLowerCase())) continue;
       }
 
-      // Calendar form submitted — must select at least one calendar; blank = don't fire
+      // Calendar form submitted — must select at least one booking link; blank = don't fire
       if (triggerType === 'calendar_form_submitted') {
         const cfgCalendars = (triggerNode.config?.calendars as string[]) ?? [];
-        if (cfgCalendars.length === 0 || !cfgCalendars.includes(enrichedLead.event_type_id ?? '')) continue;
+        if (cfgCalendars.length === 0) continue;
+        if (!cfgCalendars.includes(ctx.calendarId ?? '')) continue;
       }
 
       // ── Re-entry handling ─────────────────────────────────────────────────
@@ -1736,7 +1738,17 @@ export async function processScheduledTriggers(): Promise<void> {
 
       console.log(`[Scheduler] "${wf.name}" firing for ${leadsRes.rows.length} leads`);
       for (const lead of leadsRes.rows) {
-        await triggerWorkflows(wf.trigger_key, lead, wf.tenant_id, 'scheduler').catch(() => null);
+        // forceReEntry=true: scheduled workflows fire every cycle, superseding prior runs
+        await triggerWorkflows(wf.trigger_key, lead, wf.tenant_id, 'scheduler', { forceReEntry: true }).catch(() => null);
+      }
+
+      // Auto-deactivate one-shot date workflows after they fire
+      if (wf.trigger_key === 'specific_date') {
+        await query(
+          `UPDATE workflows SET status='inactive', updated_at=NOW() WHERE id=$1`,
+          [wf.id]
+        ).catch(() => null);
+        console.log(`[Scheduler] "${wf.name}" (specific_date) deactivated after firing`);
       }
     }
   } catch (err) {

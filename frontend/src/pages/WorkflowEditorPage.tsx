@@ -288,7 +288,7 @@ type StaffOpt = { id: string; name: string };
 type FormOpt = { id: string; name: string };
 type TemplateOpt = { id: string; name: string; body?: string };
 
-function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff, forms, metaForms, eventTypes, allowReentry, onToggleReentry }: {
+function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff, forms, metaForms, eventTypes, bookingLinks, metaPages, webhookUrls, allowReentry, onToggleReentry }: {
   node: WFNode;
   onUpdate: (updates: Partial<WFNode>) => void;
   onChangeTrigger: () => void;
@@ -297,6 +297,9 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
   forms: FormOpt[];
   metaForms: FormOpt[];
   eventTypes: FormOpt[];
+  bookingLinks: FormOpt[];
+  metaPages: FormOpt[];
+  webhookUrls: { webhookInbound: string; paymentReceived: string; courseEnrolled: string };
   allowReentry: boolean;
   onToggleReentry: (val: boolean) => void;
 }) {
@@ -364,14 +367,14 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
         </>);
       })()}
 
-      {/* Calendar form submitted — pick which event type(s) */}
+      {/* Calendar form submitted — pick which booking link(s) */}
       {node.actionType === 'calendar_form_submitted' && (
-        <FieldRow label="Calendar" hint="Select at least one calendar — no selection means this trigger is inactive.">
+        <FieldRow label="Booking Calendar" hint="Select at least one calendar — no selection means this trigger is inactive.">
           <div className="w-full border border-border rounded-lg px-3 py-2 min-h-10 flex flex-wrap gap-1.5 items-center cursor-text bg-card">
-            {((cfg.calendars as string[]) ?? []).map((etId) => (
-              <span key={etId} className="flex items-center gap-1 bg-muted text-foreground text-xs px-2 py-1 rounded-full">
-                {eventTypes.find((et) => et.id === etId)?.name ?? etId}
-                <button onClick={() => onUpdate({ config: { ...cfg, calendars: ((cfg.calendars as string[]) ?? []).filter((x) => x !== etId) } })}>
+            {((cfg.calendars as string[]) ?? []).map((blId) => (
+              <span key={blId} className="flex items-center gap-1 bg-muted text-foreground text-xs px-2 py-1 rounded-full">
+                {bookingLinks.find((bl) => bl.id === blId)?.name ?? blId}
+                <button onClick={() => onUpdate({ config: { ...cfg, calendars: ((cfg.calendars as string[]) ?? []).filter((x) => x !== blId) } })}>
                   <X className="w-3 h-3" />
                 </button>
               </span>
@@ -385,7 +388,7 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
               }}
             >
               <option value="">+ Add calendar...</option>
-              {eventTypes.map((et) => <option key={et.id} value={et.id}>{et.name}</option>)}
+              {bookingLinks.map((bl) => <option key={bl.id} value={bl.id}>{bl.name}</option>)}
             </select>
           </div>
         </FieldRow>
@@ -498,12 +501,15 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
       {node.actionType === 'webhook_inbound' && (<>
         <div className="bg-muted/40 rounded-xl p-4 space-y-2">
           <p className="text-sm font-semibold text-foreground flex items-center gap-2"><Code2 className="w-4 h-4" /> Inbound Webhook URL</p>
+          <p className="text-xs text-muted-foreground">POST to this URL from any external system. Include <code className="bg-muted px-1 rounded">email</code> or <code className="bg-muted px-1 rounded">phone</code> in the JSON body to match a lead.</p>
           <code className="text-xs text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg block break-all">
-            https://api.digygo.com/webhooks/inbound/org_abc123
+            {webhookUrls.webhookInbound || 'Loading...'}
           </code>
-          <button className="text-xs text-primary font-medium flex items-center gap-1 hover:underline" onClick={() => { copyToClipboard('https://api.digygo.com/webhooks/inbound/org_abc123'); toast.success('Copied!'); }}>
-            <Copy className="w-3 h-3" /> Copy URL
-          </button>
+          {webhookUrls.webhookInbound && (
+            <button className="text-xs text-primary font-medium flex items-center gap-1 hover:underline" onClick={() => { copyToClipboard(webhookUrls.webhookInbound); toast.success('Copied!'); }}>
+              <Copy className="w-3 h-3" /> Copy URL
+            </button>
+          )}
         </div>
         <FieldRow label="Filter by Event Type (optional)">
           <input className={inputCls} placeholder="e.g. form_submit, payment_done" value={(cfg.eventType as string) ?? ''} onChange={sel('eventType')} />
@@ -608,18 +614,13 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
       {(node.actionType === 'comment_received' || node.actionType === 'dm_received') && (<>
         <FieldRow label="Facebook Page">
           <select className={selectCls} value={(cfg.page as string) ?? ''} onChange={sel('page')}>
-            <option value="">Select page...</option>
-            {/* Facebook pages loaded via Meta integration */}
+            <option value="">Any connected page</option>
+            {metaPages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </FieldRow>
         {node.actionType === 'comment_received' && (
-          <FieldRow label="Post Filter (optional)">
-            <select className={selectCls} value={(cfg.post as string) ?? ''} onChange={sel('post')}>
-              <option value="">Any post</option>
-              <option>April Campaign Post</option>
-              <option>Product Launch Post</option>
-              <option>Giveaway Post</option>
-            </select>
+          <FieldRow label="Post ID Filter (optional)">
+            <input className={inputCls} placeholder="Leave blank to match any post" value={(cfg.post as string) ?? ''} onChange={sel('post')} />
           </FieldRow>
         )}
         <FieldRow label="Keyword Filter (optional)">
@@ -629,14 +630,18 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
 
       {/* Finance trigger */}
       {node.actionType === 'payment_received' && (<>
-        <FieldRow label="Payment Plan (optional)">
-          <select className={selectCls} value={(cfg.plan as string) ?? ''} onChange={sel('plan')}>
-            <option value="">Any plan</option>
-            <option>Monthly ₹999</option>
-            <option>Quarterly ₹2499</option>
-            <option>Annual ₹7999</option>
-          </select>
-        </FieldRow>
+        <div className="bg-muted/40 rounded-xl p-4 space-y-2">
+          <p className="text-sm font-semibold text-foreground flex items-center gap-2"><Code2 className="w-4 h-4" /> Payment Webhook URL</p>
+          <p className="text-xs text-muted-foreground">POST from Razorpay / Stripe with <code className="bg-muted px-1 rounded">email</code> or <code className="bg-muted px-1 rounded">phone</code> to trigger this workflow.</p>
+          <code className="text-xs text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg block break-all">
+            {webhookUrls.paymentReceived || 'Loading...'}
+          </code>
+          {webhookUrls.paymentReceived && (
+            <button className="text-xs text-primary font-medium flex items-center gap-1 hover:underline" onClick={() => { copyToClipboard(webhookUrls.paymentReceived); toast.success('Copied!'); }}>
+              <Copy className="w-3 h-3" /> Copy URL
+            </button>
+          )}
+        </div>
         <FieldRow label="Minimum Amount (optional)">
           <input type="number" className={inputCls} placeholder="e.g. 500" value={(cfg.minAmount as string) ?? ''} onChange={sel('minAmount')} min="0" />
         </FieldRow>
@@ -644,11 +649,20 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
 
       {/* LMS trigger */}
       {node.actionType === 'course_enrolled' && (<>
-        <FieldRow label="Course">
-          <select className={selectCls} value={(cfg.course as string) ?? ''} onChange={sel('course')}>
-            <option value="">Any course</option>
-            {COURSES.map((c) => <option key={c}>{c}</option>)}
-          </select>
+        <div className="bg-muted/40 rounded-xl p-4 space-y-2">
+          <p className="text-sm font-semibold text-foreground flex items-center gap-2"><Code2 className="w-4 h-4" /> Course Enrolment Webhook URL</p>
+          <p className="text-xs text-muted-foreground">POST from your LMS with <code className="bg-muted px-1 rounded">email</code> or <code className="bg-muted px-1 rounded">phone</code> to trigger this workflow.</p>
+          <code className="text-xs text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg block break-all">
+            {webhookUrls.courseEnrolled || 'Loading...'}
+          </code>
+          {webhookUrls.courseEnrolled && (
+            <button className="text-xs text-primary font-medium flex items-center gap-1 hover:underline" onClick={() => { copyToClipboard(webhookUrls.courseEnrolled); toast.success('Copied!'); }}>
+              <Copy className="w-3 h-3" /> Copy URL
+            </button>
+          )}
+        </div>
+        <FieldRow label="Course Name Filter (optional)">
+          <input className={inputCls} placeholder="Leave blank to match any course" value={(cfg.course as string) ?? ''} onChange={sel('course')} />
         </FieldRow>
       </>)}
 
@@ -2316,7 +2330,7 @@ interface BranchNodeContext {
 // ── Node Config Modal ──────────────────────────────────────────────────────────
 function NodeConfigModal({
   node, branchCtx, onClose, onUpdate, onDelete, onChangeTrigger, onChangeAction,
-  pipelines, staff, forms, metaForms, eventTypes, templates, workflows,
+  pipelines, staff, forms, metaForms, eventTypes, bookingLinks, metaPages, webhookUrls, templates, workflows,
   showAIPanel, setShowAIPanel,
   aiPrompt, setAIPrompt, aiTone, setAITone, aiFormat, setAIFormat, aiLength, setAILength,
   onAIGenerate, allowReentry, onToggleReentry, onRefreshPipelines, refreshingPipelines,
@@ -2333,6 +2347,9 @@ function NodeConfigModal({
   forms: FormOpt[];
   metaForms: FormOpt[];
   eventTypes: FormOpt[];
+  bookingLinks: FormOpt[];
+  metaPages: FormOpt[];
+  webhookUrls: { webhookInbound: string; paymentReceived: string; courseEnrolled: string };
   templates: TemplateOpt[];
   workflows: { id: string; name: string }[];
   showAIPanel: boolean;
@@ -2463,7 +2480,7 @@ function NodeConfigModal({
             /* Settings tab */
             <>
               {node.type === 'trigger'
-                ? <TriggerConfigPanel node={node} onUpdate={onUpdate} onChangeTrigger={onChangeTrigger} pipelines={pipelines} staff={staff} forms={forms} metaForms={metaForms} eventTypes={eventTypes} allowReentry={allowReentry} onToggleReentry={onToggleReentry} />
+                ? <TriggerConfigPanel node={node} onUpdate={onUpdate} onChangeTrigger={onChangeTrigger} pipelines={pipelines} staff={staff} forms={forms} metaForms={metaForms} eventTypes={eventTypes} bookingLinks={bookingLinks} metaPages={metaPages} webhookUrls={webhookUrls} allowReentry={allowReentry} onToggleReentry={onToggleReentry} />
                 : node.type === 'condition'
                 ? <ConditionConfigPanel node={node} onUpdate={onUpdate} pipelines={pipelines} staff={staff} />
                 : <ActionConfigPanel node={node} onUpdate={onUpdate} pipelines={pipelines} staff={staff} templates={templates} workflows={workflows} onRefreshPipelines={onRefreshPipelines} refreshingPipelines={refreshingPipelines} />
@@ -2762,6 +2779,9 @@ export default function WorkflowEditorPage() {
   const [editorTemplates, setEditorTemplates] = useState<TemplateOpt[]>([]);
   const [editorWorkflows, setEditorWorkflows] = useState<{ id: string; name: string }[]>([]);
   const [editorEventTypes, setEditorEventTypes] = useState<FormOpt[]>([]);
+  const [editorBookingLinks, setEditorBookingLinks] = useState<FormOpt[]>([]);
+  const [editorMetaPages, setEditorMetaPages] = useState<FormOpt[]>([]);
+  const [editorWebhookUrls, setEditorWebhookUrls] = useState({ webhookInbound: '', paymentReceived: '', courseEnrolled: '' });
   const [refreshingPipelines, setRefreshingPipelines] = useState(false);
 
   const refreshPipelines = () => {
@@ -2794,6 +2814,15 @@ export default function WorkflowEditorPage() {
     }).catch(() => {});
     api.get<any[]>('/api/workflows').then((rows) => {
       setEditorWorkflows((rows ?? []).filter((w) => w.id !== workflow.id).map((w) => ({ id: w.id, name: w.name })));
+    }).catch(() => {});
+    api.get<any[]>('/api/calendar/booking-links').then((rows) => {
+      setEditorBookingLinks((rows ?? []).map((bl) => ({ id: bl.id, name: bl.name })));
+    }).catch(() => {});
+    api.get<any>('/api/integrations/meta/status').then((data) => {
+      setEditorMetaPages((data?.connectedPages ?? []).map((p: any) => ({ id: p.id, name: p.name })));
+    }).catch(() => {});
+    api.get<any>('/api/settings/webhook-url').then((data) => {
+      if (data) setEditorWebhookUrls({ webhookInbound: data.webhookInbound ?? '', paymentReceived: data.paymentReceived ?? '', courseEnrolled: data.courseEnrolled ?? '' });
     }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -3512,7 +3541,7 @@ export default function WorkflowEditorPage() {
 
                     {/* Main config */}
                     {selectedNode.type === 'trigger'
-                      ? <TriggerConfigPanel node={selectedNode} onUpdate={(u) => updateNode(selectedNode.id, u)} onChangeTrigger={() => setShowTriggerPicker(true)} pipelines={editorPipelines} staff={editorStaff} forms={editorForms} metaForms={editorMetaForms} eventTypes={editorEventTypes} allowReentry={workflow.allowReentry} onToggleReentry={(val) => setWorkflow((w) => ({ ...w, allowReentry: val }))} />
+                      ? <TriggerConfigPanel node={selectedNode} onUpdate={(u) => updateNode(selectedNode.id, u)} onChangeTrigger={() => setShowTriggerPicker(true)} pipelines={editorPipelines} staff={editorStaff} forms={editorForms} metaForms={editorMetaForms} eventTypes={editorEventTypes} bookingLinks={editorBookingLinks} metaPages={editorMetaPages} webhookUrls={editorWebhookUrls} allowReentry={workflow.allowReentry} onToggleReentry={(val) => setWorkflow((w) => ({ ...w, allowReentry: val }))} />
                       : selectedNodeIsCondition
                       ? <ConditionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedNode.id, u) : updateNode(selectedNode.id, u)} pipelines={editorPipelines} staff={editorStaff} />
                       : <ActionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedNode.id, u) : updateNode(selectedNode.id, u)} pipelines={editorPipelines} staff={editorStaff} templates={editorTemplates} workflows={editorWorkflows} onRefreshPipelines={refreshPipelines} refreshingPipelines={refreshingPipelines} />
@@ -3559,6 +3588,9 @@ export default function WorkflowEditorPage() {
           forms={editorForms}
           metaForms={editorMetaForms}
           eventTypes={editorEventTypes}
+          bookingLinks={editorBookingLinks}
+          metaPages={editorMetaPages}
+          webhookUrls={editorWebhookUrls}
           templates={editorTemplates}
           workflows={editorWorkflows}
           showAIPanel={showAIPanel}

@@ -488,4 +488,15 @@ router.put('/notifications', async (req: AuthRequest, res: Response) => {
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 
+// GET /api/settings/webhook-url — returns the tenant's inbound webhook URL for external integrations
+router.get('/webhook-url', async (req: AuthRequest, res: Response) => {
+  const tenantId = req.user!.tenantId;
+  const base = (process.env.WEBHOOK_BASE_URL ?? '').replace(/\/$/, '');
+  res.json({
+    webhookInbound:  `${base}/api/public/webhook-inbound/${tenantId}`,
+    paymentReceived: `${base}/api/public/trigger/payment/${tenantId}`,
+    courseEnrolled:  `${base}/api/public/trigger/course/${tenantId}`,
+  });
+});
+
 export default router;

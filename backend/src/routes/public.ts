@@ -142,7 +142,7 @@ router.post('/forms/:slug/submit', async (req: Request, res: Response) => {
         const { isNew } = await upsertContact(form.tenant_id, lead.name, lead.email, lead.phone, lead.id).catch(() => ({ isNew: false }));
         triggerWorkflows('opt_in_form', leadWithForm, form.tenant_id, 'system').catch((e) => console.error('[trigger opt_in_form new]', e));
         triggerWorkflows('lead_created', leadWithForm, form.tenant_id, 'system').catch((e) => console.error('[trigger lead_created form new]', e));
-        if (isNew) triggerWorkflows('contact_created', leadWithForm, form.tenant_id, 'system').catch(() => null);
+        if (isNew) triggerWorkflows('contact_created', leadWithForm, form.tenant_id, 'system', { triggerContext: { source: 'Custom Form' } }).catch(() => null);
       });
     }
 
@@ -450,7 +450,10 @@ router.post('/book/:slug', bookingLimiter, async (req: Request, res: Response) =
           if (newLead) {
             triggerWorkflows('lead_created', { id: capturedLeadId, name: capturedName }, tenantId, 'system').catch(() => null);
           }
-          triggerWorkflows('appointment_booked', { id: capturedLeadId, name: capturedName }, tenantId, 'system').catch(() => null);
+          triggerWorkflows('calendar_form_submitted', { id: capturedLeadId, name: capturedName }, tenantId, 'system',
+            { triggerContext: { calendarId: link.id, apptType: link.title ?? 'Booking' } }).catch(() => null);
+          triggerWorkflows('appointment_booked', { id: capturedLeadId, name: capturedName }, tenantId, 'system',
+            { triggerContext: { apptType: link.title ?? 'Booking' } }).catch(() => null);
         } catch {}
       });
     }
@@ -462,6 +465,132 @@ router.post('/book/:slug', bookingLimiter, async (req: Request, res: Response) =
     res.status(500).json({ error: 'Server error' });
   } finally {
     client.release();
+  }
+});
+
+// ── External trigger endpoints ─────────────────────────────────────────────────
+// These endpoints are called by external systems (payment gateways, LMS, custom integrations)
+// to trigger CRM workflows for matched leads.
+
+// POST /api/public/webhook-inbound/:tenantId
+// Universal inbound webhook — finds or creates a lead and fires webhook_inbound workflows
+router.post('/webhook-inbound/:tenantId', bookingLimiter, async (req: Request, res: Response) => {
+  try {
+    const tenantRes = await query('SELECT id FROM tenants WHERE id=$1::uuid LIMIT 1', [req.params.tenantId]);
+    if (!tenantRes.rows[0]) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const body = req.body ?? {};
+    const email = typeof body.email === 'string' ? body.email.toLowerCase().trim() : '';
+    const phone = typeof body.phone === 'string' ? body.phone.trim() : '';
+    const name  = typeof body.name  === 'string' ? body.name.trim()  : 'Webhook Lead';
+
+    res.json({ received: true });
+
+    if (!email && !phone) return;
+
+    const tenantId = req.params.tenantId;
+    setImmediate(async () => {
+      try {
+        let leadId: string;
+        let leadName: string = name;
+
+        const existing = await query(
+          `SELECT id, name FROM leads WHERE tenant_id=$1::uuid AND is_deleted=FALSE
+           AND (($2::text<>'' AND LOWER(email)=$2) OR ($3::text<>'' AND phone=$3)) LIMIT 1`,
+          [tenantId, email, phone]
+        );
+        if (existing.rows[0]) {
+          leadId = existing.rows[0].id;
+          leadName = existing.rows[0].name;
+        } else {
+          const ins = await query(
+            `INSERT INTO leads (tenant_id, name, email, phone, source) VALUES ($1::uuid,$2,$3,$4,'Webhook') RETURNING *`,
+            [tenantId, name, email || null, phone || null]
+          );
+          leadId = ins.rows[0].id;
+          leadName = ins.rows[0].name;
+          emitToTenant(tenantId, 'lead:created', ins.rows[0]);
+          sendNewLeadNotification(tenantId, ins.rows[0], null).catch(() => null);
+        }
+
+        await triggerWorkflows('webhook_inbound', { id: leadId, name: leadName }, tenantId, 'webhook').catch(() => null);
+      } catch (err) {
+        console.error('[webhook_inbound async]', err);
+      }
+    });
+  } catch (err) {
+    console.error('[webhook_inbound]', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/public/trigger/payment/:tenantId
+// Called by payment gateways (Razorpay, Stripe, etc.) to fire payment_received workflows
+router.post('/trigger/payment/:tenantId', bookingLimiter, async (req: Request, res: Response) => {
+  try {
+    const tenantRes = await query('SELECT id FROM tenants WHERE id=$1::uuid LIMIT 1', [req.params.tenantId]);
+    if (!tenantRes.rows[0]) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const body = req.body ?? {};
+    const email = typeof body.email === 'string' ? body.email.toLowerCase().trim() : '';
+    const phone = typeof body.phone === 'string' ? body.phone.trim() : '';
+
+    res.json({ received: true });
+
+    if (!email && !phone) return;
+
+    const tenantId = req.params.tenantId;
+    setImmediate(async () => {
+      try {
+        const existing = await query(
+          `SELECT id, name FROM leads WHERE tenant_id=$1::uuid AND is_deleted=FALSE
+           AND (($2::text<>'' AND LOWER(email)=$2) OR ($3::text<>'' AND phone=$3)) LIMIT 1`,
+          [tenantId, email, phone]
+        );
+        if (!existing.rows[0]) return;
+        await triggerWorkflows('payment_received', existing.rows[0], tenantId, 'webhook').catch(() => null);
+      } catch (err) {
+        console.error('[payment_received async]', err);
+      }
+    });
+  } catch (err) {
+    console.error('[payment_received endpoint]', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/public/trigger/course/:tenantId
+// Called by LMS systems to fire course_enrolled workflows
+router.post('/trigger/course/:tenantId', bookingLimiter, async (req: Request, res: Response) => {
+  try {
+    const tenantRes = await query('SELECT id FROM tenants WHERE id=$1::uuid LIMIT 1', [req.params.tenantId]);
+    if (!tenantRes.rows[0]) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const body = req.body ?? {};
+    const email = typeof body.email === 'string' ? body.email.toLowerCase().trim() : '';
+    const phone = typeof body.phone === 'string' ? body.phone.trim() : '';
+
+    res.json({ received: true });
+
+    if (!email && !phone) return;
+
+    const tenantId = req.params.tenantId;
+    setImmediate(async () => {
+      try {
+        const existing = await query(
+          `SELECT id, name FROM leads WHERE tenant_id=$1::uuid AND is_deleted=FALSE
+           AND (($2::text<>'' AND LOWER(email)=$2) OR ($3::text<>'' AND phone=$3)) LIMIT 1`,
+          [tenantId, email, phone]
+        );
+        if (!existing.rows[0]) return;
+        await triggerWorkflows('course_enrolled', existing.rows[0], tenantId, 'webhook').catch(() => null);
+      } catch (err) {
+        console.error('[course_enrolled async]', err);
+      }
+    });
+  } catch (err) {
+    console.error('[course_enrolled endpoint]', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
