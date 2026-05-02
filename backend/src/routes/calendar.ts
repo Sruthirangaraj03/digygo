@@ -891,7 +891,7 @@ router.delete('/event-types/:id', checkPermission('calendar:manage'), async (req
 router.get('/booking-links', async (req: AuthRequest, res: Response) => {
   try {
     const result = await query(
-      `SELECT id, name, slug FROM booking_links WHERE tenant_id=$1 AND is_active=TRUE ORDER BY created_at ASC`,
+      `SELECT id, name, slug FROM event_types WHERE tenant_id=$1 AND is_active=TRUE AND is_deleted=FALSE ORDER BY sort_order ASC, created_at ASC`,
       [req.user!.tenantId]
     );
     res.json(result.rows);
