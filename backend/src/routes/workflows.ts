@@ -471,15 +471,58 @@ export async function executeNodes(
               const existing = await query('SELECT assigned_to FROM leads WHERE id=$1', [lead.id]);
               if (existing.rows[0]?.assigned_to) { status = 'skipped'; message = 'assign_staff: lead already assigned'; break; }
             }
-            // Round-robin: pick based on lead id hash for determinism
-            const idx = staffIds.length === 1 ? 0 : Math.abs(lead.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % staffIds.length;
-            const staffId = staffIds[idx];
+            let staffId: string;
+
+            if (staffIds.length === 1) {
+              staffId = staffIds[0];
+            } else {
+              const splitMode = (node.config.split_traffic as string) ?? 'evenly';
+
+              if (splitMode === 'weighted') {
+                // Weighted random — pick based on configured percentages
+                const weights = (node.config.staff_weights as Record<string, number>) ?? {};
+                const totalWeight = staffIds.reduce((s, id) => s + (weights[id] ?? 1), 0);
+                let rand = Math.random() * totalWeight;
+                staffId = staffIds[staffIds.length - 1]; // fallback
+                for (const id of staffIds) {
+                  rand -= (weights[id] ?? 1);
+                  if (rand <= 0) { staffId = id; break; }
+                }
+              } else {
+                // Evenly — true round-robin via per-workflow per-node DB counters
+                const nodeId = node.id ?? 'default';
+                const counters = await query(
+                  `SELECT staff_id, count FROM workflow_staff_counters
+                   WHERE workflow_id=$1 AND node_id=$2`,
+                  [workflowId, nodeId]
+                ).catch(() => ({ rows: [] as any[] }));
+
+                // Build count map — staff not yet in table default to 0
+                const countMap: Record<string, number> = {};
+                for (const id of staffIds) countMap[id] = 0;
+                for (const row of counters.rows) {
+                  if (countMap[row.staff_id] !== undefined) countMap[row.staff_id] = Number(row.count);
+                }
+
+                // Pick staff with lowest assignment count; ties broken by array order
+                staffId = staffIds.reduce((best, id) => countMap[id] < countMap[best] ? id : best, staffIds[0]);
+              }
+
+              // Increment counter for the chosen staff member (tracks distribution)
+              await query(
+                `INSERT INTO workflow_staff_counters (workflow_id, node_id, staff_id, count)
+                 VALUES ($1,$2,$3,1)
+                 ON CONFLICT (workflow_id, node_id, staff_id)
+                 DO UPDATE SET count = workflow_staff_counters.count + 1`,
+                [workflowId, node.id ?? 'default', staffId]
+              ).catch(() => null);
+            }
+
             await query(
               `UPDATE leads SET assigned_to=$1, updated_at=NOW() WHERE id=$2 AND tenant_id=$3`,
               [staffId, lead.id, tenantId]
             );
             const ur = await query('SELECT name FROM users WHERE id=$1', [staffId]);
-            // Verify assignment actually took effect
             const vStaff = await query('SELECT assigned_to FROM leads WHERE id=$1 AND tenant_id=$2', [lead.id, tenantId]);
             if (vStaff.rows[0]?.assigned_to !== staffId) {
               status = 'failed'; message = `assign_staff: lead was not assigned to ${ur.rows[0]?.name ?? staffId}`;

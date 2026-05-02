@@ -1031,6 +1031,8 @@ function AssignStaffPanel({ cfg, staff, onUpdate }: {
   const selectedStaff = selectedIds.map((id) => staff.find((s) => s.id === id)).filter(Boolean) as StaffOpt[];
   const unselected = staff.filter((s) => !selectedIds.includes(s.id));
   const isMulti = selectedIds.length >= 2;
+  const splitMode = (cfg.split_traffic as string) ?? 'evenly';
+  const weights = (cfg.staff_weights as Record<string, number>) ?? {};
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -1041,13 +1043,44 @@ function AssignStaffPanel({ cfg, staff, onUpdate }: {
   }, []);
 
   const addStaff = (id: string) => {
-    onUpdate({ config: { ...cfg, staff_ids: [...selectedIds, id] } });
-    // keep dropdown open so user can add more
+    const newIds = [...selectedIds, id];
+    // When adding staff to weighted mode, distribute weights evenly across all
+    const newWeights: Record<string, number> = {};
+    if (splitMode === 'weighted') {
+      const each = Math.floor(100 / newIds.length);
+      newIds.forEach((sid, i) => { newWeights[sid] = i === newIds.length - 1 ? 100 - each * (newIds.length - 1) : each; });
+    }
+    onUpdate({ config: { ...cfg, staff_ids: newIds, ...(splitMode === 'weighted' ? { staff_weights: newWeights } : {}) } });
   };
 
   const removeStaff = (id: string) => {
-    onUpdate({ config: { ...cfg, staff_ids: selectedIds.filter((x) => x !== id) } });
+    const newIds = selectedIds.filter((x) => x !== id);
+    const newWeights: Record<string, number> = { ...weights };
+    delete newWeights[id];
+    // Re-normalize weights after removal
+    if (splitMode === 'weighted' && newIds.length > 0) {
+      const each = Math.floor(100 / newIds.length);
+      newIds.forEach((sid, i) => { newWeights[sid] = i === newIds.length - 1 ? 100 - each * (newIds.length - 1) : each; });
+    }
+    onUpdate({ config: { ...cfg, staff_ids: newIds, staff_weights: newWeights } });
   };
+
+  const setWeight = (id: string, val: number) => {
+    onUpdate({ config: { ...cfg, staff_weights: { ...weights, [id]: val } } });
+  };
+
+  const handleSplitModeChange = (mode: string) => {
+    // When switching to weighted, initialize equal percentages
+    const newWeights: Record<string, number> = {};
+    if (mode === 'weighted' && selectedIds.length > 0) {
+      const each = Math.floor(100 / selectedIds.length);
+      selectedIds.forEach((id, i) => { newWeights[id] = i === selectedIds.length - 1 ? 100 - each * (selectedIds.length - 1) : each; });
+    }
+    onUpdate({ config: { ...cfg, split_traffic: mode, staff_weights: newWeights } });
+  };
+
+  const totalWeight = selectedIds.reduce((sum, id) => sum + (weights[id] ?? 0), 0);
+  const weightValid = totalWeight === 100;
 
   return (
     <div className="space-y-4">
@@ -1105,8 +1138,8 @@ function AssignStaffPanel({ cfg, staff, onUpdate }: {
           <label className="block text-[13px] font-semibold text-[#1c1410] mb-1.5">Split Traffic</label>
           <select
             className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-[13px] bg-white outline-none focus:border-primary"
-            value={(cfg.split_traffic as string) ?? 'evenly'}
-            onChange={(e) => onUpdate({ config: { ...cfg, split_traffic: e.target.value } })}
+            value={splitMode}
+            onChange={(e) => handleSplitModeChange(e.target.value)}
           >
             <option value="evenly">Evenly</option>
             <option value="weighted">Weighted</option>
@@ -1114,9 +1147,47 @@ function AssignStaffPanel({ cfg, staff, onUpdate }: {
         </div>
       )}
 
-      {/* Traffic weightage heading — only when 2+ staff */}
+      {/* Traffic distribution — only when 2+ staff */}
       {isMulti && (
-        <p className="text-[14px] font-bold text-[#1c1410]">Traffic weightage</p>
+        <div className="space-y-2">
+          <p className="text-[13px] font-semibold text-[#1c1410]">
+            Traffic Weightage
+            {splitMode === 'evenly' && <span className="ml-2 text-[11px] font-normal text-muted-foreground">(round-robin — each staff gets equal turns)</span>}
+          </p>
+
+          {selectedStaff.map((s) => {
+            const evenPct = Math.round(100 / selectedIds.length);
+            return (
+              <div key={s.id} className="flex items-center gap-3">
+                <span className="flex-1 text-[13px] text-[#1c1410] truncate">{s.name}</span>
+                {splitMode === 'weighted' ? (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <input
+                      type="number"
+                      min={1}
+                      max={99}
+                      className="w-16 border border-gray-300 rounded-lg px-2 py-1.5 text-[13px] text-center bg-white outline-none focus:border-primary"
+                      value={weights[s.id] ?? evenPct}
+                      onChange={(e) => setWeight(s.id, Math.max(1, Math.min(99, parseInt(e.target.value) || 0)))}
+                    />
+                    <span className="text-[13px] text-muted-foreground">%</span>
+                  </div>
+                ) : (
+                  <span className="text-[13px] font-semibold text-primary shrink-0">{evenPct}%</span>
+                )}
+              </div>
+            );
+          })}
+
+          {splitMode === 'weighted' && !weightValid && (
+            <p className="text-[11px] text-red-500 font-medium">
+              Total = {totalWeight}% — must equal 100%
+            </p>
+          )}
+          {splitMode === 'weighted' && weightValid && (
+            <p className="text-[11px] text-green-600 font-medium">✓ Weights sum to 100%</p>
+          )}
+        </div>
       )}
 
       {/* Only unassigned toggle */}
