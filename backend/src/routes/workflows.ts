@@ -2386,7 +2386,7 @@ publicWorkflowRouter.post('/:workflowId/execute', async (req: any, res: any) => 
 // ── Regenerate api_token ───────────────────────────────────────────────────────
 // POST /api/workflows/:id/regenerate-token  (authenticated)
 router.post('/:id/regenerate-token', checkPermission('automation:manage'), async (req: any, res: any) => {
-  const { tenantId } = req;
+  const tenantId = req.user!.tenantId;
   const { id } = req.params;
   try {
     const result = await query(
