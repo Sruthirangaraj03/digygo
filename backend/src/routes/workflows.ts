@@ -251,32 +251,57 @@ export interface LeadContext {
   calendar_name?: string;
 }
 
-// Replaces {variable} and {%contact.variable%} placeholders with actual lead values.
-// Both formats are equivalent: {%contact.name%} === {name} === Sruthi (for that contact only).
+// Replaces {%slug%} and {variable} placeholders with actual lead values.
+// Supports all slugs from the Fields page (contact.*, company.*, calendar.*).
 export function interpolate(template: string, lead: LeadContext): string {
   if (!template) return template;
   const nameParts = (lead.name ?? '').trim().split(/\s+/);
+  const cf = (lead.custom_fields ?? {}) as Record<string, string>;
   const vars: Record<string, string> = {
-    first_name:          nameParts[0] ?? '',
-    last_name:           nameParts.length > 1 ? nameParts[nameParts.length - 1] : '',
-    full_name:           lead.name ?? '',
-    name:                lead.name ?? '',
-    email:               lead.email ?? '',
-    phone:               lead.phone ?? '',
-    stage:               lead.stage_name ?? '',
-    pipeline:            lead.pipeline_name ?? '',
-    assigned_staff:      lead.assigned_staff_name ?? '',
-    source:              lead.source ?? '',
-    status:              lead.status ?? '',
-    today:               new Date().toLocaleDateString(),
-    date:                new Date().toLocaleDateString(),
-    time:                new Date().toLocaleTimeString(),
-    ...(lead.custom_fields ?? {}),
+    // short-form aliases (legacy {field} format)
+    first_name:            nameParts[0] ?? '',
+    last_name:             nameParts.length > 1 ? nameParts[nameParts.length - 1] : '',
+    full_name:             lead.name ?? '',
+    name:                  lead.name ?? '',
+    email:                 lead.email ?? '',
+    phone:                 lead.phone ?? '',
+    stage:                 lead.stage_name ?? '',
+    pipeline:              lead.pipeline_name ?? '',
+    assigned_staff:        lead.assigned_staff_name ?? '',
+    source:                lead.source ?? '',
+    status:                lead.status ?? '',
+    today:                 new Date().toLocaleDateString(),
+    date:                  new Date().toLocaleDateString(),
+    time:                  new Date().toLocaleTimeString(),
+    // contact.* slug aliases — matches Fields page exactly
+    contact_source:        lead.source ?? '',
+    assigned_to_staff:     lead.assigned_staff_name ?? '',
+    opportunity_name:      cf.opportunity_name ?? '',
+    lead_value:            cf.lead_value ?? '',
+    opportunity_source:    cf.opportunity_source ?? '',
+    contact_type:          cf.contact_type ?? '',
+    business_name:         cf.business_name ?? '',
+    gst_no:                cf.gst_no ?? '',
+    state:                 cf.state ?? '',
+    street_address:        cf.street_address ?? '',
+    date_of_birth:         cf.date_of_birth ?? '',
+    postal_code:           cf.postal_code ?? '',
+    profile_image:         cf.profile_image ?? '',
+    // calendar.* slug aliases
+    appointment_date:      cf.appointment_date ?? '',
+    appointment_start_time:cf.appointment_start_time ?? '',
+    appointment_end_time:  cf.appointment_end_time ?? '',
+    appointment_timezone:  cf.appointment_timezone ?? '',
+    // spread all custom fields so any user-created field works too
+    ...cf,
   };
-  // Step 1: replace {%contact.field%} format
-  const step1 = template.replace(/\{%contact\.(\w+)%\}/g, (_, key) => vars[key] ?? `{%contact.${key}%}`);
-  // Step 2: replace legacy {field} format
-  return step1.replace(/\{(\w+)\}/g, (_, key) => vars[key] ?? `{${key}}`);
+
+  // Replace {%any.slug%} → extract the part after the dot
+  const step1 = template.replace(/\{%[\w]+\.([\w]+)%\}/g, (_, key) => vars[key] ?? '');
+  // Replace {%slug%} with no dot (e.g. {%first_name%})
+  const step2 = step1.replace(/\{%([\w]+)%\}/g, (_, key) => vars[key] ?? '');
+  // Replace legacy {field} format
+  return step2.replace(/\{([\w]+)\}/g, (_, key) => vars[key] ?? `{${key}}`);
 }
 
 async function logStep(

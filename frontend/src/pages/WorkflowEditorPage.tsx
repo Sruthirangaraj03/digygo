@@ -1814,13 +1814,12 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
       {node.actionType === 'webhook_call' && (() => {
         type KV = { key: string; value: string };
         const DEFAULT_BODY: KV[] = [
-          { key: 'Name',           value: '{full_name}' },
-          { key: 'Email',          value: '{email}' },
-          { key: 'Phone',          value: '{phone}' },
-          { key: 'Stage',          value: '{stage}' },
-          { key: 'Pipeline',       value: '{pipeline}' },
-          { key: 'Assigned Staff', value: '{assigned_staff}' },
-          { key: 'Source',         value: '{source}' },
+          { key: 'First Name',      value: '{%contact.first_name%}' },
+          { key: 'Last Name',       value: '{%contact.last_name%}' },
+          { key: 'Email',           value: '{%contact.email%}' },
+          { key: 'Phone',           value: '{%contact.phone%}' },
+          { key: 'Assigned Staff',  value: '{%contact.assigned_to_staff%}' },
+          { key: 'Source',          value: '{%contact.contact_source%}' },
         ];
         const bodyFields: KV[]   = (cfg.body_fields as KV[] | undefined) ?? DEFAULT_BODY;
         const headerFields: KV[] = (cfg.header_fields as KV[]) ?? [];
@@ -1837,27 +1836,49 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
 
         // Custom Values modal state
         const [cvOpen, setCvOpen] = useState<{ section: 'body'|'header'; idx: number } | null>(null);
-        const [cvTab, setCvTab]   = useState<'standard'|'time'|'custom'>('standard');
+        const [cvTab, setCvTab]   = useState<string>('contact');
 
-        // Tab definitions
-        const cvTabs: { id: 'standard'|'time'|'custom'; label: string; fields: { name: string; variable: string }[] }[] = [
-          { id: 'standard', label: 'Standard', fields: [
-            { name: 'First Name',     variable: '{first_name}' },
-            { name: 'Last Name',      variable: '{last_name}' },
-            { name: 'Full Name',      variable: '{full_name}' },
-            { name: 'Email',          variable: '{email}' },
-            { name: 'Phone',          variable: '{phone}' },
-            { name: 'Stage',          variable: '{stage}' },
-            { name: 'Pipeline',       variable: '{pipeline}' },
-            { name: 'Assigned Staff', variable: '{assigned_staff}' },
-            { name: 'Source',         variable: '{source}' },
+        // Tab definitions — variable format matches the Fields page exactly: {%slug%}
+        const cvTabs: { id: string; label: string; fields: { name: string; variable: string }[] }[] = [
+          { id: 'contact', label: 'Contact', fields: [
+            { name: 'First Name',        variable: '{%contact.first_name%}' },
+            { name: 'Last Name',         variable: '{%contact.last_name%}' },
+            { name: 'Email',             variable: '{%contact.email%}' },
+            { name: 'Phone',             variable: '{%contact.phone%}' },
+            { name: 'Contact Source',    variable: '{%contact.contact_source%}' },
+            { name: 'Opportunity Name',  variable: '{%contact.opportunity_name%}' },
+            { name: 'Lead Value',        variable: '{%contact.lead_value%}' },
+            { name: 'Assigned to Staff', variable: '{%contact.assigned_to_staff%}' },
+            { name: 'Opportunity Source',variable: '{%contact.opportunity_source%}' },
+            { name: 'Contact Type',      variable: '{%contact.contact_type%}' },
+            { name: 'Business Name',     variable: '{%contact.business_name%}' },
+            { name: 'Business GST No',   variable: '{%contact.gst_no%}' },
+            { name: 'Business State',    variable: '{%contact.state%}' },
+            { name: 'Business Address',  variable: '{%contact.street_address%}' },
+            { name: 'Date of Birth',     variable: '{%contact.date_of_birth%}' },
+            { name: 'Postal Code',       variable: '{%contact.postal_code%}' },
+          ]},
+          { id: 'company', label: 'Company', fields: [
+            { name: 'Company Name',         variable: '{%company.name%}' },
+            { name: 'Company Email',        variable: '{%company.email%}' },
+            { name: 'Company Phone',        variable: '{%company.phone%}' },
+            { name: 'Company Address',      variable: '{%company.address%}' },
+            { name: 'Company GST No.',      variable: '{%company.gst_no%}' },
+            { name: 'Leader Name',          variable: '{%company.leader_name%}' },
+            { name: 'Leader Designation',   variable: '{%company.leader_designation%}' },
+          ]},
+          { id: 'calendar', label: 'Calendar', fields: [
+            { name: 'Appointment Date',       variable: '{%calendar.appointment_date%}' },
+            { name: 'Appointment Start Time', variable: '{%calendar.appointment_start_time%}' },
+            { name: 'Appointment End Time',   variable: '{%calendar.appointment_end_time%}' },
+            { name: 'Appointment Timezone',   variable: '{%calendar.appointment_timezone%}' },
           ]},
           { id: 'time', label: 'Time', fields: [
-            { name: 'Today',    variable: '{today}' },
-            { name: 'Date',     variable: '{date}' },
-            { name: 'Time',     variable: '{time}' },
+            { name: 'Today', variable: '{%today%}' },
+            { name: 'Date',  variable: '{%date%}' },
+            { name: 'Time',  variable: '{%time%}' },
           ]},
-          { id: 'custom', label: 'Custom', fields: customFields.map((cf) => ({ name: cf.name, variable: `{cf_${cf.slug}}` })) },
+          { id: 'custom', label: 'Custom', fields: customFields.map((cf) => ({ name: cf.name, variable: `{%${cf.slug}%}` })) },
         ];
 
         const insertVariable = (name: string, variable: string) => {
@@ -2033,7 +2054,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
                       onChange={(e) => updateRow(bodyFields, updateBodyFields, i, { value: e.target.value })}
                       className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-gray-400" />
                     <button type="button" title="Insert variable"
-                      onClick={() => { setCvOpen({ section: 'body', idx: i }); setCvTab('standard'); }}
+                      onClick={() => { setCvOpen({ section: 'body', idx: i }); setCvTab('contact'); }}
                       className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 shrink-0">
                       <Tag className="w-3.5 h-3.5" />
                     </button>
@@ -2073,7 +2094,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
                     onChange={(e) => updateRow(headerFields, updateHeaderFields, i, { value: e.target.value })}
                     className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-gray-400" />
                   <button type="button" title="Insert variable"
-                    onClick={() => { setCvOpen({ section: 'header', idx: i }); setCvTab('standard'); }}
+                    onClick={() => { setCvOpen({ section: 'header', idx: i }); setCvTab('contact'); }}
                     className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 shrink-0">
                     <Tag className="w-3.5 h-3.5" />
                   </button>
@@ -2123,7 +2144,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
                   <h3 className="text-[18px] font-bold text-gray-900">Custom Values</h3>
                   <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => setCvTab('standard')}
+                    <button type="button" onClick={() => setCvTab('contact')}
                       className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400" title="Reset tab">
                       <RefreshCw className="w-4 h-4" />
                     </button>
