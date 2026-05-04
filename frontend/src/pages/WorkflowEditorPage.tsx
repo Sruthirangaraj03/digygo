@@ -1815,12 +1815,12 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
       {/* Webhook Call */}
       {node.actionType === 'webhook_call' && (() => {
         type KV = { key: string; value: string };
-        // Default body rows derived from system fields — no hardcoded values here
-        const DEFAULT_BODY_SLUGS = ['contact.first_name','contact.last_name','contact.email','contact.phone','contact.assigned_to_staff','contact.contact_source'];
-        const DEFAULT_BODY: KV[] = DEFAULT_BODY_SLUGS.map((slug) => {
-          const field = SYSTEM_STANDARD_FIELDS.find((f) => f.slug === slug);
-          return { key: field?.name ?? slug, value: slugToVar(slug) };
-        });
+        // Default body = every field in the business's CRM (system + custom + questions)
+        const DEFAULT_BODY: KV[] = [
+          ...SYSTEM_STANDARD_FIELDS.map((f) => ({ key: f.name, value: slugToVar(f.slug) })),
+          ...customFields.map((f) => ({ key: f.name, value: slugToVar(f.slug) })),
+          ...additionalFields.map((f) => ({ key: f.question, value: slugToVar(f.slug) })),
+        ];
         const bodyFields: KV[]   = (cfg.body_fields as KV[] | undefined) ?? DEFAULT_BODY;
         const headerFields: KV[] = (cfg.header_fields as KV[]) ?? [];
         const webhookType        = (cfg.webhook_type as string)  ?? 'realtime';
