@@ -288,7 +288,7 @@ type StaffOpt = { id: string; name: string };
 type FormOpt = { id: string; name: string };
 type TemplateOpt = { id: string; name: string; body?: string };
 
-function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff, forms, metaForms, eventTypes, bookingLinks, metaPages, webhookUrls, allowReentry, onToggleReentry }: {
+function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff, forms, metaForms, eventTypes, bookingLinks, metaPages, webhookUrls, allowReentry, onToggleReentry, workflowId, apiToken, onRegenerateToken }: {
   node: WFNode;
   onUpdate: (updates: Partial<WFNode>) => void;
   onChangeTrigger: () => void;
@@ -302,6 +302,9 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
   webhookUrls: { webhookInbound: string; paymentReceived: string; courseEnrolled: string };
   allowReentry: boolean;
   onToggleReentry: (val: boolean) => void;
+  workflowId?: string;
+  apiToken?: string;
+  onRegenerateToken?: () => void;
 }) {
   const cfg = node.config;
   const sel = (field: string) => (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement | HTMLTextAreaElement>) =>
@@ -498,23 +501,138 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
       </>)}
 
       {/* Webhook / API trigger */}
-      {node.actionType === 'webhook_inbound' && (<>
-        <div className="bg-muted/40 rounded-xl p-4 space-y-2">
-          <p className="text-sm font-semibold text-foreground flex items-center gap-2"><Code2 className="w-4 h-4" /> Inbound Webhook URL</p>
-          <p className="text-xs text-muted-foreground">POST to this URL from any external system. Include <code className="bg-muted px-1 rounded">email</code> or <code className="bg-muted px-1 rounded">phone</code> in the JSON body to match a lead.</p>
-          <code className="text-xs text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg block break-all">
-            {webhookUrls.webhookInbound || 'Loading...'}
-          </code>
-          {webhookUrls.webhookInbound && (
-            <button className="text-xs text-primary font-medium flex items-center gap-1 hover:underline" onClick={() => { copyToClipboard(webhookUrls.webhookInbound); toast.success('Copied!'); }}>
-              <Copy className="w-3 h-3" /> Copy URL
-            </button>
+      {node.actionType === 'webhook_inbound' && (() => {
+        const base = webhookUrls.webhookInbound
+          ? webhookUrls.webhookInbound.replace(/\/api\/public\/webhook-inbound\/.*$/, '')
+          : '';
+        const executeUrl = workflowId && workflowId !== 'new' && base
+          ? `${base}/api/wf/${workflowId}/execute`
+          : '';
+        const curlExample = executeUrl && apiToken
+          ? `curl -X POST "${executeUrl}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"api_token":"${apiToken}","contact_name":"John","contact_email":"john@email.com","contact_phone":"+919999999999"}'`
+          : '';
+
+        return (<>
+          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+            <p className="text-xs text-indigo-800">
+              Automation is triggered from an external application using a POST request to the endpoint below. Each workflow has its own unique URL and API token.
+            </p>
+          </div>
+
+          {/* Endpoint URL */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">Endpoint URL</label>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-2 rounded-lg break-all font-mono">
+                {executeUrl || 'Save workflow to generate URL…'}
+              </code>
+              {executeUrl && (
+                <button onClick={() => { copyToClipboard(executeUrl); toast.success('URL copied!'); }}
+                  className="shrink-0 p-1.5 rounded-lg border border-black/10 hover:bg-black/5">
+                  <Copy className="w-3.5 h-3.5 text-[#7a6b5c]" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* API Token */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">API Token</label>
+              {onRegenerateToken && (
+                <button onClick={onRegenerateToken}
+                  className="text-[11px] text-primary font-semibold hover:underline flex items-center gap-1">
+                  <RefreshCw className="w-3 h-3" /> Regenerate
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 text-[11px] bg-muted border border-black/10 px-3 py-2 rounded-lg font-mono break-all text-[#1c1410]">
+                {apiToken || 'Save workflow to generate token…'}
+              </code>
+              {apiToken && (
+                <button onClick={() => { copyToClipboard(apiToken!); toast.success('Token copied!'); }}
+                  className="shrink-0 p-1.5 rounded-lg border border-black/10 hover:bg-black/5">
+                  <Copy className="w-3.5 h-3.5 text-[#7a6b5c]" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* CURL example */}
+          {curlExample && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">CURL Example</label>
+                <button onClick={() => { copyToClipboard(curlExample); toast.success('CURL copied!'); }}
+                  className="text-[11px] text-primary font-semibold hover:underline flex items-center gap-1">
+                  <Copy className="w-3 h-3" /> Copy
+                </button>
+              </div>
+              <pre className="text-[10px] bg-slate-900 text-green-400 px-3 py-3 rounded-xl overflow-x-auto font-mono whitespace-pre-wrap leading-relaxed">
+                {curlExample}
+              </pre>
+            </div>
           )}
-        </div>
-        <FieldRow label="Filter by Event Type (optional)">
-          <input className={inputCls} placeholder="e.g. form_submit, payment_done" value={(cfg.eventType as string) ?? ''} onChange={sel('eventType')} />
-        </FieldRow>
-      </>)}
+
+          {/* Required params */}
+          <div className="space-y-2">
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">API Parameters (Required)</label>
+            <div className="space-y-1.5 text-[12px]">
+              {[
+                ['api_token', 'Your authentication token for secure API access'],
+                ['contact_email', 'Email address of the contact (or use contact_phone)'],
+                ['contact_phone', 'Phone number of the contact (or use contact_email)'],
+              ].map(([k, v]) => (
+                <div key={k} className="flex items-start gap-2">
+                  <code className="shrink-0 bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono text-[11px]">{k}</code>
+                  <span className="text-[#7a6b5c]">{v}</span>
+                </div>
+              ))}
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+                Note: At least one of <code className="font-mono">contact_email</code> or <code className="font-mono">contact_phone</code> is required.
+              </p>
+            </div>
+          </div>
+
+          {/* Optional params */}
+          <div className="space-y-2">
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">API Parameters (Optional)</label>
+            <div className="space-y-1.5 text-[12px]">
+              {[
+                ['contact_name', 'Full name of the contact'],
+                ['any_custom_key', 'Any extra key-value pairs are saved as custom fields on the lead'],
+              ].map(([k, v]) => (
+                <div key={k} className="flex items-start gap-2">
+                  <code className="shrink-0 bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono text-[11px]">{k}</code>
+                  <span className="text-[#7a6b5c]">{v}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Headers */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">API Headers</label>
+            <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 font-mono text-[11px] text-slate-700 space-y-0.5">
+              <div>- Content-Type: application/json</div>
+              <div>- Accept: application/json</div>
+            </div>
+          </div>
+
+          {/* Response example */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">API Response</label>
+            <pre className="text-[10px] bg-slate-900 text-green-400 px-3 py-3 rounded-xl font-mono">{`{
+  "status": "success",
+  "message": "Automation triggered successfully",
+  "data": {
+    "automation_id": "${workflowId || 'your-workflow-id'}"
+  }
+}`}</pre>
+          </div>
+        </>);
+      })()}
 
       {/* Schedule triggers */}
       {node.actionType === 'specific_date' && (<>
@@ -2624,6 +2742,7 @@ function NodeConfigModal({
   showAIPanel, setShowAIPanel,
   aiPrompt, setAIPrompt, aiTone, setAITone, aiFormat, setAIFormat, aiLength, setAILength,
   onAIGenerate, allowReentry, onToggleReentry, onRefreshPipelines, refreshingPipelines,
+  workflowId, apiToken, onRegenerateToken,
 }: {
   node: WFNode;
   branchCtx: BranchNodeContext | null;
@@ -2654,6 +2773,9 @@ function NodeConfigModal({
   onToggleReentry: (val: boolean) => void;
   onRefreshPipelines?: () => void;
   refreshingPipelines?: boolean;
+  workflowId?: string;
+  apiToken?: string;
+  onRegenerateToken?: () => void;
 }) {
   const [tab, setTab] = useState<'settings' | 'ai'>('settings');
   const { icon: iconStyle, badge: badgeStyle, bar: accentBar } = nodeAccent(node.type, node.actionType);
@@ -2775,7 +2897,7 @@ function NodeConfigModal({
             /* Settings tab */
             <>
               {node.type === 'trigger'
-                ? <TriggerConfigPanel node={node} onUpdate={onUpdate} onChangeTrigger={onChangeTrigger} pipelines={pipelines} staff={staff} forms={forms} metaForms={metaForms} eventTypes={eventTypes} bookingLinks={bookingLinks} metaPages={metaPages} webhookUrls={webhookUrls} allowReentry={allowReentry} onToggleReentry={onToggleReentry} />
+                ? <TriggerConfigPanel node={node} onUpdate={onUpdate} onChangeTrigger={onChangeTrigger} pipelines={pipelines} staff={staff} forms={forms} metaForms={metaForms} eventTypes={eventTypes} bookingLinks={bookingLinks} metaPages={metaPages} webhookUrls={webhookUrls} allowReentry={allowReentry} onToggleReentry={onToggleReentry} workflowId={workflowId} apiToken={apiToken} onRegenerateToken={onRegenerateToken} />
                 : node.type === 'condition'
                 ? <ConditionConfigPanel node={node} onUpdate={onUpdate} pipelines={pipelines} staff={staff} />
                 : <ActionConfigPanel node={node} onUpdate={onUpdate} pipelines={pipelines} staff={staff} templates={templates} workflows={workflows} routingSets={routingSets} onRefreshPipelines={onRefreshPipelines} refreshingPipelines={refreshingPipelines} />
@@ -3017,6 +3139,7 @@ export default function WorkflowEditorPage() {
         lastUpdated: new Date(r.updated_at).toLocaleDateString(),
         status: r.status as 'active' | 'inactive',
         nodes: Array.isArray(r.nodes) ? r.nodes : (typeof r.nodes === 'string' ? JSON.parse(r.nodes) : []),
+        apiToken: r.api_token ?? '',
       });
     }).catch(() => toast.error('Failed to load workflow'))
       .finally(() => setLoadingWF(false));
@@ -3419,6 +3542,15 @@ export default function WorkflowEditorPage() {
     setInsertBranchCtx({ parentId, branch, afterIndex });
     setInsertAfterIndex(null);
     setShowActionPicker(true);
+  };
+
+  const handleRegenerateToken = async () => {
+    if (!workflow.id || workflow.id === 'new') return;
+    try {
+      const res = await api.post<{ api_token: string }>(`/api/workflows/${workflow.id}/regenerate-token`, {});
+      setWorkflow((w) => ({ ...w, apiToken: res.api_token }));
+      toast.success('API token regenerated');
+    } catch { toast.error('Failed to regenerate token'); }
   };
 
   const handleAIGenerate = () => {
@@ -3840,7 +3972,7 @@ export default function WorkflowEditorPage() {
 
                     {/* Main config */}
                     {selectedNode.type === 'trigger'
-                      ? <TriggerConfigPanel node={selectedNode} onUpdate={(u) => updateNode(selectedNode.id, u)} onChangeTrigger={() => setShowTriggerPicker(true)} pipelines={editorPipelines} staff={editorStaff} forms={editorForms} metaForms={editorMetaForms} eventTypes={editorEventTypes} bookingLinks={editorBookingLinks} metaPages={editorMetaPages} webhookUrls={editorWebhookUrls} allowReentry={workflow.allowReentry} onToggleReentry={(val) => setWorkflow((w) => ({ ...w, allowReentry: val }))} />
+                      ? <TriggerConfigPanel node={selectedNode} onUpdate={(u) => updateNode(selectedNode.id, u)} onChangeTrigger={() => setShowTriggerPicker(true)} pipelines={editorPipelines} staff={editorStaff} forms={editorForms} metaForms={editorMetaForms} eventTypes={editorEventTypes} bookingLinks={editorBookingLinks} metaPages={editorMetaPages} webhookUrls={editorWebhookUrls} allowReentry={workflow.allowReentry} onToggleReentry={(val) => setWorkflow((w) => ({ ...w, allowReentry: val }))} workflowId={workflow.id} apiToken={workflow.apiToken} onRegenerateToken={handleRegenerateToken} />
                       : selectedNodeIsCondition
                       ? <ConditionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedNode.id, u) : updateNode(selectedNode.id, u)} pipelines={editorPipelines} staff={editorStaff} />
                       : <ActionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedNode.id, u) : updateNode(selectedNode.id, u)} pipelines={editorPipelines} staff={editorStaff} templates={editorTemplates} workflows={editorWorkflows} routingSets={editorRoutingSets} onRefreshPipelines={refreshPipelines} refreshingPipelines={refreshingPipelines} />
@@ -3904,6 +4036,9 @@ export default function WorkflowEditorPage() {
           onToggleReentry={(val) => setWorkflow((w) => ({ ...w, allowReentry: val }))}
           onRefreshPipelines={refreshPipelines}
           refreshingPipelines={refreshingPipelines}
+          workflowId={workflow.id}
+          apiToken={workflow.apiToken}
+          onRegenerateToken={handleRegenerateToken}
         />
       )}
 

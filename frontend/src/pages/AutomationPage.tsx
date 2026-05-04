@@ -698,6 +698,7 @@ export default function AutomationPage() {
             lastUpdated: r.updated_at ? format(new Date(r.updated_at), 'dd MMM') : '—',
             status: r.status as 'active' | 'inactive',
             nodes: r.nodes ?? [],
+            apiToken: r.api_token ?? '',
           };
         });
         setWorkflows(mapped);

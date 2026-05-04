@@ -2235,6 +2235,147 @@ publicWorkflowRouter.post('/trigger/:tenantId', async (req: any, res: any) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
+// ── API 1.0 execute endpoint ───────────────────────────────────────────────────
+// POST /api/wf/:workflowId/execute  (public, authenticated by api_token in body)
+
+publicWorkflowRouter.post('/:workflowId/execute', async (req: any, res: any) => {
+  const { workflowId } = req.params;
+  const body = req.body ?? {};
+
+  const apiToken = body.api_token;
+  if (!apiToken) {
+    res.status(401).json({ status: 'error', message: 'api_token is required' });
+    return;
+  }
+
+  try {
+    // Validate api_token and load workflow
+    const wfRes = await query(
+      `SELECT id, tenant_id, status, nodes, allow_reentry
+       FROM workflows
+       WHERE id=$1::uuid AND api_token=$2::uuid`,
+      [workflowId, apiToken]
+    );
+    if (!wfRes.rows[0]) {
+      res.status(401).json({ status: 'error', message: 'Invalid api_token or workflow not found' });
+      return;
+    }
+    const wf = wfRes.rows[0];
+    if (wf.status !== 'active') {
+      res.status(400).json({ status: 'error', message: 'Workflow is not active' });
+      return;
+    }
+
+    // Extract contact fields (support both camelCase and snake_case keys)
+    const contactEmail  = (body.contact_email  ?? body.email  ?? '').toString().trim().toLowerCase();
+    const contactPhone  = (body.contact_phone  ?? body.phone  ?? '').toString().trim();
+    const contactName   = (body.contact_name   ?? body.name   ?? '').toString().trim();
+
+    if (!contactEmail && !contactPhone) {
+      res.status(400).json({ status: 'error', message: 'contact_email or contact_phone is required' });
+      return;
+    }
+
+    // Build extra custom fields from remaining body keys
+    const reservedKeys = new Set(['api_token','contact_email','contact_phone','contact_name','email','phone','name']);
+    const extraFields: Record<string,string> = {};
+    for (const [k, v] of Object.entries(body)) {
+      if (!reservedKeys.has(k)) extraFields[k] = String(v);
+    }
+
+    // Find or create lead
+    const tenantId = wf.tenant_id;
+    let lead: any;
+
+    const findClause = contactEmail
+      ? `WHERE tenant_id=$1 AND LOWER(email)=$2 AND is_deleted=FALSE LIMIT 1`
+      : `WHERE tenant_id=$1 AND phone=$2 AND is_deleted=FALSE LIMIT 1`;
+    const findVal = contactEmail || contactPhone;
+
+    const existing = await query(
+      `SELECT id, name, email, phone, stage_id, pipeline_id, assigned_to, tags, source, status, custom_fields
+       FROM leads ${findClause}`,
+      [tenantId, findVal]
+    );
+
+    if (existing.rows[0]) {
+      lead = existing.rows[0];
+      // Merge extra custom fields onto existing lead
+      if (Object.keys(extraFields).length > 0) {
+        const merged = { ...(lead.custom_fields ?? {}), ...extraFields };
+        await query(`UPDATE leads SET custom_fields=$1, updated_at=NOW() WHERE id=$2`, [JSON.stringify(merged), lead.id]);
+        lead.custom_fields = merged;
+      }
+    } else {
+      // Create new lead
+      const nameParts = contactName ? contactName.split(' ') : [''];
+      const cfJson = Object.keys(extraFields).length > 0 ? JSON.stringify(extraFields) : '{}';
+      const ins = await query(
+        `INSERT INTO leads (tenant_id, name, email, phone, source, custom_fields, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 'api', $5::jsonb, NOW(), NOW())
+         RETURNING id, name, email, phone, stage_id, pipeline_id, assigned_to, tags, source, status, custom_fields`,
+        [tenantId, contactName || contactEmail || contactPhone, contactEmail, contactPhone, cfJson]
+      );
+      lead = ins.rows[0];
+    }
+
+    // Respond immediately
+    res.json({
+      status: 'success',
+      message: 'Automation triggered successfully',
+      data: { automation_id: workflowId }
+    });
+
+    // Execute nodes asynchronously
+    setImmediate(async () => {
+      try {
+        const execIns = await query(
+          `INSERT INTO workflow_executions (workflow_id, lead_id, tenant_id, status, started_at)
+           VALUES ($1, $2, $3, 'running', NOW()) RETURNING id`,
+          [workflowId, lead.id, tenantId]
+        );
+        const executionId = execIns.rows[0].id;
+        const nodes: WFNode[] = wf.nodes ?? [];
+        const stats = await executeNodes(nodes, lead, tenantId, 'api1', executionId, workflowId);
+        await query(
+          `UPDATE workflow_executions SET status='completed', completed_at=NOW() WHERE id=$1`,
+          [executionId]
+        );
+        await query(
+          `UPDATE workflows SET total_contacts=total_contacts+1, completed=completed+1,
+           skipped=skipped+$2, failed=failed+$3, updated_at=NOW() WHERE id=$1`,
+          [workflowId, stats.skipped, stats.failed]
+        ).catch(() => null);
+      } catch (err) {
+        console.error('[API1.0 execute] async error:', err);
+      }
+    });
+  } catch (err) {
+    console.error('[API1.0 execute] error:', err);
+    if (!res.headersSent) res.status(500).json({ status: 'error', message: 'Server error' });
+  }
+});
+
+// ── Regenerate api_token ───────────────────────────────────────────────────────
+// POST /api/workflows/:id/regenerate-token  (authenticated)
+router.post('/:id/regenerate-token', checkPermission('automation:manage'), async (req: any, res: any) => {
+  const { tenantId } = req;
+  const { id } = req.params;
+  try {
+    const result = await query(
+      `UPDATE workflows SET api_token=gen_random_uuid(), updated_at=NOW()
+       WHERE id=$1::uuid AND tenant_id=$2::uuid
+       RETURNING api_token`,
+      [id, tenantId]
+    );
+    if (!result.rows[0]) { res.status(404).json({ error: 'Workflow not found' }); return; }
+    res.json({ api_token: result.rows[0].api_token });
+  } catch (err) {
+    console.error('[regenerate-token] error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ── Delay queue worker (Task #10) ─────────────────────────────────────────────
 
 export async function processDelayedSteps(): Promise<void> {

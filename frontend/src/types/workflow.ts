@@ -24,4 +24,5 @@ export interface WFRecord {
   lastUpdated: string;
   status: 'active' | 'inactive';
   nodes: WFNode[];
+  apiToken?: string;
 }
