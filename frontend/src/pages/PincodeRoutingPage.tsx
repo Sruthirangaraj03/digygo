@@ -535,7 +535,7 @@ export default function PincodeRoutingPage() {
       {/* ── Create Set Modal ── */}
       {showCreate && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={(e) => e.target === e.currentTarget && setShowCreate(false)}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h2 className="font-bold text-[#1c1410] text-lg">New Routing Set</h2>
               <button onClick={() => setShowCreate(false)} className="p-1 hover:bg-black/5 rounded-lg">
