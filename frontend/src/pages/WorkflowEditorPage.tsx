@@ -1822,14 +1822,12 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
           { key: 'Assigned Staff', value: '{assigned_staff}' },
           { key: 'Source',         value: '{source}' },
         ];
-        // Use defaults only when body_fields has never been set (new node).
-        // If user explicitly cleared all rows, cfg.body_fields will be [] and we respect that.
         const bodyFields: KV[]   = (cfg.body_fields as KV[] | undefined) ?? DEFAULT_BODY;
         const headerFields: KV[] = (cfg.header_fields as KV[]) ?? [];
-        const webhookType         = (cfg.webhook_type as string)  ?? 'realtime';
-        const requestFormat       = (cfg.request_format as string) ?? 'json';
-        const method              = (cfg.method as string) ?? 'POST';
-        const hasBody             = ['POST','PUT','PATCH'].includes(method);
+        const webhookType        = (cfg.webhook_type as string)  ?? 'realtime';
+        const requestFormat      = (cfg.request_format as string) ?? 'json';
+        const method             = (cfg.method as string) ?? 'POST';
+        const hasBody            = ['POST','PUT','PATCH'].includes(method);
 
         const updateBodyFields   = (fields: KV[]) => onUpdate({ config: { ...cfg, body_fields: fields } });
         const updateHeaderFields = (fields: KV[]) => onUpdate({ config: { ...cfg, header_fields: fields } });
@@ -1837,55 +1835,37 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
         const updateRow = (fields: KV[], setFn: (f: KV[]) => void, idx: number, patch: Partial<KV>) => setFn(fields.map((r, i) => i === idx ? { ...r, ...patch } : r));
         const removeRow = (fields: KV[], setFn: (f: KV[]) => void, idx: number) => setFn(fields.filter((_, i) => i !== idx));
 
-        const allVars = [...VARIABLE_HINTS, ...customFields.map((cf) => `{cf_${cf.slug}}`)];
+        // Custom Values modal state
+        const [cvOpen, setCvOpen] = useState<{ section: 'body'|'header'; idx: number } | null>(null);
+        const [cvTab, setCvTab]   = useState<'standard'|'time'|'custom'>('standard');
 
-        /* small tag-picker popover state — track which row + section is open */
-        const [pickerOpen, setPickerOpen] = useState<{ section: 'body'|'header'; idx: number } | null>(null);
+        // Tab definitions
+        const cvTabs: { id: 'standard'|'time'|'custom'; label: string; fields: { name: string; variable: string }[] }[] = [
+          { id: 'standard', label: 'Standard', fields: [
+            { name: 'First Name',     variable: '{first_name}' },
+            { name: 'Last Name',      variable: '{last_name}' },
+            { name: 'Full Name',      variable: '{full_name}' },
+            { name: 'Email',          variable: '{email}' },
+            { name: 'Phone',          variable: '{phone}' },
+            { name: 'Stage',          variable: '{stage}' },
+            { name: 'Pipeline',       variable: '{pipeline}' },
+            { name: 'Assigned Staff', variable: '{assigned_staff}' },
+            { name: 'Source',         variable: '{source}' },
+          ]},
+          { id: 'time', label: 'Time', fields: [
+            { name: 'Today',    variable: '{today}' },
+            { name: 'Date',     variable: '{date}' },
+            { name: 'Time',     variable: '{time}' },
+          ]},
+          { id: 'custom', label: 'Custom', fields: customFields.map((cf) => ({ name: cf.name, variable: `{cf_${cf.slug}}` })) },
+        ];
 
-        const KVRow = ({ section, fields, setFn, idx }: { section: 'body'|'header'; fields: KV[]; setFn: (f: KV[]) => void; idx: number }) => {
-          const row = fields[idx];
-          const isOpen = pickerOpen?.section === section && pickerOpen?.idx === idx;
-          return (
-            <div className="flex gap-2 items-center">
-              <input
-                placeholder="Key"
-                value={row.key}
-                onChange={(e) => updateRow(fields, setFn, idx, { key: e.target.value })}
-                className="w-[38%] border border-gray-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-gray-400"
-              />
-              <div className="flex-1 relative">
-                <input
-                  placeholder="Value"
-                  value={row.value}
-                  onChange={(e) => updateRow(fields, setFn, idx, { value: e.target.value })}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-gray-400"
-                />
-                {isOpen && (
-                  <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-xl p-2 w-64">
-                    <p className="text-[10px] text-gray-400 font-semibold uppercase mb-1.5 px-1">Insert variable</p>
-                    <div className="max-h-40 overflow-y-auto space-y-0.5">
-                      {allVars.map((v) => (
-                        <button key={v} type="button"
-                          onClick={() => { updateRow(fields, setFn, idx, { value: v }); setPickerOpen(null); }}
-                          className="w-full text-left px-2 py-1 rounded-lg text-[12px] font-mono text-[#c2410c] hover:bg-orange-50">
-                          {v}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <button type="button"
-                onClick={() => setPickerOpen(isOpen ? null : { section, idx })}
-                className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 shrink-0">
-                <Tag className="w-3.5 h-3.5" />
-              </button>
-              <button type="button" onClick={() => removeRow(fields, setFn, idx)}
-                className="p-1.5 rounded-lg border border-red-100 hover:bg-red-50 text-red-400 hover:text-red-600 shrink-0">
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          );
+        const insertVariable = (variable: string) => {
+          if (!cvOpen) return;
+          const fields = cvOpen.section === 'body' ? bodyFields : headerFields;
+          const setFn  = cvOpen.section === 'body' ? updateBodyFields : updateHeaderFields;
+          updateRow(fields, setFn, cvOpen.idx, { value: variable });
+          setCvOpen(null);
         };
 
         return (<>
@@ -2027,6 +2007,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
           )}
 
           {/* Body */}
+          {/* helper: one key-value row */}
           {hasBody && (
             <div className="border border-gray-200 rounded-xl overflow-hidden">
               <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
@@ -2039,8 +2020,24 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
                 </p>
               </div>
               <div className="p-4 space-y-2">
-                {bodyFields.map((_, i) => (
-                  <KVRow key={i} section="body" fields={bodyFields} setFn={updateBodyFields} idx={i} />
+                {bodyFields.map((row, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <input placeholder="Key" value={row.key}
+                      onChange={(e) => updateRow(bodyFields, updateBodyFields, i, { key: e.target.value })}
+                      className="w-[38%] border border-gray-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-gray-400" />
+                    <input placeholder="Value" value={row.value}
+                      onChange={(e) => updateRow(bodyFields, updateBodyFields, i, { value: e.target.value })}
+                      className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-gray-400" />
+                    <button type="button" title="Insert variable"
+                      onClick={() => { setCvOpen({ section: 'body', idx: i }); setCvTab('standard'); }}
+                      className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 shrink-0">
+                      <Tag className="w-3.5 h-3.5" />
+                    </button>
+                    <button type="button" onClick={() => removeRow(bodyFields, updateBodyFields, i)}
+                      className="p-1.5 rounded-lg border border-red-100 hover:bg-red-50 text-red-400 hover:text-red-600 shrink-0">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 ))}
                 {bodyFields.length === 0 && (
                   <p className="text-[12px] text-gray-400 text-center py-2">No fields — full lead object sent by default</p>
@@ -2063,8 +2060,24 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
               <p className="text-[12px] text-gray-500 mt-0.5">Custom HTTP headers sent with the webhook request</p>
             </div>
             <div className="p-4 space-y-2">
-              {headerFields.map((_, i) => (
-                <KVRow key={i} section="header" fields={headerFields} setFn={updateHeaderFields} idx={i} />
+              {headerFields.map((row, i) => (
+                <div key={i} className="flex gap-2 items-center">
+                  <input placeholder="Key" value={row.key}
+                    onChange={(e) => updateRow(headerFields, updateHeaderFields, i, { key: e.target.value })}
+                    className="w-[38%] border border-gray-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-gray-400" />
+                  <input placeholder="Value" value={row.value}
+                    onChange={(e) => updateRow(headerFields, updateHeaderFields, i, { value: e.target.value })}
+                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-gray-400" />
+                  <button type="button" title="Insert variable"
+                    onClick={() => { setCvOpen({ section: 'header', idx: i }); setCvTab('standard'); }}
+                    className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 shrink-0">
+                    <Tag className="w-3.5 h-3.5" />
+                  </button>
+                  <button type="button" onClick={() => removeRow(headerFields, updateHeaderFields, i)}
+                    className="p-1.5 rounded-lg border border-red-100 hover:bg-red-50 text-red-400 hover:text-red-600 shrink-0">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               ))}
               {headerFields.length === 0 && (
                 <p className="text-[12px] text-gray-400 text-center py-2">No custom headers</p>
@@ -2095,6 +2108,68 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
               </FieldRow>
             )}
           </div>
+
+          {/* ── Custom Values Modal ─────────────────────────────────── */}
+          {cvOpen && (
+            <div className="fixed inset-0 z-[300] flex items-center justify-center" onClick={() => setCvOpen(null)}>
+              <div className="absolute inset-0 bg-black/40" />
+              <div className="relative bg-white rounded-2xl shadow-2xl w-[520px] max-h-[80vh] flex flex-col overflow-hidden"
+                onClick={(e) => e.stopPropagation()}>
+                {/* Header */}
+                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                  <h3 className="text-[18px] font-bold text-gray-900">Custom Values</h3>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setCvTab('standard')}
+                      className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400" title="Reset tab">
+                      <RefreshCw className="w-4 h-4" />
+                    </button>
+                    <button type="button" onClick={() => setCvOpen(null)}
+                      className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                {/* Tabs */}
+                <div className="flex gap-0 border-b border-gray-100 px-4">
+                  {cvTabs.map((tab) => (
+                    <button key={tab.id} type="button"
+                      onClick={() => setCvTab(tab.id)}
+                      className={`px-4 py-3 text-[13px] font-semibold border-b-2 transition-colors -mb-px ${cvTab === tab.id ? 'border-gray-800 text-gray-900' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+                {/* Field list */}
+                <div className="overflow-y-auto flex-1 px-2 py-2">
+                  {(cvTabs.find((t) => t.id === cvTab)?.fields ?? []).length === 0 ? (
+                    <p className="text-[13px] text-gray-400 text-center py-8">No custom fields found</p>
+                  ) : (
+                    (cvTabs.find((t) => t.id === cvTab)?.fields ?? []).map((field) => (
+                      <div key={field.variable}
+                        className="flex items-center justify-between px-4 py-3 rounded-xl hover:bg-gray-50 group">
+                        <div>
+                          <p className="text-[14px] font-semibold text-gray-900">{field.name}</p>
+                          <p className="text-[12px] text-gray-400 font-mono mt-0.5">{field.variable}</p>
+                        </div>
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button type="button"
+                            onClick={() => { copyToClipboard(field.variable); toast.success('Copied!'); }}
+                            className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-400" title="Copy">
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          <button type="button"
+                            onClick={() => insertVariable(field.variable)}
+                            className="w-6 h-6 rounded-full bg-gray-800 hover:bg-black text-white flex items-center justify-center" title="Insert">
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </>);
       })()}
 
