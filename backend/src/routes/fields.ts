@@ -7,6 +7,45 @@ const router = Router();
 router.use(requireAuth);
 router.use(requireTenant);
 
+// ── System Fields (single source of truth — same for every tenant) ────────────
+
+const SYSTEM_FIELDS = [
+  { id: 'c01',  name: 'First Name',           slug: 'contact.first_name',         group: 'Contact' },
+  { id: 'c02',  name: 'Last Name',            slug: 'contact.last_name',          group: 'Contact' },
+  { id: 'c03',  name: 'Email',                slug: 'contact.email',              group: 'Contact' },
+  { id: 'c04',  name: 'Phone',                slug: 'contact.phone',              group: 'Contact' },
+  { id: 'c05',  name: 'Contact Source',       slug: 'contact.contact_source',     group: 'Contact' },
+  { id: 'c06',  name: 'Opportunity Name',     slug: 'contact.opportunity_name',   group: 'Contact' },
+  { id: 'c07',  name: 'Lead Value',           slug: 'contact.lead_value',         group: 'Contact' },
+  { id: 'c08',  name: 'Assigned to Staff',    slug: 'contact.assigned_to_staff',  group: 'Contact' },
+  { id: 'c09',  name: 'Opportunity Source',   slug: 'contact.opportunity_source', group: 'Contact' },
+  { id: 'c10',  name: 'Contact Type',         slug: 'contact.contact_type',       group: 'Contact' },
+  { id: 'c11',  name: 'Business Name',        slug: 'contact.business_name',      group: 'Contact' },
+  { id: 'c12',  name: 'Business GST No',      slug: 'contact.gst_no',             group: 'Contact' },
+  { id: 'c13',  name: 'Business State',       slug: 'contact.state',              group: 'Contact' },
+  { id: 'c14',  name: 'Business Address',     slug: 'contact.street_address',     group: 'Contact' },
+  { id: 'c15',  name: 'Profile Photo',        slug: 'contact.profile_image',      group: 'Contact' },
+  { id: 'c16',  name: 'Date of Birth',        slug: 'contact.date_of_birth',      group: 'Contact' },
+  { id: 'c17',  name: 'Postal Code',          slug: 'contact.postal_code',        group: 'Contact' },
+  { id: 'co1',  name: 'Company Name',         slug: 'company.name',               group: 'Company' },
+  { id: 'co2',  name: 'Company Email',        slug: 'company.email',              group: 'Company' },
+  { id: 'co3',  name: 'Company Phone',        slug: 'company.phone',              group: 'Company' },
+  { id: 'co4',  name: 'Company Address',      slug: 'company.address',            group: 'Company' },
+  { id: 'co5',  name: 'Company GST No.',      slug: 'company.gst_no',             group: 'Company' },
+  { id: 'co6',  name: 'Company Logo',         slug: 'company.logo',               group: 'Company' },
+  { id: 'co7',  name: 'Leader Name',          slug: 'company.leader_name',        group: 'Company' },
+  { id: 'co8',  name: 'Leader Designation',   slug: 'company.leader_designation', group: 'Company' },
+  { id: 'co9',  name: 'Leader Image',         slug: 'company.leader_image',       group: 'Company' },
+  { id: 'cal1', name: 'Appointment Date',     slug: 'calendar.appointment_date',        group: 'Calendar' },
+  { id: 'cal2', name: 'Appointment Start Time', slug: 'calendar.appointment_start_time', group: 'Calendar' },
+  { id: 'cal3', name: 'Appointment End Time', slug: 'calendar.appointment_end_time',    group: 'Calendar' },
+  { id: 'cal4', name: 'Appointment Timezone', slug: 'calendar.appointment_timezone',    group: 'Calendar' },
+];
+
+router.get('/system', (_req, res: Response) => {
+  res.json(SYSTEM_FIELDS);
+});
+
 // ── Custom Standard Fields ────────────────────────────────────────────────────
 
 router.get('/custom', async (req: AuthRequest, res: Response) => {

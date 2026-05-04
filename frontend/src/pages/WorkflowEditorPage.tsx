@@ -23,7 +23,6 @@ import { cn, copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 import { api, getAccessToken, BASE } from '@/lib/api';
 import type { WFNode, WFRecord } from './AutomationPage';
-import { SYSTEM_STANDARD_FIELDS, SYSTEM_GROUPS, slugToVar } from '@/constants/systemFields';
 import { useCrmStore } from '@/store/crmStore';
 
 // ── Trigger Categories ─────────────────────────────────────────────────────────
@@ -1339,6 +1338,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
   const actionPipelineStages = pipelines.find(p => p.id === (cfg.pipeline_id as string))?.stages ?? [];
   const customFields = useCrmStore((s) => s.customFields);
   const additionalFields = useCrmStore((s) => s.additionalFields);
+  const systemFields = useCrmStore((s) => s.systemFields);
 
   return (
     <div className="space-y-5">
@@ -1815,11 +1815,11 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
       {/* Webhook Call */}
       {node.actionType === 'webhook_call' && (() => {
         type KV = { key: string; value: string };
-        // Default body = every field in the business's CRM (system + custom + questions)
+        // Default body = every field in the business's CRM, all fetched from the API
         const DEFAULT_BODY: KV[] = [
-          ...SYSTEM_STANDARD_FIELDS.map((f) => ({ key: f.name, value: slugToVar(f.slug) })),
-          ...customFields.map((f) => ({ key: f.name, value: slugToVar(f.slug) })),
-          ...additionalFields.map((f) => ({ key: f.question, value: slugToVar(f.slug) })),
+          ...systemFields.map((f) => ({ key: f.name, value: `{%${f.slug}%}` })),
+          ...customFields.map((f) => ({ key: f.name, value: `{%${f.slug}%}` })),
+          ...additionalFields.map((f) => ({ key: f.question, value: `{%${f.slug}%}` })),
         ];
         const bodyFields: KV[]   = (cfg.body_fields as KV[] | undefined) ?? DEFAULT_BODY;
         const headerFields: KV[] = (cfg.header_fields as KV[]) ?? [];
@@ -1838,25 +1838,25 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
         const [cvOpen, setCvOpen] = useState<{ section: 'body'|'header'; idx: number } | null>(null);
         const [cvTab, setCvTab]   = useState<string>('Contact');
 
-        // Build tabs dynamically from store data + shared system constants
-        // customFields and additionalFields come from component-level useCrmStore calls (hooks rules)
+        // Build tabs dynamically — all data fetched from API via store (no frontend constants)
+        const systemGroups = Array.from(new Set(systemFields.map((f) => f.group)));
         const cvTabs = [
-          ...SYSTEM_GROUPS.map((group) => ({
+          ...systemGroups.map((group) => ({
             id: group,
             label: group,
-            fields: SYSTEM_STANDARD_FIELDS
+            fields: systemFields
               .filter((f) => f.group === group)
-              .map((f) => ({ name: f.name, variable: slugToVar(f.slug) })),
+              .map((f) => ({ name: f.name, variable: `{%${f.slug}%}` })),
           })),
           {
             id: 'Custom',
             label: 'Custom',
-            fields: customFields.map((f) => ({ name: f.name, variable: slugToVar(f.slug) })),
+            fields: customFields.map((f) => ({ name: f.name, variable: `{%${f.slug}%}` })),
           },
           {
             id: 'Questions',
             label: 'Questions',
-            fields: additionalFields.map((f) => ({ name: f.question, variable: slugToVar(f.slug) })),
+            fields: additionalFields.map((f) => ({ name: f.question, variable: `{%${f.slug}%}` })),
           },
         ];
 

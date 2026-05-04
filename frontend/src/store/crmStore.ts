@@ -63,6 +63,7 @@ interface CrmState {
   quickReplies: QuickReply[];
   activities: LeadActivity[];
   additionalFields: AdditionalField[];
+  systemFields: { id: string; name: string; slug: string; group: string }[];
 
   // Activity actions
   addActivity: (activity: LeadActivity) => void;
@@ -182,6 +183,7 @@ export const useCrmStore = create<CrmState>((set) => ({
   quickReplies: [],
   activities: [],
   additionalFields: [],
+  systemFields: [],
 
   // Activity actions
   addActivity: (activity) => set((s) => ({ activities: [activity, ...s.activities] })),
@@ -435,7 +437,7 @@ export const useCrmStore = create<CrmState>((set) => ({
     if (currentUser?.role === 'super_admin' && !currentUser?.tenantId) return;
 
     try {
-      const [leadsRes, staffRes, pipelinesRes, calRes, tagsRes, questionsRes, convsRes, notifsRes, bookingLinksRes, followUpsRes, customFieldsRes, workflowsRes] = await Promise.all([
+      const [leadsRes, staffRes, pipelinesRes, calRes, tagsRes, questionsRes, convsRes, notifsRes, bookingLinksRes, followUpsRes, customFieldsRes, workflowsRes, systemFieldsRes] = await Promise.all([
         api.get<any[]>('/api/leads?limit=5000').catch(() => [] as any[]),
         api.get<any[]>('/api/settings/staff').catch(() => [] as any[]),
         api.get<any[]>('/api/pipelines').catch(() => [] as any[]),
@@ -448,6 +450,7 @@ export const useCrmStore = create<CrmState>((set) => ({
         api.get<any[]>('/api/leads/followups').catch(() => [] as any[]),
         api.get<any[]>('/api/fields/custom').catch((e) => { console.warn('[initFromApi] fields/custom failed:', e?.response?.status); return [] as any[]; }),
         api.get<any[]>('/api/workflows').catch(() => [] as any[]),
+        api.get<any[]>('/api/fields/system').catch(() => [] as any[]),
       ]);
 
       // Build stageId → stageName lookup
@@ -628,6 +631,7 @@ export const useCrmStore = create<CrmState>((set) => ({
         workflows: mappedWorkflows,
         customFields: mappedCustomFields,
         additionalFields: mappedAdditionalFields,
+        systemFields: (systemFieldsRes ?? []).map((f: any) => ({ id: f.id, name: f.name, slug: f.slug, group: f.group })),
       });
     } catch {
       // Keep mock data if API fails (e.g. not logged in yet)
