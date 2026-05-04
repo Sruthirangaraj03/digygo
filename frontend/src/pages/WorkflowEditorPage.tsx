@@ -1860,11 +1860,15 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
           { id: 'custom', label: 'Custom', fields: customFields.map((cf) => ({ name: cf.name, variable: `{cf_${cf.slug}}` })) },
         ];
 
-        const insertVariable = (variable: string) => {
+        const insertVariable = (name: string, variable: string) => {
           if (!cvOpen) return;
           const fields = cvOpen.section === 'body' ? bodyFields : headerFields;
           const setFn  = cvOpen.section === 'body' ? updateBodyFields : updateHeaderFields;
-          updateRow(fields, setFn, cvOpen.idx, { value: variable });
+          const currentKey = fields[cvOpen.idx]?.key ?? '';
+          updateRow(fields, setFn, cvOpen.idx, {
+            value: variable,
+            key: currentKey || name,  // fill key only if it's empty
+          });
           setCvOpen(null);
         };
 
@@ -2158,7 +2162,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
                             <Copy className="w-3.5 h-3.5" />
                           </button>
                           <button type="button"
-                            onClick={() => insertVariable(field.variable)}
+                            onClick={() => insertVariable(field.name, field.variable)}
                             className="w-6 h-6 rounded-full bg-gray-800 hover:bg-black text-white flex items-center justify-center" title="Insert">
                             <Plus className="w-3.5 h-3.5" />
                           </button>
