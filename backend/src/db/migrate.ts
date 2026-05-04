@@ -49,6 +49,7 @@ const MIGRATIONS = [
   'migration_047_pincode_routing.sql',
   'migration_048_meta_forms_unique_constraint.sql',
   'migration_049_workflow_staff_counters.sql',
+  'migration_050_field_routing.sql',
 ];
 
 // Split SQL file into individual statements and execute each one separately.

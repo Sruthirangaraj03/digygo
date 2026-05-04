@@ -1,62 +1,144 @@
 import { useState, useEffect, useRef } from 'react';
-import { Trash2, Search, MapPin, RefreshCw, CheckCircle, AlertCircle, Download, ArrowRight } from 'lucide-react';
+import { Trash2, Search, MapPin, RefreshCw, CheckCircle, AlertCircle, Download,
+         ArrowRight, Plus, X, Eye, Upload, Edit2, MoreVertical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import * as XLSX from 'xlsx';
+import { formatDistanceToNow } from 'date-fns';
 
-interface DistrictStat { district: string; state: string | null; pipeline_name: string | null; pincode_count: string; }
-interface Stats { districts: DistrictStat[]; total: number; }
-interface PreviewRow { pincode: string; district: string; state: string; pipeline_name: string; }
-interface ColumnMap { pincode: string; district: string; state: string; pipeline: string; }
+interface RoutingSet {
+  id: string;
+  name: string;
+  match_field: string;
+  match_type: 'exact' | 'contains';
+  row_count: number;
+  times_used: number;
+  created_at: string;
+  updated_at: string;
+}
 
-const SYSTEM_FIELDS = [
-  { key: 'pincode' as keyof ColumnMap, label: 'Pincode', required: true },
-  { key: 'district' as keyof ColumnMap, label: 'District', required: true },
-  { key: 'state' as keyof ColumnMap, label: 'State', required: false },
-  { key: 'pipeline' as keyof ColumnMap, label: 'Pipeline', required: false },
+interface RoutingRow {
+  id: string;
+  match_value: string;
+  pipeline_name: string | null;
+  district: string | null;
+  state: string | null;
+}
+
+interface ColumnMap { value: string; pipeline: string; district: string; state: string; }
+
+const MATCH_FIELD_LABELS: Record<string, string> = {
+  pincode: 'Pincode', city: 'City', state: 'State', district: 'District',
+  source: 'Source', product: 'Product', area: 'Area',
+};
+
+const SYSTEM_COLS = [
+  { key: 'value'    as keyof ColumnMap, label: 'Value (match key)', required: true },
+  { key: 'pipeline' as keyof ColumnMap, label: 'Pipeline',          required: true },
+  { key: 'district' as keyof ColumnMap, label: 'District (meta)',   required: false },
+  { key: 'state'    as keyof ColumnMap, label: 'State (meta)',      required: false },
 ];
 
 export default function PincodeRoutingPage() {
+  const [sets, setSets] = useState<RoutingSet[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Create set modal
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newMatchField, setNewMatchField] = useState('pincode');
+  const [newMatchType, setNewMatchType] = useState<'exact' | 'contains'>('exact');
+  const [creating, setCreating] = useState(false);
+
+  // Rename modal
+  const [renamingSet, setRenamingSet] = useState<RoutingSet | null>(null);
+  const [renameVal, setRenameVal] = useState('');
+
+  // Upload state (per set)
+  const [uploadingSetId, setUploadingSetId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<any[]>([]);
+  const [rawRows, setRawRows] = useState<any[]>([]);
+  const [rawColumns, setRawColumns] = useState<string[]>([]);
+  const [columnMap, setColumnMap] = useState<ColumnMap>({ value: '', pipeline: '', district: '', state: '' });
+  const [mapperOpen, setMapperOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [stats, setStats] = useState<Stats>({ districts: [], total: 0 });
-  const [loading, setLoading] = useState(true);
-  const [preview, setPreview] = useState<PreviewRow[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const [clearing, setClearing] = useState(false);
-  const [search, setSearch] = useState('');
-  const [testPin, setTestPin] = useState('');
+  // Preview rows modal
+  const [previewSet, setPreviewSet] = useState<RoutingSet | null>(null);
+  const [previewRows, setPreviewRows] = useState<RoutingRow[]>([]);
+  const [previewTotal, setPreviewTotal] = useState(0);
+  const [previewPage, setPreviewPage] = useState(1);
+  const [previewSearch, setPreviewSearch] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  // Test lookup (per set)
+  const [testSetId, setTestSetId] = useState<string | null>(null);
+  const [testVal, setTestVal] = useState('');
   const [testResult, setTestResult] = useState<any>(null);
   const [testing, setTesting] = useState(false);
 
-  // Column mapper state
-  const [mapperOpen, setMapperOpen] = useState(false);
-  const [rawColumns, setRawColumns] = useState<string[]>([]);
-  const [rawRows, setRawRows] = useState<any[]>([]);
-  const [columnMap, setColumnMap] = useState<ColumnMap>({ pincode: '', district: '', state: '', pipeline: '' });
+  // Menu open state
+  const [menuOpen, setMenuOpen] = useState<string | null>(null);
 
-  const loadStats = async () => {
+  const loadSets = async () => {
     try {
-      const s = await api.get<Stats>('/api/pincode-routing/stats');
-      setStats(s ?? { districts: [], total: 0 });
-    } catch { setStats({ districts: [], total: 0 }); }
+      const rows = await api.get<RoutingSet[]>('/api/field-routing/sets');
+      setSets(rows ?? []);
+    } catch { setSets([]); }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { loadStats(); }, []);
+  useEffect(() => { loadSets(); }, []);
 
-  const buildPreview = (raw: any[], pincodeKey: string, districtKey: string, stateKey: string, pipelineKey: string) => {
-    const rows: PreviewRow[] = raw.map((r) => ({
-      pincode:       String(r[pincodeKey] ?? '').trim(),
-      district:      String(r[districtKey] ?? '').trim(),
-      state:         stateKey ? String(r[stateKey] ?? '').trim() : '',
-      pipeline_name: pipelineKey ? String(r[pipelineKey] ?? '').trim() : '',
-    })).filter((r) => r.pincode && r.district);
+  // ── Create set ──────────────────────────────────────────────────────────────
+  const handleCreate = async () => {
+    if (!newName.trim()) { toast.error('Name is required'); return; }
+    setCreating(true);
+    try {
+      const s = await api.post<RoutingSet>('/api/field-routing/sets', {
+        name: newName.trim(), match_field: newMatchField, match_type: newMatchType,
+      });
+      setSets((prev) => [s, ...prev]);
+      setShowCreate(false); setNewName(''); setNewMatchField('pincode'); setNewMatchType('exact');
+      toast.success('Routing set created');
+    } catch { toast.error('Failed to create routing set'); }
+    finally { setCreating(false); }
+  };
 
-    if (rows.length === 0) { toast.error('No valid rows found after filtering blank pincodes/districts'); return; }
+  // ── Rename set ──────────────────────────────────────────────────────────────
+  const handleRename = async () => {
+    if (!renamingSet || !renameVal.trim()) return;
+    try {
+      await api.patch(`/api/field-routing/sets/${renamingSet.id}`, { name: renameVal.trim() });
+      setSets((prev) => prev.map((s) => s.id === renamingSet.id ? { ...s, name: renameVal.trim() } : s));
+      setRenamingSet(null);
+      toast.success('Renamed');
+    } catch { toast.error('Failed to rename'); }
+  };
+
+  // ── Delete set ──────────────────────────────────────────────────────────────
+  const handleDelete = async (set: RoutingSet) => {
+    if (!confirm(`Delete "${set.name}" and all its ${set.row_count} rows?`)) return;
+    try {
+      await api.delete(`/api/field-routing/sets/${set.id}`);
+      setSets((prev) => prev.filter((s) => s.id !== set.id));
+      toast.success('Routing set deleted');
+    } catch { toast.error('Failed to delete routing set'); }
+  };
+
+  // ── File parsing ────────────────────────────────────────────────────────────
+  const buildPreview = (raw: any[], valueKey: string, pipelineKey: string, districtKey: string, stateKey: string) => {
+    const rows = raw.map((r) => ({
+      match_value:   String(r[valueKey] ?? '').trim(),
+      pipeline_name: pipelineKey ? String(r[pipelineKey] ?? '').trim() || null : null,
+      district:      districtKey ? String(r[districtKey] ?? '').trim() || null : null,
+      state:         stateKey    ? String(r[stateKey] ?? '').trim() || null : null,
+    })).filter((r) => r.match_value);
+    if (rows.length === 0) { toast.error('No valid rows found (match value column was empty)'); return; }
     setPreview(rows);
-    toast.success(`Found ${rows.length} rows ready to upload`);
+    toast.success(`${rows.length} rows ready to upload`);
   };
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -71,324 +153,527 @@ export default function PincodeRoutingPage() {
         if (raw.length === 0) { toast.error('File is empty or unreadable'); return; }
 
         const sample = raw[0];
-        const findKey = (candidates: string[]) =>
+        const find = (candidates: string[]) =>
           Object.keys(sample).find((k) => candidates.includes(k.toLowerCase().trim())) ?? '';
 
-        const pincodeKey  = findKey(['pincode', 'pin code', 'pin', 'postal_code', 'postalcode', 'zip', 'zipcode']);
-        const districtKey = findKey(['district', 'city', 'town', 'area', 'location']);
-        const stateKey    = findKey(['state', 'province', 'region']);
-        const pipelineKey = findKey(['pipeline', 'pipeline_name', 'pipeline name']);
+        const valueKey    = find(['value', 'match_value', 'pincode', 'city', 'district', 'source', 'product', 'area', 'field', 'key']);
+        const pipelineKey = find(['pipeline', 'pipeline_name', 'pipeline name']);
+        const districtKey = find(['district', 'area']);
+        const stateKey    = find(['state', 'province']);
 
-        if (!pincodeKey || !districtKey) {
-          // Auto-detect failed — open column mapper instead of showing error
+        if (!valueKey || !pipelineKey) {
           setRawColumns(Object.keys(sample));
           setRawRows(raw);
-          setColumnMap({ pincode: '', district: '', state: '', pipeline: '' });
+          setColumnMap({ value: valueKey, pipeline: pipelineKey, district: districtKey, state: stateKey });
           setMapperOpen(true);
           return;
         }
-
-        buildPreview(raw, pincodeKey, districtKey, stateKey, pipelineKey);
-      } catch {
-        toast.error('Failed to read file. Ensure it is a valid .xlsx or .csv file.');
-      }
+        buildPreview(raw, valueKey, pipelineKey, districtKey, stateKey);
+      } catch { toast.error('Failed to read file. Use a valid .xlsx or .csv file.'); }
     };
     reader.readAsBinaryString(file);
     e.target.value = '';
   };
 
   const applyColumnMap = () => {
-    if (!columnMap.pincode || !columnMap.district) return;
-    buildPreview(rawRows, columnMap.pincode, columnMap.district, columnMap.state, columnMap.pipeline);
+    if (!columnMap.value || !columnMap.pipeline) return;
+    buildPreview(rawRows, columnMap.value, columnMap.pipeline, columnMap.district, columnMap.state);
     setMapperOpen(false);
   };
 
-  const handleUpload = async () => {
-    if (preview.length === 0) return;
+  const handleUpload = async (replace: boolean) => {
+    if (!uploadingSetId || preview.length === 0) return;
     setUploading(true);
     try {
-      const res = await api.post<any>('/api/pincode-routing/upload', { rows: preview });
-      toast.success(`Uploaded ${res.inserted} pincodes (${res.skipped} skipped)`);
-      setPreview([]);
-      await loadStats();
-    } catch {
-      toast.error('Upload failed. Please try again.');
-    } finally { setUploading(false); }
+      const res = await api.post<any>(`/api/field-routing/sets/${uploadingSetId}/upload`, { rows: preview, replace });
+      toast.success(`Uploaded ${res.inserted} rows (${res.skipped} skipped)`);
+      setPreview([]); setUploadingSetId(null);
+      await loadSets();
+    } catch { toast.error('Upload failed'); }
+    finally { setUploading(false); }
   };
 
-  const handleClear = async () => {
-    if (!confirm('Delete all pincode mappings? This cannot be undone.')) return;
-    setClearing(true);
+  const openUpload = (setId: string) => {
+    setUploadingSetId(setId);
+    setPreview([]); setMapperOpen(false);
+    setTimeout(() => fileRef.current?.click(), 50);
+  };
+
+  // ── Preview rows ────────────────────────────────────────────────────────────
+  const loadPreviewRows = async (set: RoutingSet, page = 1, search = '') => {
+    setPreviewLoading(true);
     try {
-      const res = await api.delete<any>('/api/pincode-routing');
-      toast.success(`Cleared ${res.deleted} mappings`);
-      await loadStats();
-    } catch { toast.error('Failed to clear mappings'); }
-    finally { setClearing(false); }
+      const res = await api.get<any>(
+        `/api/field-routing/sets/${set.id}/rows?page=${page}&limit=50&search=${encodeURIComponent(search)}`
+      );
+      setPreviewRows(res.rows ?? []);
+      setPreviewTotal(res.total ?? 0);
+      setPreviewPage(page);
+    } catch { toast.error('Failed to load rows'); }
+    finally { setPreviewLoading(false); }
   };
 
+  const openPreview = (set: RoutingSet) => {
+    setPreviewSet(set); setPreviewSearch(''); setPreviewPage(1);
+    loadPreviewRows(set, 1, '');
+  };
+
+  // ── Export ──────────────────────────────────────────────────────────────────
+  const handleExport = async (set: RoutingSet) => {
+    try {
+      const rows = await api.get<any[]>(`/api/field-routing/sets/${set.id}/export`);
+      const ws = XLSX.utils.json_to_sheet(rows.map((r) => ({
+        value: r.match_value, pipeline: r.pipeline_name ?? '', district: r.district ?? '', state: r.state ?? '',
+      })));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Routing');
+      XLSX.writeFile(wb, `${set.name.replace(/\s+/g, '_')}.xlsx`);
+      toast.success('Exported');
+    } catch { toast.error('Export failed'); }
+  };
+
+  // ── Test lookup ─────────────────────────────────────────────────────────────
   const handleTest = async () => {
-    if (!testPin.trim()) return;
+    if (!testSetId || !testVal.trim()) return;
+    const set = sets.find((s) => s.id === testSetId);
     setTesting(true); setTestResult(null);
     try {
-      const res = await api.get<any>(`/api/pincode-routing/lookup/${testPin.trim()}`);
+      const res = await api.post<any>(`/api/field-routing/sets/${testSetId}/test`, {
+        value: testVal.trim(), match_type: set?.match_type ?? 'exact',
+      });
       setTestResult({ found: true, ...res });
-    } catch {
-      setTestResult({ found: false });
-    } finally { setTesting(false); }
+    } catch { setTestResult({ found: false }); }
+    finally { setTesting(false); }
   };
 
-  const downloadTemplate = () => {
+  // ── Download template ───────────────────────────────────────────────────────
+  const downloadTemplate = (matchField: string) => {
     const ws = XLSX.utils.aoa_to_sheet([
-      ['pincode', 'district', 'state', 'pipeline_name'],
-      ['641001', 'Coimbatore', 'Tamil Nadu', 'CB9 Pipeline'],
-      ['641003', 'Coimbatore', 'Tamil Nadu', 'CB9 Pipeline'],
-      ['600001', 'Chennai', 'Tamil Nadu', 'Chennai Pipeline'],
+      ['value', 'pipeline', 'district', 'state'],
+      [`Sample ${MATCH_FIELD_LABELS[matchField] ?? matchField} 1`, 'Pipeline Name', 'District', 'Tamil Nadu'],
+      [`Sample ${MATCH_FIELD_LABELS[matchField] ?? matchField} 2`, 'Another Pipeline', 'District 2', 'Karnataka'],
     ]);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Pincodes');
-    XLSX.writeFile(wb, 'pincode_template.xlsx');
+    XLSX.utils.book_append_sheet(wb, ws, 'Routing');
+    XLSX.writeFile(wb, `field_routing_template.xlsx`);
   };
 
-  const filteredDistricts = stats.districts.filter((d) =>
-    d.district.toLowerCase().includes(search.toLowerCase()) ||
-    (d.pipeline_name ?? '').toLowerCase().includes(search.toLowerCase())
-  );
+  const uploading_set = sets.find((s) => s.id === uploadingSetId);
 
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-headline font-bold text-[#1c1410]">Field Routing</h1>
-        <p className="text-[13px] text-[#7a6b5c]">Map pincodes to districts and pipelines for automatic lead routing</p>
-      </div>
-
-      {/* Stats bar */}
-      <div className="grid grid-cols-3 gap-4">
-        {[
-          { label: 'Total Pincodes', value: loading ? '…' : stats.total.toLocaleString() },
-          { label: 'Districts', value: loading ? '…' : stats.districts.length.toString() },
-          { label: 'Pipelines Mapped', value: loading ? '…' : stats.districts.filter((d) => d.pipeline_name).length.toString() },
-        ].map((s) => (
-          <div key={s.label} className="bg-white rounded-2xl border border-black/5 p-5">
-            <p className="text-[12px] text-[#7a6b5c] font-medium uppercase tracking-wide">{s.label}</p>
-            <p className="text-3xl font-bold text-[#1c1410] mt-1">{s.value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Upload section */}
-      <div className="bg-white rounded-2xl border border-black/5 p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-bold text-[#1c1410]">Upload Pincode Excel</h2>
-            <p className="text-[12px] text-[#7a6b5c] mt-0.5">Upload any Excel (.xlsx) or CSV — columns are auto-detected or you can map them manually</p>
-          </div>
-          <button onClick={downloadTemplate} className="flex items-center gap-1.5 text-[12px] text-primary font-semibold hover:underline">
-            <Download className="w-3.5 h-3.5" /> Download Template
-          </button>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-headline font-bold text-[#1c1410]">Field Routing</h1>
+          <p className="text-[13px] text-[#7a6b5c]">Named routing sets — map any field value to a pipeline</p>
         </div>
-
-        <div
-          onClick={() => !mapperOpen && fileRef.current?.click()}
-          className="border-2 border-dashed border-[#e8ddd4] rounded-xl p-8 text-center cursor-pointer hover:border-primary/40 hover:bg-[#faf5f0] transition-colors"
+        <Button
+          onClick={() => setShowCreate(true)}
+          style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)' }}
+          className="flex items-center gap-2 text-white"
         >
-          <MapPin className="w-8 h-8 text-[#c4b09e] mx-auto mb-2" />
-          <p className="text-[13px] font-semibold text-[#1c1410]">Click to select your Excel / CSV file</p>
-          <p className="text-[11px] text-[#7a6b5c] mt-1">
-            Columns auto-detected — or map manually if your headers are different
-          </p>
-        </div>
-        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
-
-        {/* Column Mapper */}
-        {mapperOpen && (
-          <div className="border border-amber-200 bg-amber-50 rounded-xl p-5 space-y-4">
-            <div>
-              <p className="font-semibold text-[#1c1410] text-[13px]">Map your columns</p>
-              <p className="text-[12px] text-[#7a6b5c] mt-0.5">
-                We couldn't auto-detect your columns. Select which column in your file maps to each field.
-              </p>
-            </div>
-
-            <div className="space-y-2.5">
-              {SYSTEM_FIELDS.map(({ key, label, required }) => (
-                <div key={key} className="flex items-center gap-3">
-                  <div className="w-24 shrink-0">
-                    <span className="text-[12px] font-semibold text-[#1c1410]">{label}</span>
-                    {required && <span className="text-red-500 ml-0.5 text-[11px]">*</span>}
-                  </div>
-                  <ArrowRight className="w-3.5 h-3.5 text-[#b09e8d] shrink-0" />
-                  <select
-                    value={columnMap[key]}
-                    onChange={(e) => setColumnMap((m) => ({ ...m, [key]: e.target.value }))}
-                    className="flex-1 border border-black/10 rounded-lg px-3 py-1.5 text-[12px] outline-none focus:border-primary/40 bg-white"
-                  >
-                    <option value="">— Not mapped —</option>
-                    {rawColumns.map((col) => (
-                      <option key={col} value={col}>
-                        {col}
-                        {rawRows[0]?.[col] !== undefined && rawRows[0]?.[col] !== ''
-                          ? `  (e.g. ${String(rawRows[0][col]).substring(0, 25)})`
-                          : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </div>
-
-            {/* Live preview of first 3 rows */}
-            {columnMap.pincode && columnMap.district && (
-              <div className="overflow-hidden rounded-lg border border-amber-200">
-                <table className="w-full text-[11px]">
-                  <thead className="bg-amber-100">
-                    <tr>
-                      {SYSTEM_FIELDS.map(({ key, label }) => (
-                        <th key={key} className="px-3 py-1.5 text-left font-bold uppercase tracking-wide text-amber-800">
-                          {label}
-                          {columnMap[key] && <span className="normal-case font-normal ml-1 text-amber-600">← {columnMap[key]}</span>}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-amber-100">
-                    {rawRows.slice(0, 3).map((r, i) => (
-                      <tr key={i} className="bg-white">
-                        <td className="px-3 py-1.5 font-mono text-[#1c1410]">{columnMap.pincode ? String(r[columnMap.pincode] ?? '').trim() || '—' : '—'}</td>
-                        <td className="px-3 py-1.5 text-[#1c1410]">{columnMap.district ? String(r[columnMap.district] ?? '').trim() || '—' : '—'}</td>
-                        <td className="px-3 py-1.5 text-[#7a6b5c]">{columnMap.state ? String(r[columnMap.state] ?? '').trim() || '—' : '—'}</td>
-                        <td className="px-3 py-1.5 text-[#7a6b5c]">{columnMap.pipeline ? String(r[columnMap.pipeline] ?? '').trim() || '—' : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <p className="px-3 py-1.5 text-[10px] text-amber-700 bg-amber-50 border-t border-amber-100">
-                  Preview of first 3 rows from {rawRows.length.toLocaleString()} total
-                </p>
-              </div>
-            )}
-
-            <div className="flex gap-2 pt-1">
-              <Button variant="outline" size="sm" onClick={() => setMapperOpen(false)}>Cancel</Button>
-              <Button
-                size="sm"
-                onClick={applyColumnMap}
-                disabled={!columnMap.pincode || !columnMap.district}
-                style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)' }}
-              >
-                Apply Mapping → Preview
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Preview */}
-        {preview.length > 0 && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-[13px] font-semibold text-[#1c1410]">{preview.length} rows ready to upload</p>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => setPreview([])}>Cancel</Button>
-                <Button size="sm" onClick={handleUpload} disabled={uploading}
-                  style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)' }}>
-                  {uploading ? 'Uploading…' : `Upload ${preview.length} rows`}
-                </Button>
-              </div>
-            </div>
-            <div className="overflow-hidden rounded-xl border border-black/5 max-h-64 overflow-y-auto">
-              <table className="w-full text-[12px]">
-                <thead className="bg-[#faf8f6] sticky top-0">
-                  <tr>{['Pincode', 'District', 'State', 'Pipeline'].map((h) => (
-                    <th key={h} className="px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-[#7a6b5c]">{h}</th>
-                  ))}</tr>
-                </thead>
-                <tbody className="divide-y divide-black/[0.04]">
-                  {preview.slice(0, 50).map((r, i) => (
-                    <tr key={i} className="hover:bg-[#faf8f6]">
-                      <td className="px-3 py-1.5 font-mono text-[#1c1410]">{r.pincode}</td>
-                      <td className="px-3 py-1.5 text-[#1c1410]">{r.district}</td>
-                      <td className="px-3 py-1.5 text-[#7a6b5c]">{r.state || '—'}</td>
-                      <td className="px-3 py-1.5 text-[#7a6b5c]">{r.pipeline_name || '—'}</td>
-                    </tr>
-                  ))}
-                  {preview.length > 50 && (
-                    <tr><td colSpan={4} className="px-3 py-2 text-center text-[11px] text-[#7a6b5c]">…and {preview.length - 50} more rows</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+          <Plus className="w-4 h-4" /> New Routing Set
+        </Button>
       </div>
 
-      {/* Test lookup */}
-      <div className="bg-white rounded-2xl border border-black/5 p-6 space-y-3">
-        <h2 className="font-bold text-[#1c1410]">Test a Pincode</h2>
-        <div className="flex gap-2">
-          <input
-            value={testPin} onChange={(e) => setTestPin(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleTest()}
-            placeholder="Enter pincode to test (e.g. 641001)"
-            className="flex-1 border border-black/10 rounded-xl px-3 py-2 text-[13px] outline-none focus:border-primary/40"
-          />
-          <Button onClick={handleTest} disabled={testing || !testPin.trim()}>
-            {testing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+      {/* Sets list */}
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <div className="w-8 h-8 border-4 border-[#ea580c] border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : sets.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-black/5 p-16 text-center">
+          <MapPin className="w-12 h-12 text-[#c4b09e] mx-auto mb-3" />
+          <p className="font-semibold text-[#1c1410]">No routing sets yet</p>
+          <p className="text-[13px] text-[#7a6b5c] mt-1">Create a routing set to map field values to pipelines</p>
+          <Button onClick={() => setShowCreate(true)} className="mt-4"
+            style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)' }}>
+            <Plus className="w-4 h-4 mr-1" /> Create First Set
           </Button>
         </div>
-        {testResult && (
-          <div className={`flex items-start gap-2 p-3 rounded-xl text-[13px] ${testResult.found ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-            {testResult.found
-              ? <><CheckCircle className="w-4 h-4 text-green-600 shrink-0 mt-0.5" /><span className="text-green-800">Found: <strong>{testResult.district}</strong>{testResult.state ? `, ${testResult.state}` : ''}{testResult.pipeline_name ? ` → Pipeline: ${testResult.pipeline_name}` : ''}</span></>
-              : <><AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" /><span className="text-red-700">Pincode not found in mapping table</span></>
-            }
-          </div>
-        )}
-      </div>
+      ) : (
+        <div className="space-y-3">
+          {sets.map((set) => (
+            <div key={set.id} className="bg-white rounded-2xl border border-black/5 p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-[#1c1410] text-[15px]">{set.name}</h3>
+                    <span className="px-2 py-0.5 bg-orange-50 text-orange-700 text-[11px] font-semibold rounded-full border border-orange-100">
+                      {MATCH_FIELD_LABELS[set.match_field] ?? set.match_field}
+                    </span>
+                    <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[11px] font-semibold rounded-full border border-blue-100">
+                      {set.match_type}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4 mt-1.5 text-[12px] text-[#7a6b5c]">
+                    <span><strong className="text-[#1c1410]">{set.row_count.toLocaleString()}</strong> rows</span>
+                    <span><strong className="text-[#1c1410]">{set.times_used}</strong> times used</span>
+                    <span>Updated {formatDistanceToNow(new Date(set.updated_at), { addSuffix: true })}</span>
+                  </div>
+                </div>
 
-      {/* District table */}
-      {stats.total > 0 && (
-        <div className="bg-white rounded-2xl border border-black/5 p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-bold text-[#1c1410]">Configured Districts ({stats.districts.length})</h2>
-            <div className="flex gap-2 items-center">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-[#b09e8d]" />
-                <input value={search} onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search district…" className="pl-8 pr-3 py-2 text-[12px] border border-black/10 rounded-xl outline-none focus:border-primary/40 w-44" />
+                {/* Actions */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={() => { setTestSetId(testSetId === set.id ? null : set.id); setTestVal(''); setTestResult(null); }}
+                    className="px-3 py-1.5 text-[12px] font-semibold rounded-lg border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                  >
+                    Test
+                  </button>
+                  <button
+                    onClick={() => openPreview(set)}
+                    className="p-1.5 rounded-lg border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                    title="Preview rows"
+                  >
+                    <Eye className="w-4 h-4 text-[#7a6b5c]" />
+                  </button>
+                  <button
+                    onClick={() => openUpload(set.id)}
+                    className="p-1.5 rounded-lg border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                    title="Upload data"
+                  >
+                    <Upload className="w-4 h-4 text-[#7a6b5c]" />
+                  </button>
+                  <button
+                    onClick={() => handleExport(set)}
+                    className="p-1.5 rounded-lg border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                    title="Download as Excel"
+                  >
+                    <Download className="w-4 h-4 text-[#7a6b5c]" />
+                  </button>
+                  <div className="relative">
+                    <button
+                      onClick={() => setMenuOpen(menuOpen === set.id ? null : set.id)}
+                      className="p-1.5 rounded-lg border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                    >
+                      <MoreVertical className="w-4 h-4 text-[#7a6b5c]" />
+                    </button>
+                    {menuOpen === set.id && (
+                      <div className="absolute right-0 top-8 bg-white rounded-xl border border-black/10 shadow-lg z-20 py-1 min-w-[130px]">
+                        <button
+                          onClick={() => { setRenamingSet(set); setRenameVal(set.name); setMenuOpen(null); }}
+                          className="w-full px-4 py-2 text-left text-[13px] hover:bg-[#faf8f6] flex items-center gap-2"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" /> Rename
+                        </button>
+                        <button
+                          onClick={() => { downloadTemplate(set.match_field); setMenuOpen(null); }}
+                          className="w-full px-4 py-2 text-left text-[13px] hover:bg-[#faf8f6] flex items-center gap-2"
+                        >
+                          <Download className="w-3.5 h-3.5" /> Template
+                        </button>
+                        <button
+                          onClick={() => { handleDelete(set); setMenuOpen(null); }}
+                          className="w-full px-4 py-2 text-left text-[13px] text-red-600 hover:bg-red-50 flex items-center gap-2"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-              <Button variant="outline" size="sm" onClick={handleClear} disabled={clearing}
-                className="text-red-600 border-red-200 hover:bg-red-50">
-                <Trash2 className="w-3.5 h-3.5 mr-1" />
-                {clearing ? 'Clearing…' : 'Clear All'}
+
+              {/* Inline test panel */}
+              {testSetId === set.id && (
+                <div className="mt-4 pt-4 border-t border-black/5 space-y-2">
+                  <p className="text-[12px] font-semibold text-[#1c1410]">Test a value</p>
+                  <div className="flex gap-2">
+                    <input
+                      value={testVal}
+                      onChange={(e) => setTestVal(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleTest()}
+                      placeholder={`Enter ${MATCH_FIELD_LABELS[set.match_field] ?? set.match_field} value…`}
+                      className="flex-1 border border-black/10 rounded-xl px-3 py-2 text-[13px] outline-none focus:border-primary/40"
+                    />
+                    <Button onClick={handleTest} disabled={testing || !testVal.trim()} size="sm">
+                      {testing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                    </Button>
+                  </div>
+                  {testResult && (
+                    <div className={`flex items-start gap-2 p-3 rounded-xl text-[13px] ${testResult.found ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                      {testResult.found
+                        ? <><CheckCircle className="w-4 h-4 text-green-600 shrink-0 mt-0.5" />
+                            <span className="text-green-800">
+                              Pipeline: <strong>{testResult.pipeline_name ?? '—'}</strong>
+                              {testResult.district ? ` · District: ${testResult.district}` : ''}
+                              {testResult.state ? `, ${testResult.state}` : ''}
+                            </span></>
+                        : <><AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                            <span className="text-red-700">Value not found in this routing set</span></>
+                      }
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Upload panel (triggered by clicking upload icon) */}
+              {uploadingSetId === set.id && (
+                <div className="mt-4 pt-4 border-t border-black/5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[13px] font-semibold text-[#1c1410]">
+                      Upload data to "{uploading_set?.name}"
+                    </p>
+                    <button onClick={() => { setUploadingSetId(null); setPreview([]); setMapperOpen(false); }}
+                      className="p-1 rounded-lg hover:bg-black/5">
+                      <X className="w-4 h-4 text-[#7a6b5c]" />
+                    </button>
+                  </div>
+
+                  {preview.length === 0 && !mapperOpen && (
+                    <div
+                      onClick={() => fileRef.current?.click()}
+                      className="border-2 border-dashed border-[#e8ddd4] rounded-xl p-6 text-center cursor-pointer hover:border-primary/40 hover:bg-[#faf5f0] transition-colors"
+                    >
+                      <Upload className="w-6 h-6 text-[#c4b09e] mx-auto mb-1.5" />
+                      <p className="text-[13px] font-semibold text-[#1c1410]">Click to select Excel / CSV</p>
+                      <p className="text-[11px] text-[#7a6b5c] mt-0.5">Columns: value, pipeline, district (optional), state (optional)</p>
+                    </div>
+                  )}
+
+                  {mapperOpen && (
+                    <div className="border border-amber-200 bg-amber-50 rounded-xl p-4 space-y-3">
+                      <p className="text-[13px] font-semibold text-[#1c1410]">Map your columns</p>
+                      <div className="space-y-2">
+                        {SYSTEM_COLS.map(({ key, label, required }) => (
+                          <div key={key} className="flex items-center gap-2">
+                            <span className="text-[12px] font-semibold text-[#1c1410] w-36 shrink-0">
+                              {label}{required && <span className="text-red-500 ml-0.5">*</span>}
+                            </span>
+                            <ArrowRight className="w-3.5 h-3.5 text-[#b09e8d] shrink-0" />
+                            <select
+                              value={columnMap[key]}
+                              onChange={(e) => setColumnMap((m) => ({ ...m, [key]: e.target.value }))}
+                              className="flex-1 border border-black/10 rounded-lg px-3 py-1.5 text-[12px] outline-none focus:border-primary/40 bg-white"
+                            >
+                              <option value="">— Not mapped —</option>
+                              {rawColumns.map((col) => (
+                                <option key={col} value={col}>
+                                  {col}{rawRows[0]?.[col] !== undefined ? `  (e.g. ${String(rawRows[0][col]).substring(0, 20)})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => setMapperOpen(false)}>Cancel</Button>
+                        <Button size="sm" onClick={applyColumnMap}
+                          disabled={!columnMap.value || !columnMap.pipeline}
+                          style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)' }}>
+                          Apply → Preview
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {preview.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[13px] font-semibold text-[#1c1410]">{preview.length} rows ready</p>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={() => setPreview([])}>Cancel</Button>
+                          <Button variant="outline" size="sm" onClick={() => handleUpload(false)} disabled={uploading}>
+                            {uploading ? 'Uploading…' : 'Merge'}
+                          </Button>
+                          <Button size="sm" onClick={() => handleUpload(true)} disabled={uploading}
+                            style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)' }}>
+                            {uploading ? 'Uploading…' : 'Replace All'}
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="overflow-hidden rounded-xl border border-black/5 max-h-48 overflow-y-auto">
+                        <table className="w-full text-[12px]">
+                          <thead className="bg-[#faf8f6] sticky top-0">
+                            <tr>{['Value', 'Pipeline', 'District', 'State'].map((h) => (
+                              <th key={h} className="px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-[#7a6b5c]">{h}</th>
+                            ))}</tr>
+                          </thead>
+                          <tbody className="divide-y divide-black/[0.04]">
+                            {preview.slice(0, 30).map((r, i) => (
+                              <tr key={i} className="hover:bg-[#faf8f6]">
+                                <td className="px-3 py-1.5 font-mono text-[#1c1410]">{r.match_value}</td>
+                                <td className="px-3 py-1.5 text-[#1c1410]">{r.pipeline_name ?? '—'}</td>
+                                <td className="px-3 py-1.5 text-[#7a6b5c]">{r.district ?? '—'}</td>
+                                <td className="px-3 py-1.5 text-[#7a6b5c]">{r.state ?? '—'}</td>
+                              </tr>
+                            ))}
+                            {preview.length > 30 && (
+                              <tr><td colSpan={4} className="px-3 py-2 text-center text-[11px] text-[#7a6b5c]">…and {preview.length - 30} more rows</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="text-[11px] text-[#7a6b5c]">
+                        <strong>Merge</strong> — adds new rows, updates existing by value.&nbsp;
+                        <strong>Replace All</strong> — deletes all existing rows first.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Hidden file input */}
+      <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
+
+      {/* ── Create Set Modal ── */}
+      {showCreate && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={(e) => e.target === e.currentTarget && setShowCreate(false)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-[#1c1410] text-lg">New Routing Set</h2>
+              <button onClick={() => setShowCreate(false)} className="p-1 hover:bg-black/5 rounded-lg">
+                <X className="w-5 h-5 text-[#7a6b5c]" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[12px] font-semibold text-[#1c1410] block mb-1">Name <span className="text-red-500">*</span></label>
+                <input
+                  value={newName} onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+                  placeholder="e.g. Tamil Nadu Pincodes, City Routing"
+                  className="w-full border border-black/10 rounded-xl px-3 py-2 text-[13px] outline-none focus:border-primary/40"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-[12px] font-semibold text-[#1c1410] block mb-1">Match Field</label>
+                <select
+                  value={newMatchField} onChange={(e) => setNewMatchField(e.target.value)}
+                  className="w-full border border-black/10 rounded-xl px-3 py-2 text-[13px] outline-none focus:border-primary/40"
+                >
+                  {Object.entries(MATCH_FIELD_LABELS).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                  <option value="custom">Custom field</option>
+                </select>
+                <p className="text-[11px] text-[#7a6b5c] mt-1">Which lead field's value will be looked up in this set</p>
+              </div>
+              <div>
+                <label className="text-[12px] font-semibold text-[#1c1410] block mb-1">Match Type</label>
+                <div className="flex gap-2">
+                  {(['exact', 'contains'] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setNewMatchType(t)}
+                      className={`flex-1 py-2 text-[13px] rounded-xl border font-medium transition-colors ${newMatchType === t ? 'bg-orange-50 border-orange-300 text-orange-700' : 'border-black/10 text-[#7a6b5c] hover:bg-[#faf8f6]'}`}
+                    >
+                      {t === 'exact' ? 'Exact match' : 'Contains'}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-[#7a6b5c] mt-1">
+                  {newMatchType === 'exact' ? 'Value must match exactly (case-insensitive)' : 'Value partially matches (e.g. "Chennai" matches "Chennai North")'}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button variant="outline" className="flex-1" onClick={() => setShowCreate(false)}>Cancel</Button>
+              <Button className="flex-1" onClick={handleCreate} disabled={creating || !newName.trim()}
+                style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)' }}>
+                {creating ? 'Creating…' : 'Create Set'}
               </Button>
             </div>
-          </div>
-          <div className="overflow-hidden rounded-xl border border-black/5 max-h-96 overflow-y-auto">
-            <table className="w-full text-[13px]">
-              <thead className="bg-[#faf8f6] sticky top-0">
-                <tr>{['District', 'State', 'Pipeline', 'Pincodes'].map((h) => (
-                  <th key={h} className="px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide text-[#7a6b5c]">{h}</th>
-                ))}</tr>
-              </thead>
-              <tbody className="divide-y divide-black/[0.04]">
-                {filteredDistricts.map((d, i) => (
-                  <tr key={i} className="hover:bg-[#faf8f6]">
-                    <td className="px-4 py-2.5 font-semibold text-[#1c1410]">{d.district}</td>
-                    <td className="px-4 py-2.5 text-[#7a6b5c]">{d.state || '—'}</td>
-                    <td className="px-4 py-2.5">
-                      {d.pipeline_name
-                        ? <span className="px-2 py-0.5 bg-orange-50 text-orange-700 text-[11px] font-semibold rounded-full border border-orange-100">{d.pipeline_name}</span>
-                        : <span className="text-[#b09e8d] text-[12px]">Not mapped</span>}
-                    </td>
-                    <td className="px-4 py-2.5 text-[#7a6b5c] font-mono text-[12px]">{d.pincode_count}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
         </div>
       )}
+
+      {/* ── Rename Modal ── */}
+      {renamingSet && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={(e) => e.target === e.currentTarget && setRenamingSet(null)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm space-y-4">
+            <h2 className="font-bold text-[#1c1410]">Rename Routing Set</h2>
+            <input
+              value={renameVal} onChange={(e) => setRenameVal(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleRename()}
+              className="w-full border border-black/10 rounded-xl px-3 py-2 text-[13px] outline-none focus:border-primary/40"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setRenamingSet(null)}>Cancel</Button>
+              <Button className="flex-1" onClick={handleRename} disabled={!renameVal.trim()}
+                style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)' }}>Save</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Preview Rows Modal ── */}
+      {previewSet && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={(e) => e.target === e.currentTarget && setPreviewSet(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-black/5">
+              <div>
+                <h2 className="font-bold text-[#1c1410]">{previewSet.name}</h2>
+                <p className="text-[12px] text-[#7a6b5c]">{previewTotal.toLocaleString()} total rows</p>
+              </div>
+              <button onClick={() => setPreviewSet(null)} className="p-1 hover:bg-black/5 rounded-lg">
+                <X className="w-5 h-5 text-[#7a6b5c]" />
+              </button>
+            </div>
+            <div className="p-4 border-b border-black/5">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-[#b09e8d]" />
+                <input
+                  value={previewSearch}
+                  onChange={(e) => { setPreviewSearch(e.target.value); loadPreviewRows(previewSet, 1, e.target.value); }}
+                  placeholder="Search rows…"
+                  className="pl-8 pr-3 py-2 text-[12px] border border-black/10 rounded-xl outline-none focus:border-primary/40 w-full"
+                />
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto">
+              {previewLoading ? (
+                <div className="flex justify-center py-8">
+                  <div className="w-6 h-6 border-4 border-[#ea580c] border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : (
+                <table className="w-full text-[13px]">
+                  <thead className="bg-[#faf8f6] sticky top-0">
+                    <tr>{['Value', 'Pipeline', 'District', 'State'].map((h) => (
+                      <th key={h} className="px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide text-[#7a6b5c]">{h}</th>
+                    ))}</tr>
+                  </thead>
+                  <tbody className="divide-y divide-black/[0.04]">
+                    {previewRows.map((r) => (
+                      <tr key={r.id} className="hover:bg-[#faf8f6]">
+                        <td className="px-4 py-2.5 font-mono text-[#1c1410]">{r.match_value}</td>
+                        <td className="px-4 py-2.5 text-[#1c1410]">{r.pipeline_name ?? '—'}</td>
+                        <td className="px-4 py-2.5 text-[#7a6b5c]">{r.district ?? '—'}</td>
+                        <td className="px-4 py-2.5 text-[#7a6b5c]">{r.state ?? '—'}</td>
+                      </tr>
+                    ))}
+                    {previewRows.length === 0 && (
+                      <tr><td colSpan={4} className="px-4 py-8 text-center text-[#7a6b5c]">No rows found</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            {previewTotal > 50 && (
+              <div className="flex items-center justify-between p-4 border-t border-black/5">
+                <span className="text-[12px] text-[#7a6b5c]">Page {previewPage} of {Math.ceil(previewTotal / 50)}</span>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" disabled={previewPage <= 1}
+                    onClick={() => { const p = previewPage - 1; loadPreviewRows(previewSet, p, previewSearch); }}>← Prev</Button>
+                  <Button variant="outline" size="sm" disabled={previewPage >= Math.ceil(previewTotal / 50)}
+                    onClick={() => { const p = previewPage + 1; loadPreviewRows(previewSet, p, previewSearch); }}>Next →</Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Close menu on outside click */}
+      {menuOpen && <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(null)} />}
     </div>
   );
 }

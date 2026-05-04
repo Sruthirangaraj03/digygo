@@ -1203,13 +1203,14 @@ function AssignStaffPanel({ cfg, staff, onUpdate }: {
 }
 
 // ── Action Config Panel ────────────────────────────────────────────────────────
-function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workflows, onRefreshPipelines, refreshingPipelines }: {
+function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workflows, routingSets, onRefreshPipelines, refreshingPipelines }: {
   node: WFNode;
   onUpdate: (updates: Partial<WFNode>) => void;
   pipelines: PipelineOpt[];
   staff: StaffOpt[];
   templates: TemplateOpt[];
   workflows: { id: string; name: string }[];
+  routingSets?: { id: string; name: string; match_field: string; match_type: string }[];
   onRefreshPipelines?: () => void;
   refreshingPipelines?: boolean;
 }) {
@@ -1750,13 +1751,48 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
         const selectedSlug = (cfg.pincode_field as string) ?? '';
         const selectedField = customFields.find((cf) => cf.slug === selectedSlug);
         const noFields = customFields.length === 0;
+        const sets = routingSets ?? [];
+        const selectedSetId = (cfg.set_id as string) ?? '';
+        const selectedSet = sets.find((s) => s.id === selectedSetId);
         return (<>
           <div className="bg-green-50 border border-green-200 rounded-xl p-3">
             <p className="text-xs text-green-800 flex items-start gap-1.5">
               <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-              Looks up the lead's pincode in your mapping table and sets the district and moves the lead to the mapped pipeline. Upload your pincode data in <strong>Automation → Pincode Routing</strong>.
+              Looks up the lead field value in your routing set and routes the lead to the mapped pipeline. Upload your routing data in <strong>Automation → Uploads</strong>.
             </p>
           </div>
+
+          {sets.length === 0 ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs text-amber-800 font-semibold">No routing sets found</p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                Go to{' '}
+                <a href="/automation/pincode-routing" target="_blank" rel="noopener noreferrer" className="font-bold underline hover:text-amber-900">Automation → Uploads</a>
+                {' '}and create a routing set with your mapping data.
+              </p>
+            </div>
+          ) : (
+            <FieldRow label="Routing Set">
+              <select
+                className={selectCls}
+                value={selectedSetId}
+                onChange={(e) => onUpdate({ config: { ...cfg, set_id: e.target.value } })}
+              >
+                <option value="">— Select a routing set —</option>
+                {sets.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name} ({s.match_field}, {s.match_type})</option>
+                ))}
+              </select>
+              {!selectedSetId && (
+                <p className="text-[11px] text-red-500 font-medium mt-1">⚠ You must select a routing set — the node will be skipped until one is chosen.</p>
+              )}
+              {selectedSet && (
+                <p className="text-[11px] text-blue-600 mt-1">
+                  Matches lead's <strong>{selectedSet.match_field}</strong> field using <strong>{selectedSet.match_type}</strong> lookup.
+                </p>
+              )}
+            </FieldRow>
+          )}
 
           {noFields ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
@@ -1764,11 +1800,11 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
               <p className="text-xs text-amber-700 mt-0.5">
                 Go to{' '}
                 <a href="/settings/fields" target="_blank" rel="noopener noreferrer" className="font-bold underline hover:text-amber-900">Settings → Fields</a>
-                {' '}and create a field (e.g. "Pincode") to hold the pincode value from your form.
+                {' '}and create a field (e.g. "Pincode") to hold the value from your form.
               </p>
             </div>
           ) : (
-            <FieldRow label="Pincode Field">
+            <FieldRow label="Lead Field">
               <select
                 className={selectCls}
                 value={selectedSlug}
@@ -1800,8 +1836,8 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
 
           <div className="flex items-center justify-between pt-1">
             <div>
-              <span className="text-sm font-semibold block">If pincode doesn't match</span>
-              <span className="text-xs text-muted-foreground">Move lead to a fallback pipeline when pincode is not in your mapping</span>
+              <span className="text-sm font-semibold block">If value doesn't match</span>
+              <span className="text-xs text-muted-foreground">Move lead to a fallback pipeline when the value is not found in your routing set</span>
             </div>
             <Switch
               checked={!!(cfg.fallback_enabled)}
@@ -2401,7 +2437,7 @@ interface BranchNodeContext {
 // ── Node Config Modal ──────────────────────────────────────────────────────────
 function NodeConfigModal({
   node, branchCtx, onClose, onUpdate, onDelete, onChangeTrigger, onChangeAction,
-  pipelines, staff, forms, metaForms, eventTypes, bookingLinks, metaPages, webhookUrls, templates, workflows,
+  pipelines, staff, forms, metaForms, eventTypes, bookingLinks, metaPages, webhookUrls, templates, workflows, routingSets,
   showAIPanel, setShowAIPanel,
   aiPrompt, setAIPrompt, aiTone, setAITone, aiFormat, setAIFormat, aiLength, setAILength,
   onAIGenerate, allowReentry, onToggleReentry, onRefreshPipelines, refreshingPipelines,
@@ -2423,6 +2459,7 @@ function NodeConfigModal({
   webhookUrls: { webhookInbound: string; paymentReceived: string; courseEnrolled: string };
   templates: TemplateOpt[];
   workflows: { id: string; name: string }[];
+  routingSets?: { id: string; name: string; match_field: string; match_type: string }[];
   showAIPanel: boolean;
   setShowAIPanel: (v: boolean) => void;
   aiPrompt: string; setAIPrompt: (v: string) => void;
@@ -2445,8 +2482,12 @@ function NodeConfigModal({
   const isTrigger = node.type === 'trigger';
 
   const handleSaveClose = () => {
+    if (node.actionType === 'pincode_routing' && !(node.config.set_id as string)) {
+      toast.error('Select a routing set for Field Routing before saving.');
+      return;
+    }
     if (node.actionType === 'pincode_routing' && !(node.config.pincode_field as string)) {
-      toast.error('Select a custom field for Pincode Routing before saving.');
+      toast.error('Select a lead field for Field Routing before saving.');
       return;
     }
     onClose();
@@ -2554,7 +2595,7 @@ function NodeConfigModal({
                 ? <TriggerConfigPanel node={node} onUpdate={onUpdate} onChangeTrigger={onChangeTrigger} pipelines={pipelines} staff={staff} forms={forms} metaForms={metaForms} eventTypes={eventTypes} bookingLinks={bookingLinks} metaPages={metaPages} webhookUrls={webhookUrls} allowReentry={allowReentry} onToggleReentry={onToggleReentry} />
                 : node.type === 'condition'
                 ? <ConditionConfigPanel node={node} onUpdate={onUpdate} pipelines={pipelines} staff={staff} />
-                : <ActionConfigPanel node={node} onUpdate={onUpdate} pipelines={pipelines} staff={staff} templates={templates} workflows={workflows} onRefreshPipelines={onRefreshPipelines} refreshingPipelines={refreshingPipelines} />
+                : <ActionConfigPanel node={node} onUpdate={onUpdate} pipelines={pipelines} staff={staff} templates={templates} workflows={workflows} routingSets={routingSets} onRefreshPipelines={onRefreshPipelines} refreshingPipelines={refreshingPipelines} />
               }
             </>
           )}
@@ -2853,6 +2894,7 @@ export default function WorkflowEditorPage() {
   const [editorBookingLinks, setEditorBookingLinks] = useState<FormOpt[]>([]);
   const [editorMetaPages, setEditorMetaPages] = useState<FormOpt[]>([]);
   const [editorWebhookUrls, setEditorWebhookUrls] = useState({ webhookInbound: '', paymentReceived: '', courseEnrolled: '' });
+  const [editorRoutingSets, setEditorRoutingSets] = useState<{ id: string; name: string; match_field: string; match_type: string }[]>([]);
   const [refreshingPipelines, setRefreshingPipelines] = useState(false);
 
   const refreshPipelines = () => {
@@ -2894,6 +2936,9 @@ export default function WorkflowEditorPage() {
     }).catch(() => {});
     api.get<any>('/api/settings/webhook-url').then((data) => {
       if (data) setEditorWebhookUrls({ webhookInbound: data.webhookInbound ?? '', paymentReceived: data.paymentReceived ?? '', courseEnrolled: data.courseEnrolled ?? '' });
+    }).catch(() => {});
+    api.get<any[]>('/api/field-routing/sets').then((rows) => {
+      setEditorRoutingSets((rows ?? []).map((r) => ({ id: r.id, name: r.name, match_field: r.match_field, match_type: r.match_type })));
     }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -3615,7 +3660,7 @@ export default function WorkflowEditorPage() {
                       ? <TriggerConfigPanel node={selectedNode} onUpdate={(u) => updateNode(selectedNode.id, u)} onChangeTrigger={() => setShowTriggerPicker(true)} pipelines={editorPipelines} staff={editorStaff} forms={editorForms} metaForms={editorMetaForms} eventTypes={editorEventTypes} bookingLinks={editorBookingLinks} metaPages={editorMetaPages} webhookUrls={editorWebhookUrls} allowReentry={workflow.allowReentry} onToggleReentry={(val) => setWorkflow((w) => ({ ...w, allowReentry: val }))} />
                       : selectedNodeIsCondition
                       ? <ConditionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedNode.id, u) : updateNode(selectedNode.id, u)} pipelines={editorPipelines} staff={editorStaff} />
-                      : <ActionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedNode.id, u) : updateNode(selectedNode.id, u)} pipelines={editorPipelines} staff={editorStaff} templates={editorTemplates} workflows={editorWorkflows} onRefreshPipelines={refreshPipelines} refreshingPipelines={refreshingPipelines} />
+                      : <ActionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedNode.id, u) : updateNode(selectedNode.id, u)} pipelines={editorPipelines} staff={editorStaff} templates={editorTemplates} workflows={editorWorkflows} routingSets={editorRoutingSets} onRefreshPipelines={refreshPipelines} refreshingPipelines={refreshingPipelines} />
                     }
                   </>
                 )}
@@ -3664,6 +3709,7 @@ export default function WorkflowEditorPage() {
           webhookUrls={editorWebhookUrls}
           templates={editorTemplates}
           workflows={editorWorkflows}
+          routingSets={editorRoutingSets}
           showAIPanel={showAIPanel}
           setShowAIPanel={setShowAIPanel}
           aiPrompt={aiPrompt} setAIPrompt={setAIPrompt}

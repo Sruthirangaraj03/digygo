@@ -930,82 +930,110 @@ export async function executeNodes(
 
         // ── Pincode Routing ───────────────────────────────────────────────────
         case 'pincode_routing': {
-          // Which custom-field slug holds the pincode (default: 'pincode')
-          const pincodeSlug = ((node.config.pincode_field ?? 'pincode') as string).trim();
+          const fieldSlug  = ((node.config.pincode_field ?? 'pincode') as string).trim();
+          const setId      = (node.config.set_id as string ?? '').trim();
+          const matchType  = (node.config.match_type as string ?? 'exact');
 
-          // Resolve pincode value: check top-level lead fields, then custom_fields
-          const pincodeValue = String(
-            (lead as any)[pincodeSlug] ?? lead.custom_fields?.[pincodeSlug] ?? ''
+          const fieldValue = String(
+            (lead as any)[fieldSlug] ?? lead.custom_fields?.[fieldSlug] ?? ''
           ).trim();
 
-          if (!pincodeValue) {
+          if (!fieldValue) {
             status = 'skipped';
-            message = `pincode_routing: no value found for field "${pincodeSlug}" on this lead`;
+            message = `field_routing: no value found for field "${fieldSlug}" on this lead`;
             break;
           }
 
-          const mapRes = await query(
-            `SELECT district, state, pipeline_name
-             FROM pincode_district_map
-             WHERE tenant_id=$1 AND pincode=$2`,
-            [tenantId, pincodeValue]
-          ).catch(() => ({ rows: [] as any[] }));
+          // ── Lookup: new field_routing_rows (if set_id set) or legacy pincode_district_map
+          let matchRow: { district: string | null; state: string | null; pipeline_name: string | null; set_name?: string } | null = null;
 
-          if (!mapRes.rows[0]) {
+          if (setId) {
+            let lookupRes;
+            if (matchType === 'contains') {
+              lookupRes = await query(
+                `SELECT frr.match_value, frr.pipeline_name, frr.district, frr.state, frs.name AS set_name
+                 FROM field_routing_rows frr
+                 JOIN field_routing_sets frs ON frs.id = frr.set_id
+                 WHERE frr.set_id=$1::uuid AND frr.tenant_id=$2::uuid
+                   AND (LOWER($3) LIKE '%' || LOWER(frr.match_value) || '%'
+                     OR LOWER(frr.match_value) LIKE '%' || LOWER($3) || '%')
+                 ORDER BY length(frr.match_value) DESC LIMIT 1`,
+                [setId, tenantId, fieldValue]
+              ).catch(() => ({ rows: [] as any[] }));
+            } else {
+              lookupRes = await query(
+                `SELECT frr.match_value, frr.pipeline_name, frr.district, frr.state, frs.name AS set_name
+                 FROM field_routing_rows frr
+                 JOIN field_routing_sets frs ON frs.id = frr.set_id
+                 WHERE frr.set_id=$1::uuid AND frr.tenant_id=$2::uuid AND LOWER(frr.match_value)=LOWER($3)`,
+                [setId, tenantId, fieldValue]
+              ).catch(() => ({ rows: [] as any[] }));
+            }
+            if (lookupRes.rows[0]) {
+              matchRow = lookupRes.rows[0];
+              await query(
+                `UPDATE field_routing_sets SET times_used=times_used+1, updated_at=NOW() WHERE id=$1::uuid`,
+                [setId]
+              ).catch(() => null);
+            }
+          } else {
+            // Legacy: pincode_district_map
+            const legacyRes = await query(
+              `SELECT district, state, pipeline_name FROM pincode_district_map WHERE tenant_id=$1 AND pincode=$2`,
+              [tenantId, fieldValue]
+            ).catch(() => ({ rows: [] as any[] }));
+            if (legacyRes.rows[0]) matchRow = legacyRes.rows[0];
+          }
+
+          // ── No match: try fallback pipeline
+          if (!matchRow) {
             const fallbackPipelineId = (node.config.fallback_enabled && node.config.fallback_pipeline_id)
-              ? (node.config.fallback_pipeline_id as string)
-              : null;
+              ? (node.config.fallback_pipeline_id as string) : null;
 
             if (fallbackPipelineId && lead.id) {
               const fbRes = await query(
                 `SELECT p.id AS pipeline_id, ps.id AS stage_id, ps.name AS stage_name, p.name AS pipeline_name
-                 FROM pipelines p
-                 JOIN pipeline_stages ps ON ps.pipeline_id = p.id
-                 WHERE p.id=$1 AND p.tenant_id=$2
-                 ORDER BY ps.stage_order ASC NULLS LAST
-                 LIMIT 1`,
+                 FROM pipelines p JOIN pipeline_stages ps ON ps.pipeline_id=p.id
+                 WHERE p.id=$1 AND p.tenant_id=$2 ORDER BY ps.stage_order ASC NULLS LAST LIMIT 1`,
                 [fallbackPipelineId, tenantId]
               ).catch(() => ({ rows: [] as any[] }));
-
               if (fbRes.rows[0]) {
-                const { pipeline_id, stage_id, stage_name, pipeline_name: fbPipelineName } = fbRes.rows[0];
+                const { pipeline_id, stage_id, stage_name, pipeline_name: fbName } = fbRes.rows[0];
                 const fbMove = await query(
                   `UPDATE leads SET pipeline_id=$1, stage_id=$2, updated_at=NOW() WHERE id=$3 AND tenant_id=$4`,
                   [pipeline_id, stage_id, lead.id, tenantId]
                 );
                 if ((fbMove.rowCount ?? 0) > 0) {
-                  lead.pipeline_id = pipeline_id;
-                  lead.stage_id = stage_id;
-                  const updatedFb = await query(
+                  lead.pipeline_id = pipeline_id; lead.stage_id = stage_id;
+                  const updFb = await query(
                     `SELECT l.*, u.name AS assigned_name FROM leads l LEFT JOIN users u ON u.id=l.assigned_to WHERE l.id=$1`,
                     [lead.id]
                   ).catch(() => ({ rows: [] as any[] }));
-                  if (updatedFb.rows[0]) emitToTenant(tenantId, 'lead:updated', updatedFb.rows[0]);
-                  message = `pincode_routing: pincode "${pincodeValue}" not in mapping — moved to fallback pipeline "${fbPipelineName}" (Stage: ${stage_name})`;
+                  if (updFb.rows[0]) emitToTenant(tenantId, 'lead:updated', updFb.rows[0]);
+                  message = `field_routing: "${fieldValue}" not in mapping — moved to fallback pipeline "${fbName}" (Stage: ${stage_name})`;
                 } else {
                   status = 'failed';
-                  message = `pincode_routing: pincode "${pincodeValue}" not in mapping — fallback pipeline move affected 0 rows`;
+                  message = `field_routing: "${fieldValue}" not in mapping — fallback pipeline move affected 0 rows`;
                 }
               } else {
                 status = 'failed';
-                message = `pincode_routing: pincode "${pincodeValue}" not in mapping — fallback pipeline not found`;
+                message = `field_routing: "${fieldValue}" not in mapping — fallback pipeline not found`;
               }
             } else {
               status = 'skipped';
-              message = `pincode_routing: pincode "${pincodeValue}" not found in mapping table — no fallback configured`;
+              message = `field_routing: "${fieldValue}" not found in mapping${setId ? ` (set: ${setId})` : ''} — no fallback configured`;
             }
             break;
           }
 
-          const { district, state, pipeline_name } = mapRes.rows[0];
+          const { district, state, pipeline_name, set_name } = matchRow;
 
-          // Set district (and state) on the lead's custom_fields JSONB
-          if (lead.id) {
+          // Write district/state back to lead's custom_fields
+          if (lead.id && district) {
             const patch: Record<string, string> = { district };
             if (state) patch.state = state;
             await query(
-              `UPDATE leads SET custom_fields = custom_fields || $1::jsonb, updated_at=NOW()
-               WHERE id=$2 AND tenant_id=$3`,
+              `UPDATE leads SET custom_fields=custom_fields || $1::jsonb, updated_at=NOW() WHERE id=$2 AND tenant_id=$3`,
               [JSON.stringify(patch), lead.id, tenantId]
             ).catch(() => null);
             if (!lead.custom_fields) lead.custom_fields = {};
@@ -1013,73 +1041,60 @@ export async function executeNodes(
             if (state) lead.custom_fields['state'] = state;
           }
 
-          // Move lead to the mapped pipeline (first stage of that pipeline)
-          // If pipeline_name is not set, fall back to district as the pipeline name
-          const effectivePipeline = (pipeline_name || district).trim();
+          // Move lead to mapped pipeline (first stage)
+          const effectivePipeline = (pipeline_name || district || '').trim();
+          if (!effectivePipeline) {
+            status = 'failed';
+            message = `field_routing: "${fieldValue}" matched but no pipeline configured in this row`;
+            break;
+          }
+
           const pipeRes = await query(
             `SELECT p.id AS pipeline_id, ps.id AS stage_id, ps.name AS stage_name
-             FROM pipelines p
-             JOIN pipeline_stages ps ON ps.pipeline_id = p.id
+             FROM pipelines p JOIN pipeline_stages ps ON ps.pipeline_id=p.id
              WHERE p.tenant_id=$1 AND LOWER(p.name)=LOWER($2)
-             ORDER BY ps.stage_order ASC NULLS LAST
-             LIMIT 1`,
+             ORDER BY ps.stage_order ASC NULLS LAST LIMIT 1`,
             [tenantId, effectivePipeline]
           ).catch(() => ({ rows: [] as any[] }));
 
           if (pipeRes.rows[0]) {
             const { pipeline_id, stage_id, stage_name } = pipeRes.rows[0];
-            if (!lead.id) {
-              status = 'failed';
-              message = `pincode_routing: lead has no id — cannot move to pipeline`;
-              break;
-            }
+            if (!lead.id) { status = 'failed'; message = `field_routing: lead has no id`; break; }
             const moveRes = await query(
-              `UPDATE leads SET pipeline_id=$1, stage_id=$2, updated_at=NOW()
-               WHERE id=$3 AND tenant_id=$4`,
+              `UPDATE leads SET pipeline_id=$1, stage_id=$2, updated_at=NOW() WHERE id=$3 AND tenant_id=$4`,
               [pipeline_id, stage_id, lead.id, tenantId]
             );
             if ((moveRes.rowCount ?? 0) === 0) {
               status = 'failed';
-              message = `pincode_routing: UPDATE affected 0 rows — lead not moved to pipeline "${effectivePipeline}"`;
+              message = `field_routing: UPDATE affected 0 rows — lead not moved to pipeline "${effectivePipeline}"`;
               break;
             }
-            lead.pipeline_id = pipeline_id;
-            lead.stage_id = stage_id;
-            lead.stage_name = stage_name;
-
-            // Emit socket so frontend pipeline view updates in real-time
+            lead.pipeline_id = pipeline_id; lead.stage_id = stage_id; lead.stage_name = stage_name;
             const updatedLead = await query(
-              `SELECT l.*, u.name AS assigned_name
-               FROM leads l LEFT JOIN users u ON u.id = l.assigned_to
-               WHERE l.id=$1`,
+              `SELECT l.*, u.name AS assigned_name FROM leads l LEFT JOIN users u ON u.id=l.assigned_to WHERE l.id=$1`,
               [lead.id]
             ).catch(() => ({ rows: [] as any[] }));
             if (updatedLead.rows[0]) emitToTenant(tenantId, 'lead:updated', updatedLead.rows[0]);
 
-            // Auto-tag with district name if configured
-            if (node.config.auto_tag) {
+            if (node.config.auto_tag && district) {
               await query(
-                `UPDATE leads SET tags=array_append(tags, $1::text), updated_at=NOW()
-                 WHERE id=$2 AND tenant_id=$3 AND NOT ($1=ANY(tags))`,
+                `UPDATE leads SET tags=array_append(tags,$1::text), updated_at=NOW() WHERE id=$2 AND tenant_id=$3 AND NOT ($1=ANY(tags))`,
                 [district, lead.id, tenantId]
               ).catch(() => null);
               await syncTagToJunction(tenantId, lead.id, district).catch(() => null);
               if (!Array.isArray(lead.tags)) lead.tags = [];
               if (!lead.tags.includes(district)) lead.tags.push(district);
             }
-            message = `Pincode ${pincodeValue} → ${district}${state ? ', ' + state : ''} → Pipeline: ${effectivePipeline} (Stage: ${stage_name})${node.config.auto_tag ? ` · tagged "${district}"` : ''}`;
+            const setLabel = set_name ? ` [Set: ${set_name}]` : '';
+            message = `field_routing${setLabel}: "${fieldValue}" → ${district ?? effectivePipeline}${state ? ', ' + state : ''} → Pipeline: ${effectivePipeline} (Stage: ${stage_name})${node.config.auto_tag && district ? ` · tagged "${district}"` : ''}`;
           } else {
             status = 'failed';
-            message = `pincode_routing: pipeline "${effectivePipeline}" not found — district "${district}" set on lead but not moved`;
+            message = `field_routing: pipeline "${effectivePipeline}" not found — ${district ? `district "${district}" set on lead but ` : ''}not moved`;
             if (lead.id) {
               await query(
-                `INSERT INTO lead_notes (lead_id, tenant_id, title, content)
-                 VALUES ($1, $2, $3, $4)`,
-                [
-                  lead.id, tenantId,
-                  `Pincode routing: no pipeline found`,
-                  `Pincode ${pincodeValue} maps to ${district}${state ? ', ' + state : ''} but pipeline "${effectivePipeline}" does not exist in your CRM. Create it or update your pincode mapping.`,
-                ]
+                `INSERT INTO lead_notes (lead_id, tenant_id, title, content) VALUES ($1,$2,$3,$4)`,
+                [lead.id, tenantId, `Field routing: no pipeline found`,
+                 `Value "${fieldValue}" maps to pipeline "${effectivePipeline}" but it does not exist. Create it or update your routing set.`]
               ).catch(() => null);
             }
           }
