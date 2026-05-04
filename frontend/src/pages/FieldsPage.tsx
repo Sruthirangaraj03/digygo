@@ -587,7 +587,15 @@ function ValueModal({ value, onClose, onSave }: {
 type Tab = 'standard' | 'additional' | 'values';
 
 export default function FieldsPage() {
-  const { pipelines } = useCrmStore();
+  const {
+    pipelines,
+    addCustomField: storeAddCustomField,
+    updateCustomField: storeUpdateCustomField,
+    deleteCustomField: storeDeleteCustomField,
+    addAdditionalField: storeAddAdditionalField,
+    updateAdditionalField: storeUpdateAdditionalField,
+    deleteAdditionalField: storeDeleteAdditionalField,
+  } = useCrmStore();
   const [searchParams] = useSearchParams();
   const tab = (searchParams.get('tab') ?? 'standard') as Tab;
   const [search, setSearch] = useState('');
@@ -827,7 +835,7 @@ export default function FieldsPage() {
                         <button onClick={() => copyToken(f.slug)} title="Copy unique key" className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center text-[#7a6b5c] hover:text-primary transition-colors">
                           <Copy className="w-3.5 h-3.5" />
                         </button>
-                        <button onClick={async () => { if (window.confirm(`Delete "${f.name}"?`)) { try { await api.delete(`/api/fields/custom/${f.id}`); setCustomStandard((p) => p.filter((x) => x.id !== f.id)); toast.success('Deleted'); } catch { toast.error('Failed to delete'); } } }} title="Delete" className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-[#7a6b5c] hover:text-red-500 transition-colors">
+                        <button onClick={async () => { if (window.confirm(`Delete "${f.name}"?`)) { try { await api.delete(`/api/fields/custom/${f.id}`); setCustomStandard((p) => p.filter((x) => x.id !== f.id)); storeDeleteCustomField(f.id); toast.success('Deleted'); } catch { toast.error('Failed to delete'); } } }} title="Delete" className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-[#7a6b5c] hover:text-red-500 transition-colors">
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -881,7 +889,7 @@ export default function FieldsPage() {
                       <button onClick={() => setAddModal({ open: true, editing: f })} title="Edit" className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center text-[#7a6b5c] hover:text-primary transition-colors">
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
-                      <button onClick={async () => { if (window.confirm('Delete this question?')) { try { await api.delete(`/api/fields/questions/${f.id}`); setAdditional((p) => p.filter((x) => x.id !== f.id)); toast.success('Question removed'); } catch { toast.error('Failed to delete'); } } }} title="Delete" className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-[#7a6b5c] hover:text-red-500 transition-colors">
+                      <button onClick={async () => { if (window.confirm('Delete this question?')) { try { await api.delete(`/api/fields/questions/${f.id}`); setAdditional((p) => p.filter((x) => x.id !== f.id)); storeDeleteAdditionalField(f.id); toast.success('Question removed'); } catch { toast.error('Failed to delete'); } } }} title="Delete" className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-[#7a6b5c] hover:text-red-500 transition-colors">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -992,6 +1000,7 @@ export default function FieldsPage() {
                   options: f.options, required: f.required,
                 });
                 setCustomStandard((p) => p.map((x) => x.id === stdModal.editing!.id ? { ...x, ...f, id: x.id } : x));
+                storeUpdateCustomField(stdModal.editing.id, { name: f.name, type: f.type as any, slug: f.slug, required: f.required, options: f.options });
                 toast.success('Field updated');
               } else {
                 const created = await api.post<any>('/api/fields/custom', {
@@ -999,6 +1008,7 @@ export default function FieldsPage() {
                   options: f.options, required: f.required, is_active: true,
                 });
                 setCustomStandard((p) => [...p, { ...f, id: created.id, is_active: true }]);
+                storeAddCustomField({ id: created.id, name: f.name, slug: f.slug, type: f.type as any, required: f.required ?? false, visible: true, options: f.options, orderIndex: 0 });
                 toast.success(`Field "${f.name}" created`);
               }
               setStdModal({ open: false });
@@ -1033,6 +1043,7 @@ export default function FieldsPage() {
                   question: f.question, type: f.type, options: f.options, required: f.required,
                 });
                 setAdditional((p) => p.map((x) => x.id === addModal.editing!.id ? { ...x, ...f } : x));
+                storeUpdateAdditionalField(addModal.editing.id, { question: f.question, type: f.type as any, options: f.options, required: f.required });
                 toast.success('Question updated');
               } else {
                 const created = await api.post<any>('/api/fields/questions', {
@@ -1040,6 +1051,7 @@ export default function FieldsPage() {
                   slug: f.slug, options: f.options, required: f.required,
                 });
                 setAdditional((p) => [...p, { ...f, id: created.id }]);
+                storeAddAdditionalField({ id: created.id, pipelineId: f.pipelineId, question: f.question, type: f.type as any, slug: f.slug, options: f.options, required: f.required ?? false });
                 toast.success('Question added');
               }
               setAddModal({ open: false });
