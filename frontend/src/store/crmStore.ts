@@ -441,12 +441,12 @@ export const useCrmStore = create<CrmState>((set) => ({
         api.get<any[]>('/api/pipelines').catch(() => [] as any[]),
         api.get<any[]>('/api/calendar').catch(() => [] as any[]),
         api.get<any[]>('/api/tags').catch(() => [] as any[]),
-        api.get<any[]>('/api/fields/questions').catch(() => [] as any[]),
+        api.get<any[]>('/api/fields/questions').catch((e) => { console.warn('[initFromApi] fields/questions failed:', e?.response?.status); return [] as any[]; }),
         api.get<any[]>('/api/conversations').catch(() => [] as any[]),
         api.get<any[]>('/api/notifications').catch(() => [] as any[]),
         api.get<any[]>('/api/calendar/event-types').catch(() => [] as any[]),
         api.get<any[]>('/api/leads/followups').catch(() => [] as any[]),
-        api.get<any[]>('/api/fields/custom').catch(() => [] as any[]),
+        api.get<any[]>('/api/fields/custom').catch((e) => { console.warn('[initFromApi] fields/custom failed:', e?.response?.status); return [] as any[]; }),
         api.get<any[]>('/api/workflows').catch(() => [] as any[]),
       ]);
 
@@ -626,8 +626,8 @@ export const useCrmStore = create<CrmState>((set) => ({
         bookingLinks: mappedBookingLinks,
         followUps: mappedFollowUps,
         workflows: mappedWorkflows,
-        ...(mappedCustomFields.length > 0 ? { customFields: mappedCustomFields } : {}),
-        ...(mappedAdditionalFields.length > 0 ? { additionalFields: mappedAdditionalFields } : {}),
+        customFields: mappedCustomFields,
+        additionalFields: mappedAdditionalFields,
       });
     } catch {
       // Keep mock data if API fails (e.g. not logged in yet)

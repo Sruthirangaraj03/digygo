@@ -70,7 +70,7 @@ router.delete('/custom/:id', checkPermission('fields:manage'), async (req: AuthR
 
 // ── Pipeline Questions ────────────────────────────────────────────────────────
 
-router.get('/questions', checkPermission('fields:view'), async (req: AuthRequest, res: Response) => {
+router.get('/questions', async (req: AuthRequest, res: Response) => {
   const { pipeline_id } = req.query as { pipeline_id?: string };
   let sql = 'SELECT * FROM pipeline_questions WHERE tenant_id=$1';
   const params: any[] = [req.user!.tenantId];
