@@ -1831,7 +1831,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
 
         // Custom Values modal state
         const [cvOpen, setCvOpen] = useState<{ section: 'body'|'header'; idx: number } | null>(null);
-        const [cvTab, setCvTab]   = useState<string>('');
+        const [cvTab, setCvTab]   = useState<string>(systemFields[0]?.group ?? 'Contact');
 
         // Build tabs dynamically — all data fetched from API via store (no frontend constants)
         const systemGroups = Array.from(new Set(systemFields.map((f) => f.group)));
@@ -2028,7 +2028,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
                       onChange={(e) => updateRow(bodyFields, updateBodyFields, i, { value: e.target.value })}
                       className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-gray-400" />
                     <button type="button" title="Insert variable"
-                      onClick={() => { setCvOpen({ section: 'body', idx: i }); setCvTab((t) => t || cvTabs[0]?.id || ''); }}
+                      onClick={() => { setCvOpen({ section: 'body', idx: i }); setCvTab(cvTabs[0]?.id ?? ''); }}
                       className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 shrink-0">
                       <Tag className="w-3.5 h-3.5" />
                     </button>
@@ -2068,7 +2068,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
                     onChange={(e) => updateRow(headerFields, updateHeaderFields, i, { value: e.target.value })}
                     className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-gray-400" />
                   <button type="button" title="Insert variable"
-                    onClick={() => { setCvOpen({ section: 'header', idx: i }); setCvTab((t) => t || cvTabs[0]?.id || ''); }}
+                    onClick={() => { setCvOpen({ section: 'header', idx: i }); setCvTab(cvTabs[0]?.id ?? ''); }}
                     className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 shrink-0">
                     <Tag className="w-3.5 h-3.5" />
                   </button>

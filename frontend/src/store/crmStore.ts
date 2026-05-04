@@ -6,6 +6,9 @@ import {
   Tag, Opportunity, NoteEntry, FollowUp, CustomFieldDef, BookingLink, AvailabilitySlot, QuickReply, Pipeline, PipelineStage,
 } from '@/data/mockData';
 import { WFRecord, WFFolder } from '@/types/workflow';
+import { SYSTEM_STANDARD_FIELDS } from '@/constants/systemFields';
+
+const SYSTEM_FIELDS_FALLBACK = SYSTEM_STANDARD_FIELDS.map((f) => ({ id: f.id, name: f.name, slug: f.slug, group: f.group }));
 
 export interface LeadActivity {
   id: string;
@@ -183,7 +186,7 @@ export const useCrmStore = create<CrmState>((set) => ({
   quickReplies: [],
   activities: [],
   additionalFields: [],
-  systemFields: [],
+  systemFields: SYSTEM_FIELDS_FALLBACK,
 
   // Activity actions
   addActivity: (activity) => set((s) => ({ activities: [activity, ...s.activities] })),
@@ -450,7 +453,7 @@ export const useCrmStore = create<CrmState>((set) => ({
         api.get<any[]>('/api/leads/followups').catch(() => [] as any[]),
         api.get<any[]>('/api/fields/custom').catch((e) => { console.warn('[initFromApi] fields/custom failed:', e?.response?.status); return [] as any[]; }),
         api.get<any[]>('/api/workflows').catch(() => [] as any[]),
-        api.get<any[]>('/api/fields/system').catch(() => [] as any[]),
+        api.get<any[]>('/api/fields/system').catch((e) => { console.warn('[initFromApi] fields/system failed:', e?.response?.status); return [] as any[]; }),
       ]);
 
       // Build stageId → stageName lookup
@@ -631,7 +634,9 @@ export const useCrmStore = create<CrmState>((set) => ({
         workflows: mappedWorkflows,
         customFields: mappedCustomFields,
         additionalFields: mappedAdditionalFields,
-        systemFields: (systemFieldsRes ?? []).map((f: any) => ({ id: f.id, name: f.name, slug: f.slug, group: f.group })),
+        systemFields: (systemFieldsRes ?? []).length > 0
+          ? (systemFieldsRes as any[]).map((f) => ({ id: f.id, name: f.name, slug: f.slug, group: f.group }))
+          : SYSTEM_FIELDS_FALLBACK,
       });
     } catch {
       // Keep mock data if API fails (e.g. not logged in yet)
