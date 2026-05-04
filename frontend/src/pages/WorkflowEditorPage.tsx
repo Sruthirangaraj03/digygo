@@ -1831,7 +1831,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
 
         // Custom Values modal state
         const [cvOpen, setCvOpen] = useState<{ section: 'body'|'header'; idx: number } | null>(null);
-        const [cvTab, setCvTab]   = useState<string>('Contact');
+        const [cvTab, setCvTab]   = useState<string>('');
 
         // Build tabs dynamically — all data fetched from API via store (no frontend constants)
         const systemGroups = Array.from(new Set(systemFields.map((f) => f.group)));
@@ -2028,7 +2028,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
                       onChange={(e) => updateRow(bodyFields, updateBodyFields, i, { value: e.target.value })}
                       className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-gray-400" />
                     <button type="button" title="Insert variable"
-                      onClick={() => { setCvOpen({ section: 'body', idx: i }); setCvTab('Contact'); }}
+                      onClick={() => { setCvOpen({ section: 'body', idx: i }); setCvTab((t) => t || cvTabs[0]?.id || ''); }}
                       className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 shrink-0">
                       <Tag className="w-3.5 h-3.5" />
                     </button>
@@ -2068,7 +2068,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
                     onChange={(e) => updateRow(headerFields, updateHeaderFields, i, { value: e.target.value })}
                     className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-gray-400" />
                   <button type="button" title="Insert variable"
-                    onClick={() => { setCvOpen({ section: 'header', idx: i }); setCvTab('Contact'); }}
+                    onClick={() => { setCvOpen({ section: 'header', idx: i }); setCvTab((t) => t || cvTabs[0]?.id || ''); }}
                     className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 shrink-0">
                     <Tag className="w-3.5 h-3.5" />
                   </button>
@@ -2118,7 +2118,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
                   <h3 className="text-[18px] font-bold text-gray-900">Custom Values</h3>
                   <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => setCvTab('Contact')}
+                    <button type="button" onClick={() => setCvTab(cvTabs[0]?.id || '')}
                       className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400" title="Reset tab">
                       <RefreshCw className="w-4 h-4" />
                     </button>
@@ -2133,17 +2133,17 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
                   {cvTabs.map((tab) => (
                     <button key={tab.id} type="button"
                       onClick={() => setCvTab(tab.id)}
-                      className={`px-4 py-3 text-[13px] font-semibold border-b-2 transition-colors -mb-px ${cvTab === tab.id ? 'border-gray-800 text-gray-900' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+                      className={`px-4 py-3 text-[13px] font-semibold border-b-2 transition-colors -mb-px ${(cvTab === tab.id || (!cvTab && cvTabs[0]?.id === tab.id)) ? 'border-gray-800 text-gray-900' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
                       {tab.label}
                     </button>
                   ))}
                 </div>
                 {/* Field list */}
                 <div className="overflow-y-auto flex-1 px-2 py-2">
-                  {(cvTabs.find((t) => t.id === cvTab)?.fields ?? []).length === 0 ? (
-                    <p className="text-[13px] text-gray-400 text-center py-8">No custom fields found</p>
+                  {((cvTabs.find((t) => t.id === cvTab) ?? cvTabs[0])?.fields ?? []).length === 0 ? (
+                    <p className="text-[13px] text-gray-400 text-center py-8">No fields found</p>
                   ) : (
-                    (cvTabs.find((t) => t.id === cvTab)?.fields ?? []).map((field) => (
+                    ((cvTabs.find((t) => t.id === cvTab) ?? cvTabs[0])?.fields ?? []).map((field) => (
                       <div key={field.variable}
                         className="flex items-center justify-between px-4 py-3 rounded-xl hover:bg-gray-50 group">
                         <div>
