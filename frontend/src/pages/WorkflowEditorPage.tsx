@@ -1815,12 +1815,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
       {/* Webhook Call */}
       {node.actionType === 'webhook_call' && (() => {
         type KV = { key: string; value: string };
-        // Default body = every field in the business's CRM, all fetched from the API
-        const DEFAULT_BODY: KV[] = [
-          ...systemFields.map((f) => ({ key: f.name, value: `{%${f.slug}%}` })),
-          ...customFields.map((f) => ({ key: f.name, value: `{%${f.slug}%}` })),
-          ...additionalFields.map((f) => ({ key: f.question, value: `{%${f.slug}%}` })),
-        ];
+        const DEFAULT_BODY: KV[] = [];
         const bodyFields: KV[]   = (cfg.body_fields as KV[] | undefined) ?? DEFAULT_BODY;
         const headerFields: KV[] = (cfg.header_fields as KV[]) ?? [];
         const webhookType        = (cfg.webhook_type as string)  ?? 'realtime';
