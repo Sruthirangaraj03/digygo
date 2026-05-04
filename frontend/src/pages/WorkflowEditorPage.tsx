@@ -1338,6 +1338,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
   const cfg = node.config;
   const actionPipelineStages = pipelines.find(p => p.id === (cfg.pipeline_id as string))?.stages ?? [];
   const customFields = useCrmStore((s) => s.customFields);
+  const additionalFields = useCrmStore((s) => s.additionalFields);
 
   return (
     <div className="space-y-5">
@@ -1837,11 +1838,8 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
         const [cvOpen, setCvOpen] = useState<{ section: 'body'|'header'; idx: number } | null>(null);
         const [cvTab, setCvTab]   = useState<string>('Contact');
 
-        // All field data comes from the CRM store (already fetched on app boot — no extra requests)
-        const cvCustomStandard   = useCrmStore((s) => s.customFields);      // /api/fields/custom
-        const cvQuestions        = useCrmStore((s) => s.additionalFields);  // /api/fields/questions
-
         // Build tabs dynamically from store data + shared system constants
+        // customFields and additionalFields come from component-level useCrmStore calls (hooks rules)
         const cvTabs = [
           ...SYSTEM_GROUPS.map((group) => ({
             id: group,
@@ -1853,12 +1851,12 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
           {
             id: 'Custom',
             label: 'Custom',
-            fields: cvCustomStandard.map((f) => ({ name: f.name, variable: slugToVar(f.slug) })),
+            fields: customFields.map((f) => ({ name: f.name, variable: slugToVar(f.slug) })),
           },
           {
             id: 'Questions',
             label: 'Questions',
-            fields: cvQuestions.map((f) => ({ name: f.question, variable: slugToVar(f.slug) })),
+            fields: additionalFields.map((f) => ({ name: f.question, variable: slugToVar(f.slug) })),
           },
         ];
 
