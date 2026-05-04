@@ -927,11 +927,6 @@ export default function MetaFormsPage() {
       toast.dismiss(key);
       const { pushed, created, existing, workflows, done = 0, skipped = 0, failed = 0 } = result;
 
-      // Immediately update this form's leads_count in the UI from the push result
-      setForms((prev) => prev.map((f) =>
-        f.form_id === form.form_id ? { ...f, leads_count: pushed } : f
-      ));
-
       if (pushed === 0) {
         toast.info(`No ${type === 'old' ? 'historical' : 'new'} leads found in Meta for this form`);
       } else if (workflows.length === 0) {
