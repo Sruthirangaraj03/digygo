@@ -1813,8 +1813,19 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
       {/* Webhook Call */}
       {node.actionType === 'webhook_call' && (() => {
         type KV = { key: string; value: string };
-        const bodyFields: KV[]    = (cfg.body_fields as KV[])    ?? [];
-        const headerFields: KV[]  = (cfg.header_fields as KV[])  ?? [];
+        const DEFAULT_BODY: KV[] = [
+          { key: 'Name',           value: '{full_name}' },
+          { key: 'Email',          value: '{email}' },
+          { key: 'Phone',          value: '{phone}' },
+          { key: 'Stage',          value: '{stage}' },
+          { key: 'Pipeline',       value: '{pipeline}' },
+          { key: 'Assigned Staff', value: '{assigned_staff}' },
+          { key: 'Source',         value: '{source}' },
+        ];
+        // Use defaults only when body_fields has never been set (new node).
+        // If user explicitly cleared all rows, cfg.body_fields will be [] and we respect that.
+        const bodyFields: KV[]   = (cfg.body_fields as KV[] | undefined) ?? DEFAULT_BODY;
+        const headerFields: KV[] = (cfg.header_fields as KV[]) ?? [];
         const webhookType         = (cfg.webhook_type as string)  ?? 'realtime';
         const requestFormat       = (cfg.request_format as string) ?? 'json';
         const method              = (cfg.method as string) ?? 'POST';
