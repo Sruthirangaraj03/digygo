@@ -1693,25 +1693,208 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
       </>)}
 
       {/* Webhook Call */}
-      {node.actionType === 'webhook_call' && (<>
-        <FieldRow label="URL" required>
-          <input type="url" className={inputCls} value={(cfg.url as string) ?? ''} onChange={sel('url')} placeholder="https://your-webhook-url.com/endpoint" />
-        </FieldRow>
-        <FieldRow label="Method">
-          <select className={selectCls} value={(cfg.method as string) ?? 'POST'} onChange={sel('method')}>
-            <option>POST</option><option>GET</option><option>PUT</option><option>PATCH</option>
-          </select>
-        </FieldRow>
-        <FieldRow label="Headers (JSON)">
-          <textarea className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card focus:border-primary outline-none resize-none font-mono" rows={3} placeholder='{"Authorization": "Bearer token"}' value={(cfg.headers as string) ?? ''} onChange={sel('headers')} />
-        </FieldRow>
-        <FieldRow label="Payload (JSON)">
-          <div>
-            <textarea className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card focus:border-primary outline-none resize-none font-mono" rows={4} placeholder={'{"contact": "{email}", "name": "{full_name}", "event": "workflow_triggered"}'} value={(cfg.payload as string) ?? ''} onChange={sel('payload')} />
-            <VarHints onInsert={(v) => onUpdate({ config: { ...cfg, payload: ((cfg.payload as string) ?? '') + v } })} />
+      {node.actionType === 'webhook_call' && (() => {
+        type KV = { key: string; value: string };
+        const bodyFields: KV[]    = (cfg.body_fields as KV[])    ?? [];
+        const headerFields: KV[]  = (cfg.header_fields as KV[])  ?? [];
+        const webhookType         = (cfg.webhook_type as string)  ?? 'realtime';
+        const requestFormat       = (cfg.request_format as string) ?? 'json';
+        const method              = (cfg.method as string) ?? 'POST';
+        const hasBody             = ['POST','PUT','PATCH'].includes(method);
+
+        const updateBodyFields = (fields: KV[]) => onUpdate({ config: { ...cfg, body_fields: fields } });
+        const updateHeaderFields = (fields: KV[]) => onUpdate({ config: { ...cfg, header_fields: fields } });
+
+        const addRow = (fields: KV[], setFn: (f: KV[]) => void) =>
+          setFn([...fields, { key: '', value: '' }]);
+        const updateRow = (fields: KV[], setFn: (f: KV[]) => void, idx: number, patch: Partial<KV>) =>
+          setFn(fields.map((r, i) => i === idx ? { ...r, ...patch } : r));
+        const removeRow = (fields: KV[], setFn: (f: KV[]) => void, idx: number) =>
+          setFn(fields.filter((_, i) => i !== idx));
+
+        const allVars = [
+          ...VARIABLE_HINTS,
+          ...customFields.map((cf) => `{cf_${cf.slug}}`),
+        ];
+
+        return (<>
+          {/* Info banner */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+            <p className="text-xs text-slate-700 flex items-start gap-1.5">
+              <Globe className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              Sends lead data to an external URL. Use variables like <code className="bg-slate-200 px-1 rounded">{'{first_name}'}</code> in values.
+            </p>
           </div>
-        </FieldRow>
-      </>)}
+
+          {/* Method + URL */}
+          <div className="flex gap-2">
+            <div className="w-28 shrink-0">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Method</label>
+              <select className={selectCls} value={method} onChange={sel('method')}>
+                <option>POST</option><option>GET</option><option>PUT</option><option>PATCH</option>
+              </select>
+            </div>
+            <div className="flex-1 min-w-0">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Endpoint URL <span className="text-red-500">*</span></label>
+              <input type="url" className={inputCls} value={(cfg.url as string) ?? ''} onChange={sel('url')} placeholder="https://your-webhook-url.com/endpoint" />
+            </div>
+          </div>
+
+          {/* Webhook Type */}
+          <div>
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-2">Webhook Type</label>
+            <div className="grid grid-cols-2 gap-2">
+              {([['realtime','Real-Time','Fires immediately when workflow reaches this step'],['time_aware','Time-Aware','Only fires within your configured time window']] as const).map(([val, label, desc]) => (
+                <button key={val} type="button"
+                  onClick={() => onUpdate({ config: { ...cfg, webhook_type: val } })}
+                  className={`text-left p-3 rounded-xl border-2 transition-colors ${webhookType === val ? 'border-primary bg-primary/5' : 'border-black/10 hover:border-black/20'}`}
+                >
+                  <span className="text-[12px] font-bold block">{label}</span>
+                  <span className="text-[11px] text-muted-foreground">{desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Time window (only if time_aware) */}
+          {webhookType === 'time_aware' && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
+              <p className="text-[12px] font-semibold text-amber-800">Time Window</p>
+              <div className="flex items-center gap-2">
+                <input type="time" className="border border-black/10 rounded-lg px-2 py-1.5 text-[12px] outline-none"
+                  value={(cfg.time_start as string) ?? '09:00'}
+                  onChange={(e) => onUpdate({ config: { ...cfg, time_start: e.target.value } })} />
+                <span className="text-[12px] text-muted-foreground">to</span>
+                <input type="time" className="border border-black/10 rounded-lg px-2 py-1.5 text-[12px] outline-none"
+                  value={(cfg.time_end as string) ?? '18:00'}
+                  onChange={(e) => onUpdate({ config: { ...cfg, time_end: e.target.value } })} />
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {(['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] as const).map((day) => {
+                  const days: string[] = (cfg.time_days as string[]) ?? ['Mon','Tue','Wed','Thu','Fri'];
+                  const active = days.includes(day);
+                  return (
+                    <button key={day} type="button"
+                      onClick={() => onUpdate({ config: { ...cfg, time_days: active ? days.filter((d) => d !== day) : [...days, day] } })}
+                      className={`px-2 py-0.5 rounded text-[11px] font-semibold border transition-colors ${active ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-[#7a6b5c] border-black/10'}`}
+                    >{day}</button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-amber-700">If triggered outside this window, the node is skipped and logged as "skipped (outside time window)"</p>
+            </div>
+          )}
+
+          {/* Request Format (only for methods with body) */}
+          {hasBody && (
+            <div>
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-2">Request Format</label>
+              <div className="flex gap-2">
+                {([['json','JSON','application/json'],['form','Form','application/x-www-form-urlencoded']] as const).map(([val, label, sub]) => (
+                  <button key={val} type="button"
+                    onClick={() => onUpdate({ config: { ...cfg, request_format: val } })}
+                    className={`flex-1 text-center p-2 rounded-xl border-2 transition-colors ${requestFormat === val ? 'border-primary bg-primary/5' : 'border-black/10 hover:border-black/20'}`}
+                  >
+                    <span className="text-[12px] font-bold block">{label}</span>
+                    <span className="text-[10px] text-muted-foreground font-mono">{sub}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Body fields */}
+          {hasBody && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Body Fields</label>
+                <button type="button" onClick={() => addRow(bodyFields, updateBodyFields)}
+                  className="text-[11px] text-primary font-semibold hover:underline">+ Add field</button>
+              </div>
+              {bodyFields.length === 0 ? (
+                <div className="text-[11px] text-muted-foreground bg-muted/30 rounded-lg p-2 text-center">
+                  No fields — full lead object will be sent by default
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {bodyFields.map((row, i) => (
+                    <div key={i} className="flex gap-1.5 items-start">
+                      <input placeholder="Field name" value={row.key}
+                        onChange={(e) => updateRow(bodyFields, updateBodyFields, i, { key: e.target.value })}
+                        className="w-32 shrink-0 border border-black/10 rounded-lg px-2 py-1.5 text-[12px] outline-none focus:border-primary/40" />
+                      <div className="flex-1 min-w-0">
+                        <input placeholder="{variable} or static value" value={row.value}
+                          onChange={(e) => updateRow(bodyFields, updateBodyFields, i, { value: e.target.value })}
+                          className="w-full border border-black/10 rounded-lg px-2 py-1.5 text-[12px] outline-none focus:border-primary/40 font-mono" />
+                        {row.value === '' && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {allVars.slice(0, 6).map((v) => (
+                              <button key={v} type="button"
+                                onClick={() => updateRow(bodyFields, updateBodyFields, i, { value: v })}
+                                className="text-[9px] px-1 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 font-mono">{v}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <button type="button" onClick={() => removeRow(bodyFields, updateBodyFields, i)}
+                        className="p-1 text-muted-foreground hover:text-red-500 shrink-0">✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Headers */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Headers</label>
+              <button type="button" onClick={() => addRow(headerFields, updateHeaderFields)}
+                className="text-[11px] text-primary font-semibold hover:underline">+ Add header</button>
+            </div>
+            {headerFields.length === 0 ? (
+              <div className="text-[11px] text-muted-foreground bg-muted/30 rounded-lg p-2 text-center">
+                No custom headers — Content-Type is set automatically
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {headerFields.map((row, i) => (
+                  <div key={i} className="flex gap-1.5 items-center">
+                    <input placeholder="Header name" value={row.key}
+                      onChange={(e) => updateRow(headerFields, updateHeaderFields, i, { key: e.target.value })}
+                      className="w-32 shrink-0 border border-black/10 rounded-lg px-2 py-1.5 text-[12px] outline-none focus:border-primary/40" />
+                    <input placeholder="Value" value={row.value}
+                      onChange={(e) => updateRow(headerFields, updateHeaderFields, i, { value: e.target.value })}
+                      className="flex-1 border border-black/10 rounded-lg px-2 py-1.5 text-[12px] outline-none focus:border-primary/40 font-mono" />
+                    <button type="button" onClick={() => removeRow(headerFields, updateHeaderFields, i)}
+                      className="p-1 text-muted-foreground hover:text-red-500 shrink-0">✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Save response */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-semibold block">Save response to field</span>
+                <span className="text-xs text-muted-foreground">Store the API response value in a custom field</span>
+              </div>
+              <Switch checked={!!(cfg.save_response)} onCheckedChange={(v) => onUpdate({ config: { ...cfg, save_response: v } })} />
+            </div>
+            {!!(cfg.save_response) && (
+              <FieldRow label="Custom Field">
+                <select className={selectCls} value={(cfg.save_response_field as string) ?? ''}
+                  onChange={sel('save_response_field')}>
+                  <option value="">— Select field —</option>
+                  {customFields.map((cf) => <option key={cf.id} value={cf.slug}>{cf.name}</option>)}
+                </select>
+              </FieldRow>
+            )}
+          </div>
+        </>);
+      })()}
 
       {/* API Request */}
       {node.actionType === 'api_call' && (<>

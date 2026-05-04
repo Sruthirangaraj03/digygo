@@ -804,29 +804,91 @@ export async function executeNodes(
           const url = interpolate((node.config.url ?? '') as string, lead);
           if (!url) { status = 'skipped'; message = 'webhook_call: no URL configured'; break; }
 
-          const method = ((node.config.method ?? 'POST') as string).toUpperCase();
-          let headers: Record<string, string> = { 'Content-Type': 'application/json' };
-          if (node.config.headers) {
-            try { headers = { ...headers, ...JSON.parse(interpolate(node.config.headers as string, lead)) }; }
-            catch { /* ignore malformed JSON headers */ }
+          // ── Time-aware check ────────────────────────────────────────────────
+          if (node.config.webhook_type === 'time_aware') {
+            const now = new Date();
+            const dayName = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][now.getDay()];
+            const allowedDays: string[] = (node.config.time_days as string[]) ?? ['Mon','Tue','Wed','Thu','Fri'];
+            if (!allowedDays.includes(dayName)) {
+              status = 'skipped'; message = `webhook_call: skipped — ${dayName} not in allowed days`; break;
+            }
+            const hhmm = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+            const start = (node.config.time_start as string) ?? '09:00';
+            const end   = (node.config.time_end   as string) ?? '18:00';
+            if (hhmm < start || hhmm > end) {
+              status = 'skipped'; message = `webhook_call: skipped — current time ${hhmm} outside window ${start}–${end}`; break;
+            }
           }
 
+          const method = ((node.config.method ?? 'POST') as string).toUpperCase();
+          const requestFormat = (node.config.request_format as string) ?? 'json';
           const hasBody = ['POST', 'PUT', 'PATCH'].includes(method);
+
+          // ── Build headers ───────────────────────────────────────────────────
+          const defaultContentType = requestFormat === 'form'
+            ? 'application/x-www-form-urlencoded'
+            : 'application/json';
+          let headers: Record<string, string> = { 'Content-Type': defaultContentType };
+
+          // New: header_fields array [{key,value}]
+          const headerFields = node.config.header_fields as { key: string; value: string }[] | undefined;
+          if (Array.isArray(headerFields) && headerFields.length > 0) {
+            for (const hf of headerFields) {
+              if (hf.key?.trim()) headers[hf.key.trim()] = interpolate(hf.value ?? '', lead);
+            }
+          } else if (node.config.headers) {
+            // Legacy: raw JSON string
+            try { headers = { ...headers, ...JSON.parse(interpolate(node.config.headers as string, lead)) }; }
+            catch { /* ignore */ }
+          }
+
+          // ── Build body ──────────────────────────────────────────────────────
           let bodyStr: string | undefined;
           if (hasBody) {
-            const rawPayload = (node.config.payload ?? node.config.body ?? '') as string;
-            bodyStr = rawPayload
-              ? interpolate(rawPayload, lead)
-              : JSON.stringify({ lead, triggeredAt: new Date().toISOString() });
+            const bodyFields = node.config.body_fields as { key: string; value: string }[] | undefined;
+            if (Array.isArray(bodyFields) && bodyFields.length > 0) {
+              // New: visual field builder
+              const obj: Record<string, string> = {};
+              for (const bf of bodyFields) {
+                if (bf.key?.trim()) obj[bf.key.trim()] = interpolate(bf.value ?? '', lead);
+              }
+              if (requestFormat === 'form') {
+                bodyStr = new URLSearchParams(obj).toString();
+              } else {
+                bodyStr = JSON.stringify(obj);
+              }
+            } else {
+              // Legacy: raw payload string, or default full-lead dump
+              const rawPayload = (node.config.payload ?? node.config.body ?? '') as string;
+              bodyStr = rawPayload
+                ? interpolate(rawPayload, lead)
+                : JSON.stringify({ lead, triggeredAt: new Date().toISOString() });
+            }
           }
 
           const resp = await fetch(url, {
             method,
             headers,
             body: bodyStr,
-            signal: AbortSignal.timeout(10000),
+            signal: AbortSignal.timeout(15000),
           });
           if (!resp.ok) throw new Error(`Webhook ${method} ${url} returned ${resp.status}`);
+
+          // ── Save response to custom field ───────────────────────────────────
+          if (node.config.save_response && node.config.save_response_field) {
+            try {
+              const respText = await resp.clone().text();
+              let respVal: string;
+              try { respVal = JSON.stringify(JSON.parse(respText)); } catch { respVal = respText.trim(); }
+              const slug = node.config.save_response_field as string;
+              const existing = (lead.custom_fields as Record<string, any>) ?? {};
+              await query(
+                `UPDATE leads SET custom_fields=$1, updated_at=NOW() WHERE id=$2::uuid AND tenant_id=$3::uuid`,
+                [JSON.stringify({ ...existing, [slug]: respVal }), lead.id, tenantId]
+              );
+            } catch { /* don't fail the node if save fails */ }
+          }
+
           message = `Webhook ${method} ${url} → ${resp.status}`;
           break;
         }
