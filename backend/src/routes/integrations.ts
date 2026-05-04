@@ -753,7 +753,8 @@ router.get('/meta/oauth-url', checkPermission('meta_forms:create'), (req: AuthRe
   // No auth_type here — fresh OAuth shows Facebook's page selector from scratch so the
   // user can tick ALL pages. auth_type=rerequest only re-requests declined permissions
   // and skips the page selector, which is why fewer pages get authorized.
-  const url = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&state=${req.user!.tenantId}`;
+  const apiVersion = process.env.META_API_VERSION ?? 'v21.0';
+  const url = `https://www.facebook.com/${apiVersion}/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&state=${req.user!.tenantId}`;
   res.json({ url });
 });
 
@@ -764,7 +765,8 @@ router.get('/meta/add-page-url', checkPermission('meta_forms:create'), (req: Aut
   if (!appId) { res.status(503).json({ error: 'META_APP_ID not configured' }); return; }
   const redirectUri = encodeURIComponent(`${baseUrl}/api/integrations/meta/callback`);
   const scope = 'leads_retrieval,pages_manage_ads,pages_read_engagement,pages_show_list,ads_read,ads_management,business_management';
-  const url = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&state=${req.user!.tenantId}`;
+  const apiVersion = process.env.META_API_VERSION ?? 'v21.0';
+  const url = `https://www.facebook.com/${apiVersion}/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&state=${req.user!.tenantId}`;
   res.json({ url });
 });
 
