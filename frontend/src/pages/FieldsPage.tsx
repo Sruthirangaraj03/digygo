@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { SYSTEM_STANDARD_FIELDS, SYSTEM_GROUPS, slugToVar } from '@/constants/systemFields';
 import { useSearchParams } from 'react-router-dom';
 import {
   Search, Plus, Pencil, Copy, X, Check, ChevronDown, Trash2,
@@ -88,45 +89,12 @@ const dataTypeInfo = (t: DataType) => DATA_TYPES.find((d) => d.label === t) ?? D
 //  Default data
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const SYSTEM_STANDARD: StandardField[] = [
-  // ─── Contact group ───
-  { id: 'c01', name: 'First Name',          type: 'Single Line', slug: 'contact.first_name',        required: true,  isSystem: true, group: 'Contact' },
-  { id: 'c02', name: 'Last Name',           type: 'Single Line', slug: 'contact.last_name',         required: false, isSystem: true, group: 'Contact' },
-  { id: 'c03', name: 'Email',               type: 'Email',       slug: 'contact.email',             required: false, isSystem: true, group: 'Contact' },
-  { id: 'c04', name: 'Phone',               type: 'Phone',       slug: 'contact.phone',             required: true,  isSystem: true, group: 'Contact' },
-  { id: 'c05', name: 'Contact Source',      type: 'Single Line', slug: 'contact.contact_source',    required: false, isSystem: true, group: 'Contact' },
-  { id: 'c06', name: 'Opportunity Name',    type: 'Single Line', slug: 'contact.opportunity_name',  required: false, isSystem: true, group: 'Contact' },
-  { id: 'c07', name: 'Lead Value',          type: 'Monetary',    slug: 'contact.lead_value',        required: false, isSystem: true, group: 'Contact' },
-  { id: 'c08', name: 'Assigned to Staff',   type: 'Single Line', slug: 'contact.assigned_to_staff', required: false, isSystem: true, group: 'Contact' },
-  { id: 'c09', name: 'Opportunity Source',  type: 'Single Line', slug: 'contact.opportunity_source',required: false, isSystem: true, group: 'Contact' },
-  { id: 'c10', name: 'Contact Type',        type: 'Single Line', slug: 'contact.contact_type',      required: false, isSystem: true, group: 'Contact' },
-  { id: 'c11', name: 'Business Name',       type: 'Single Line', slug: 'contact.business_name',     required: false, isSystem: true, group: 'Contact' },
-  { id: 'c12', name: 'Business GST No',     type: 'Single Line', slug: 'contact.gst_no',            required: false, isSystem: true, group: 'Contact' },
-  { id: 'c13', name: 'Business State',      type: 'Single Line', slug: 'contact.state',             required: false, isSystem: true, group: 'Contact' },
-  { id: 'c14', name: 'Business Address',    type: 'Multi Line',  slug: 'contact.street_address',    required: false, isSystem: true, group: 'Contact' },
-  { id: 'c15', name: 'Profile Photo',       type: 'File Upload', slug: 'contact.profile_image',     required: false, isSystem: true, group: 'Contact' },
-  { id: 'c16', name: 'Date of Birth',       type: 'Date',        slug: 'contact.date_of_birth',     required: false, isSystem: true, group: 'Contact' },
-  { id: 'c17', name: 'Postal Code',         type: 'Single Line', slug: 'contact.postal_code',       required: false, isSystem: true, group: 'Contact' },
-
-  // ─── Company group ───
-  { id: 'co1', name: 'Company Name',        type: 'Single Line', slug: 'company.name',              required: false, isSystem: true, group: 'Company', replaceWith: 'DigyGo' },
-  { id: 'co2', name: 'Company Email',       type: 'Email',       slug: 'company.email',             required: false, isSystem: true, group: 'Company', replaceWith: 'sivaraj@digygo.com' },
-  { id: 'co3', name: 'Company Phone',       type: 'Phone',       slug: 'company.phone',             required: false, isSystem: true, group: 'Company', replaceWith: '9894685308' },
-  { id: 'co4', name: 'Company Address',     type: 'Multi Line',  slug: 'company.address',           required: false, isSystem: true, group: 'Company', replaceWith: 'Coimbatore' },
-  { id: 'co5', name: 'Company GST No.',     type: 'Single Line', slug: 'company.gst_no',            required: false, isSystem: true, group: 'Company', replaceWith: '' },
-  { id: 'co6', name: 'Company Logo',        type: 'File Upload', slug: 'company.logo',              required: false, isSystem: true, group: 'Company', replaceWith: '' },
-  { id: 'co7', name: 'Leader Name',         type: 'Single Line', slug: 'company.leader_name',       required: false, isSystem: true, group: 'Company', replaceWith: 'Sivaraj' },
-  { id: 'co8', name: 'Leader Designation',  type: 'Single Line', slug: 'company.leader_designation',required: false, isSystem: true, group: 'Company', replaceWith: 'Founder' },
-  { id: 'co9', name: 'Leader Image',        type: 'File Upload', slug: 'company.leader_image',      required: false, isSystem: true, group: 'Company', replaceWith: '' },
-
-  // ─── Calendar group ───
-  { id: 'cal1', name: 'Appointment Date',        type: 'Date',        slug: 'calendar.appointment_date',       required: false, isSystem: true, group: 'Calendar' },
-  { id: 'cal2', name: 'Appointment Start Time',  type: 'Single Line', slug: 'calendar.appointment_start_time', required: false, isSystem: true, group: 'Calendar' },
-  { id: 'cal3', name: 'Appointment End Time',    type: 'Single Line', slug: 'calendar.appointment_end_time',   required: false, isSystem: true, group: 'Calendar' },
-  { id: 'cal4', name: 'Appointment Timezone',    type: 'Single Line', slug: 'calendar.appointment_timezone',   required: false, isSystem: true, group: 'Calendar' },
-];
-
-const SYSTEM_GROUPS = ['Contact', 'Company', 'Calendar'];
+// System standard fields and groups come from the shared constants file.
+const SYSTEM_STANDARD: StandardField[] = SYSTEM_STANDARD_FIELDS.map((f) => ({
+  ...f,
+  type: 'Single Line' as any,
+  required: false,
+}));
 
 const INIT_CUSTOM_STANDARD: StandardField[] = [];
 

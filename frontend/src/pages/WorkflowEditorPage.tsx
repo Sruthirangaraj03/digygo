@@ -23,6 +23,7 @@ import { cn, copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 import { api, getAccessToken, BASE } from '@/lib/api';
 import type { WFNode, WFRecord } from './AutomationPage';
+import { SYSTEM_STANDARD_FIELDS, SYSTEM_GROUPS, slugToVar } from '@/constants/systemFields';
 import { useCrmStore } from '@/store/crmStore';
 
 // ── Trigger Categories ─────────────────────────────────────────────────────────
@@ -1813,14 +1814,12 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
       {/* Webhook Call */}
       {node.actionType === 'webhook_call' && (() => {
         type KV = { key: string; value: string };
-        const DEFAULT_BODY: KV[] = [
-          { key: 'First Name',      value: '{%contact.first_name%}' },
-          { key: 'Last Name',       value: '{%contact.last_name%}' },
-          { key: 'Email',           value: '{%contact.email%}' },
-          { key: 'Phone',           value: '{%contact.phone%}' },
-          { key: 'Assigned Staff',  value: '{%contact.assigned_to_staff%}' },
-          { key: 'Source',          value: '{%contact.contact_source%}' },
-        ];
+        // Default body rows derived from system fields — no hardcoded values here
+        const DEFAULT_BODY_SLUGS = ['contact.first_name','contact.last_name','contact.email','contact.phone','contact.assigned_to_staff','contact.contact_source'];
+        const DEFAULT_BODY: KV[] = DEFAULT_BODY_SLUGS.map((slug) => {
+          const field = SYSTEM_STANDARD_FIELDS.find((f) => f.slug === slug);
+          return { key: field?.name ?? slug, value: slugToVar(slug) };
+        });
         const bodyFields: KV[]   = (cfg.body_fields as KV[] | undefined) ?? DEFAULT_BODY;
         const headerFields: KV[] = (cfg.header_fields as KV[]) ?? [];
         const webhookType        = (cfg.webhook_type as string)  ?? 'realtime';
@@ -1835,50 +1834,36 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
         const removeRow = (fields: KV[], setFn: (f: KV[]) => void, idx: number) => setFn(fields.filter((_, i) => i !== idx));
 
         // Custom Values modal state
-        const [cvOpen, setCvOpen] = useState<{ section: 'body'|'header'; idx: number } | null>(null);
-        const [cvTab, setCvTab]   = useState<string>('contact');
+        const [cvOpen, setCvOpen]           = useState<{ section: 'body'|'header'; idx: number } | null>(null);
+        const [cvTab, setCvTab]             = useState<string>('Contact');
+        const [cvCustomFields, setCvCustomFields] = useState<{ name: string; slug: string }[]>([]);
 
-        // Tab definitions — variable format matches the Fields page exactly: {%slug%}
-        const cvTabs: { id: string; label: string; fields: { name: string; variable: string }[] }[] = [
-          { id: 'contact', label: 'Contact', fields: [
-            { name: 'First Name',        variable: '{%contact.first_name%}' },
-            { name: 'Last Name',         variable: '{%contact.last_name%}' },
-            { name: 'Email',             variable: '{%contact.email%}' },
-            { name: 'Phone',             variable: '{%contact.phone%}' },
-            { name: 'Contact Source',    variable: '{%contact.contact_source%}' },
-            { name: 'Opportunity Name',  variable: '{%contact.opportunity_name%}' },
-            { name: 'Lead Value',        variable: '{%contact.lead_value%}' },
-            { name: 'Assigned to Staff', variable: '{%contact.assigned_to_staff%}' },
-            { name: 'Opportunity Source',variable: '{%contact.opportunity_source%}' },
-            { name: 'Contact Type',      variable: '{%contact.contact_type%}' },
-            { name: 'Business Name',     variable: '{%contact.business_name%}' },
-            { name: 'Business GST No',   variable: '{%contact.gst_no%}' },
-            { name: 'Business State',    variable: '{%contact.state%}' },
-            { name: 'Business Address',  variable: '{%contact.street_address%}' },
-            { name: 'Date of Birth',     variable: '{%contact.date_of_birth%}' },
-            { name: 'Postal Code',       variable: '{%contact.postal_code%}' },
-          ]},
-          { id: 'company', label: 'Company', fields: [
-            { name: 'Company Name',         variable: '{%company.name%}' },
-            { name: 'Company Email',        variable: '{%company.email%}' },
-            { name: 'Company Phone',        variable: '{%company.phone%}' },
-            { name: 'Company Address',      variable: '{%company.address%}' },
-            { name: 'Company GST No.',      variable: '{%company.gst_no%}' },
-            { name: 'Leader Name',          variable: '{%company.leader_name%}' },
-            { name: 'Leader Designation',   variable: '{%company.leader_designation%}' },
-          ]},
-          { id: 'calendar', label: 'Calendar', fields: [
-            { name: 'Appointment Date',       variable: '{%calendar.appointment_date%}' },
-            { name: 'Appointment Start Time', variable: '{%calendar.appointment_start_time%}' },
-            { name: 'Appointment End Time',   variable: '{%calendar.appointment_end_time%}' },
-            { name: 'Appointment Timezone',   variable: '{%calendar.appointment_timezone%}' },
-          ]},
-          { id: 'time', label: 'Time', fields: [
-            { name: 'Today', variable: '{%today%}' },
-            { name: 'Date',  variable: '{%date%}' },
-            { name: 'Time',  variable: '{%time%}' },
-          ]},
-          { id: 'custom', label: 'Custom', fields: customFields.map((cf) => ({ name: cf.name, variable: `{%${cf.slug}%}` })) },
+        // Fetch user-created custom standard fields from the API when modal opens
+        useEffect(() => {
+          if (!cvOpen) return;
+          api.get<any[]>('/api/fields/custom').then((rows) => {
+            setCvCustomFields(rows.map((r) => ({ name: r.name, slug: r.slug })));
+          }).catch(() => {});
+        }, [cvOpen]);
+
+        // Build tabs dynamically:
+        // - System groups (Contact/Company/Calendar) come from shared SYSTEM_STANDARD_FIELDS constant
+        // - Custom tab comes from /api/fields/custom (fetched above)
+        const systemGroupTabs = SYSTEM_GROUPS.map((group) => ({
+          id: group,
+          label: group,
+          fields: SYSTEM_STANDARD_FIELDS
+            .filter((f) => f.group === group)
+            .map((f) => ({ name: f.name, variable: slugToVar(f.slug) })),
+        }));
+
+        const cvTabs = [
+          ...systemGroupTabs,
+          {
+            id: 'Custom',
+            label: 'Custom',
+            fields: cvCustomFields.map((f) => ({ name: f.name, variable: slugToVar(f.slug) })),
+          },
         ];
 
         const insertVariable = (name: string, variable: string) => {
@@ -2054,7 +2039,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
                       onChange={(e) => updateRow(bodyFields, updateBodyFields, i, { value: e.target.value })}
                       className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-gray-400" />
                     <button type="button" title="Insert variable"
-                      onClick={() => { setCvOpen({ section: 'body', idx: i }); setCvTab('contact'); }}
+                      onClick={() => { setCvOpen({ section: 'body', idx: i }); setCvTab('Contact'); }}
                       className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 shrink-0">
                       <Tag className="w-3.5 h-3.5" />
                     </button>
@@ -2094,7 +2079,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
                     onChange={(e) => updateRow(headerFields, updateHeaderFields, i, { value: e.target.value })}
                     className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-gray-400" />
                   <button type="button" title="Insert variable"
-                    onClick={() => { setCvOpen({ section: 'header', idx: i }); setCvTab('contact'); }}
+                    onClick={() => { setCvOpen({ section: 'header', idx: i }); setCvTab('Contact'); }}
                     className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 shrink-0">
                     <Tag className="w-3.5 h-3.5" />
                   </button>
@@ -2144,7 +2129,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
                   <h3 className="text-[18px] font-bold text-gray-900">Custom Values</h3>
                   <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => setCvTab('contact')}
+                    <button type="button" onClick={() => setCvTab('Contact')}
                       className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400" title="Reset tab">
                       <RefreshCw className="w-4 h-4" />
                     </button>
