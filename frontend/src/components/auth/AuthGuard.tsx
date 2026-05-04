@@ -30,5 +30,11 @@ export function AuthGuard() {
     return <Navigate to="/dashboard" replace />;
   }
 
+  // Super admin without a tenant context must stay on /admin.
+  // Without tenantId every tenant-scoped API returns 403.
+  if (!isSuperAdminRoute && currentUser?.role === 'super_admin' && !currentUser?.tenantId) {
+    return <Navigate to="/admin" replace />;
+  }
+
   return <Outlet />;
 }

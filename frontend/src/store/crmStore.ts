@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api } from '@/lib/api';
+import { useAuthStore } from '@/store/authStore';
 import {
   Lead, Conversation, Workflow, Notification, CalendarEvent, StaffMember,
   Tag, Opportunity, NoteEntry, FollowUp, CustomFieldDef, BookingLink, AvailabilitySlot, QuickReply, Pipeline, PipelineStage,
@@ -430,6 +431,9 @@ export const useCrmStore = create<CrmState>((set) => ({
   },
 
   initFromApi: async () => {
+    const { currentUser } = useAuthStore.getState();
+    if (currentUser?.role === 'super_admin' && !currentUser?.tenantId) return;
+
     try {
       const [leadsRes, staffRes, pipelinesRes, calRes, tagsRes, questionsRes, convsRes, notifsRes, bookingLinksRes, followUpsRes, customFieldsRes, workflowsRes] = await Promise.all([
         api.get<any[]>('/api/leads?limit=5000').catch(() => [] as any[]),
