@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, Search, MapPin, RefreshCw, CheckCircle, AlertCircle, Download, ArrowRight } from 'lucide-react';
+import { Trash2, Search, MapPin, RefreshCw, CheckCircle, AlertCircle, Download, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
@@ -19,7 +18,6 @@ const SYSTEM_FIELDS = [
 ];
 
 export default function PincodeRoutingPage() {
-  const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [stats, setStats] = useState<Stats>({ districts: [], total: 0 });
@@ -158,16 +156,11 @@ export default function PincodeRoutingPage() {
   );
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <button onClick={() => navigate('/settings')} className="p-2 rounded-xl hover:bg-black/5 transition-colors">
-          <ArrowLeft className="w-5 h-5 text-[#7a6b5c]" />
-        </button>
-        <div>
-          <h1 className="text-2xl font-headline font-bold text-[#1c1410]">Pincode Routing</h1>
-          <p className="text-[13px] text-[#7a6b5c]">Map pincodes to districts and pipelines for automatic lead routing</p>
-        </div>
+      <div>
+        <h1 className="text-2xl font-headline font-bold text-[#1c1410]">Field Routing</h1>
+        <p className="text-[13px] text-[#7a6b5c]">Map pincodes to districts and pipelines for automatic lead routing</p>
       </div>
 
       {/* Stats bar */}
