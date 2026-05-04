@@ -147,7 +147,8 @@ export default function PincodeRoutingPage() {
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
-        const wb = XLSX.read(ev.target?.result, { type: 'binary' });
+        const data = new Uint8Array(ev.target?.result as ArrayBuffer);
+        const wb = XLSX.read(data, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const raw: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
         if (raw.length === 0) { toast.error('File is empty or unreadable'); return; }
@@ -171,7 +172,7 @@ export default function PincodeRoutingPage() {
         buildPreview(raw, valueKey, pipelineKey, districtKey, stateKey);
       } catch { toast.error('Failed to read file. Use a valid .xlsx or .csv file.'); }
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
     e.target.value = '';
   };
 
