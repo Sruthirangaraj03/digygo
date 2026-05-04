@@ -93,7 +93,7 @@ const App = () => (
             <Route path="/settings/notifications" element={<NotificationsPage />} />
             <Route path="/settings/assignment-rules" element={<AssignmentRulesPage />} />
             <Route path="/settings/integrations" element={<IntegrationsPage />} />
-            <Route path="/settings/pincode-routing" element={<PincodeRoutingPage />} />
+            <Route path="/automation/pincode-routing" element={<PincodeRoutingPage />} />
 
             {/* Super Admin */}
             <Route path="/admin" element={<SuperAdminPage />} />

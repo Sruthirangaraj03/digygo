@@ -1754,7 +1754,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
           <div className="bg-green-50 border border-green-200 rounded-xl p-3">
             <p className="text-xs text-green-800 flex items-start gap-1.5">
               <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-              Looks up the lead's pincode in your mapping table and sets the district and moves the lead to the mapped pipeline. Upload your pincode data in <strong>Settings → Pincode Routing</strong>.
+              Looks up the lead's pincode in your mapping table and sets the district and moves the lead to the mapped pipeline. Upload your pincode data in <strong>Automation → Pincode Routing</strong>.
             </p>
           </div>
 

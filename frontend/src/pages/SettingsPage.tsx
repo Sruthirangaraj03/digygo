@@ -1,4 +1,4 @@
-import { Building2, Plug, Bell, ChevronRight, MapPin } from 'lucide-react';
+import { Building2, Plug, Bell, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 
@@ -6,7 +6,6 @@ const settingsCards = [
   { title: 'Company Details', description: 'Manage branding, legal info, and workspace identity', icon: Building2, iconBg: 'bg-purple-100 text-purple-600', path: '/settings/company' },
   { title: 'Integrations', description: 'Connect Meta, WhatsApp, email providers, and more', icon: Plug, iconBg: 'bg-primary/10 text-primary', path: '/settings/integrations' },
   { title: 'Notifications', description: 'Configure in-app and email notification preferences', icon: Bell, iconBg: 'bg-yellow-100 text-yellow-600', path: '/settings/notifications' },
-  { title: 'Pincode Routing', description: 'Map pincodes to districts and pipelines for auto lead routing', icon: MapPin, iconBg: 'bg-green-100 text-green-600', path: '/settings/pincode-routing' },
 ];
 
 export default function SettingsPage() {
