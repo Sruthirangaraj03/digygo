@@ -82,6 +82,9 @@ export default function PincodeRoutingPage() {
   // Menu open state
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
 
+  // Track which set id is being uploaded — via ref so it's available synchronously
+  const pendingSetIdRef = useRef<string | null>(null);
+
   const loadSets = async () => {
     try {
       const rows = await api.get<RoutingSet[]>('/api/field-routing/sets');
@@ -144,6 +147,10 @@ export default function PincodeRoutingPage() {
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Ensure uploadingSetId is set (fallback to ref in case state hasn't flushed yet)
+    if (!uploadingSetId && pendingSetIdRef.current) {
+      setUploadingSetId(pendingSetIdRef.current);
+    }
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -183,10 +190,11 @@ export default function PincodeRoutingPage() {
   };
 
   const handleUpload = async (replace: boolean) => {
-    if (!uploadingSetId || preview.length === 0) return;
+    const targetId = uploadingSetId ?? pendingSetIdRef.current;
+    if (!targetId || preview.length === 0) return;
     setUploading(true);
     try {
-      const res = await api.post<any>(`/api/field-routing/sets/${uploadingSetId}/upload`, { rows: preview, replace });
+      const res = await api.post<any>(`/api/field-routing/sets/${targetId}/upload`, { rows: preview, replace });
       toast.success(`Uploaded ${res.inserted} rows (${res.skipped} skipped)`);
       setPreview([]); setUploadingSetId(null);
       await loadSets();
@@ -195,9 +203,10 @@ export default function PincodeRoutingPage() {
   };
 
   const openUpload = (setId: string) => {
+    pendingSetIdRef.current = setId;
     setUploadingSetId(setId);
     setPreview([]); setMapperOpen(false);
-    setTimeout(() => fileRef.current?.click(), 50);
+    fileRef.current?.click(); // must be synchronous — setTimeout breaks browser gesture chain
   };
 
   // ── Preview rows ────────────────────────────────────────────────────────────
