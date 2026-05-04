@@ -304,6 +304,7 @@ export function interpolate(template: string, lead: LeadContext): string {
   return step2.replace(/\{([\w]+)\}/g, (_, key) => vars[key] ?? `{${key}}`);
 }
 
+
 async function logStep(
   executionId: string, workflowId: string, tenantId: string,
   node: WFNode, status: string, message: string
@@ -2361,7 +2362,8 @@ publicWorkflowRouter.post('/:workflowId/execute', async (req: any, res: any) => 
         );
         const executionId = execIns.rows[0].id;
         const nodes: WFNode[] = wf.nodes ?? [];
-        const stats = await executeNodes(nodes, lead, tenantId, 'api1', executionId, workflowId);
+        const enrichedLead = await enrichLead(lead);
+        const stats = await executeNodes(nodes, enrichedLead, tenantId, 'api1', executionId, workflowId);
         await query(
           `UPDATE workflow_executions SET status='completed', completed_at=NOW() WHERE id=$1`,
           [executionId]
@@ -2429,7 +2431,8 @@ export async function processDelayedSteps(): Promise<void> {
           ? { ...snapshot, ...freshRes.rows[0] }  // fresh DB values override stale snapshot
           : snapshot;                              // fallback: lead deleted, use snapshot for logging
 
-        const delayStats = await executeNodes(nodes, lead, step.tenant_id, 'delay_worker', step.execution_id, step.workflow_id);
+        const enrichedLead = await enrichLead(lead);
+        const delayStats = await executeNodes(nodes, enrichedLead, step.tenant_id, 'delay_worker', step.execution_id, step.workflow_id);
         await query(
           `UPDATE scheduled_workflow_steps SET status='completed', updated_at=NOW() WHERE id=$1`,
           [step.id]

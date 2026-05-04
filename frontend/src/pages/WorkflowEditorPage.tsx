@@ -1834,35 +1834,31 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
         const removeRow = (fields: KV[], setFn: (f: KV[]) => void, idx: number) => setFn(fields.filter((_, i) => i !== idx));
 
         // Custom Values modal state
-        const [cvOpen, setCvOpen]           = useState<{ section: 'body'|'header'; idx: number } | null>(null);
-        const [cvTab, setCvTab]             = useState<string>('Contact');
-        const [cvCustomFields, setCvCustomFields] = useState<{ name: string; slug: string }[]>([]);
+        const [cvOpen, setCvOpen] = useState<{ section: 'body'|'header'; idx: number } | null>(null);
+        const [cvTab, setCvTab]   = useState<string>('Contact');
 
-        // Fetch user-created custom standard fields from the API when modal opens
-        useEffect(() => {
-          if (!cvOpen) return;
-          api.get<any[]>('/api/fields/custom').then((rows) => {
-            setCvCustomFields(rows.map((r) => ({ name: r.name, slug: r.slug })));
-          }).catch(() => {});
-        }, [cvOpen]);
+        // All field data comes from the CRM store (already fetched on app boot — no extra requests)
+        const cvCustomStandard   = useCrmStore((s) => s.customFields);      // /api/fields/custom
+        const cvQuestions        = useCrmStore((s) => s.additionalFields);  // /api/fields/questions
 
-        // Build tabs dynamically:
-        // - System groups (Contact/Company/Calendar) come from shared SYSTEM_STANDARD_FIELDS constant
-        // - Custom tab comes from /api/fields/custom (fetched above)
-        const systemGroupTabs = SYSTEM_GROUPS.map((group) => ({
-          id: group,
-          label: group,
-          fields: SYSTEM_STANDARD_FIELDS
-            .filter((f) => f.group === group)
-            .map((f) => ({ name: f.name, variable: slugToVar(f.slug) })),
-        }));
-
+        // Build tabs dynamically from store data + shared system constants
         const cvTabs = [
-          ...systemGroupTabs,
+          ...SYSTEM_GROUPS.map((group) => ({
+            id: group,
+            label: group,
+            fields: SYSTEM_STANDARD_FIELDS
+              .filter((f) => f.group === group)
+              .map((f) => ({ name: f.name, variable: slugToVar(f.slug) })),
+          })),
           {
             id: 'Custom',
             label: 'Custom',
-            fields: cvCustomFields.map((f) => ({ name: f.name, variable: slugToVar(f.slug) })),
+            fields: cvCustomStandard.map((f) => ({ name: f.name, variable: slugToVar(f.slug) })),
+          },
+          {
+            id: 'Questions',
+            label: 'Questions',
+            fields: cvQuestions.map((f) => ({ name: f.question, variable: slugToVar(f.slug) })),
           },
         ];
 
