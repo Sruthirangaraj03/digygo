@@ -1820,184 +1820,257 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
         const method              = (cfg.method as string) ?? 'POST';
         const hasBody             = ['POST','PUT','PATCH'].includes(method);
 
-        const updateBodyFields = (fields: KV[]) => onUpdate({ config: { ...cfg, body_fields: fields } });
+        const updateBodyFields   = (fields: KV[]) => onUpdate({ config: { ...cfg, body_fields: fields } });
         const updateHeaderFields = (fields: KV[]) => onUpdate({ config: { ...cfg, header_fields: fields } });
+        const addRow    = (fields: KV[], setFn: (f: KV[]) => void) => setFn([...fields, { key: '', value: '' }]);
+        const updateRow = (fields: KV[], setFn: (f: KV[]) => void, idx: number, patch: Partial<KV>) => setFn(fields.map((r, i) => i === idx ? { ...r, ...patch } : r));
+        const removeRow = (fields: KV[], setFn: (f: KV[]) => void, idx: number) => setFn(fields.filter((_, i) => i !== idx));
 
-        const addRow = (fields: KV[], setFn: (f: KV[]) => void) =>
-          setFn([...fields, { key: '', value: '' }]);
-        const updateRow = (fields: KV[], setFn: (f: KV[]) => void, idx: number, patch: Partial<KV>) =>
-          setFn(fields.map((r, i) => i === idx ? { ...r, ...patch } : r));
-        const removeRow = (fields: KV[], setFn: (f: KV[]) => void, idx: number) =>
-          setFn(fields.filter((_, i) => i !== idx));
+        const allVars = [...VARIABLE_HINTS, ...customFields.map((cf) => `{cf_${cf.slug}}`)];
 
-        const allVars = [
-          ...VARIABLE_HINTS,
-          ...customFields.map((cf) => `{cf_${cf.slug}}`),
-        ];
+        /* small tag-picker popover state — track which row + section is open */
+        const [pickerOpen, setPickerOpen] = useState<{ section: 'body'|'header'; idx: number } | null>(null);
+
+        const KVRow = ({ section, fields, setFn, idx }: { section: 'body'|'header'; fields: KV[]; setFn: (f: KV[]) => void; idx: number }) => {
+          const row = fields[idx];
+          const isOpen = pickerOpen?.section === section && pickerOpen?.idx === idx;
+          return (
+            <div className="flex gap-2 items-center">
+              <input
+                placeholder="Key"
+                value={row.key}
+                onChange={(e) => updateRow(fields, setFn, idx, { key: e.target.value })}
+                className="w-[38%] border border-gray-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-gray-400"
+              />
+              <div className="flex-1 relative">
+                <input
+                  placeholder="Value"
+                  value={row.value}
+                  onChange={(e) => updateRow(fields, setFn, idx, { value: e.target.value })}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-gray-400"
+                />
+                {isOpen && (
+                  <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-xl p-2 w-64">
+                    <p className="text-[10px] text-gray-400 font-semibold uppercase mb-1.5 px-1">Insert variable</p>
+                    <div className="max-h-40 overflow-y-auto space-y-0.5">
+                      {allVars.map((v) => (
+                        <button key={v} type="button"
+                          onClick={() => { updateRow(fields, setFn, idx, { value: v }); setPickerOpen(null); }}
+                          className="w-full text-left px-2 py-1 rounded-lg text-[12px] font-mono text-[#c2410c] hover:bg-orange-50">
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <button type="button"
+                onClick={() => setPickerOpen(isOpen ? null : { section, idx })}
+                className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500 shrink-0">
+                <Tag className="w-3.5 h-3.5" />
+              </button>
+              <button type="button" onClick={() => removeRow(fields, setFn, idx)}
+                className="p-1.5 rounded-lg border border-red-100 hover:bg-red-50 text-red-400 hover:text-red-600 shrink-0">
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          );
+        };
 
         return (<>
-          {/* Info banner */}
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
-            <p className="text-xs text-slate-700 flex items-start gap-1.5">
-              <Globe className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-              Sends lead data to an external URL. Use variables like <code className="bg-slate-200 px-1 rounded">{'{first_name}'}</code> in values.
-            </p>
-          </div>
-
-          {/* Method + URL */}
-          <div className="flex gap-2">
-            <div className="w-28 shrink-0">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Method</label>
-              <select className={selectCls} value={method} onChange={sel('method')}>
-                <option>POST</option><option>GET</option><option>PUT</option><option>PATCH</option>
-              </select>
-            </div>
-            <div className="flex-1 min-w-0">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">Endpoint URL <span className="text-red-500">*</span></label>
-              <input type="url" className={inputCls} value={(cfg.url as string) ?? ''} onChange={sel('url')} placeholder="https://your-webhook-url.com/endpoint" />
-            </div>
-          </div>
-
-          {/* Webhook Type */}
+          {/* HTTP Method */}
           <div>
-            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-2">Webhook Type</label>
-            <div className="grid grid-cols-2 gap-2">
-              {([['realtime','Real-Time','Fires immediately when workflow reaches this step'],['time_aware','Time-Aware','Only fires within your configured time window']] as const).map(([val, label, desc]) => (
-                <button key={val} type="button"
-                  onClick={() => onUpdate({ config: { ...cfg, webhook_type: val } })}
-                  className={`text-left p-3 rounded-xl border-2 transition-colors ${webhookType === val ? 'border-primary bg-primary/5' : 'border-black/10 hover:border-black/20'}`}
-                >
-                  <span className="text-[12px] font-bold block">{label}</span>
-                  <span className="text-[11px] text-muted-foreground">{desc}</span>
-                </button>
-              ))}
+            <label className="text-[13px] font-semibold text-gray-700 block mb-1.5">HTTP Method</label>
+            <select className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[13px] outline-none bg-white" value={method} onChange={sel('method')}>
+              <option>POST</option><option>GET</option><option>PUT</option><option>PATCH</option>
+            </select>
+          </div>
+
+          {/* Endpoint */}
+          <div>
+            <label className="text-[13px] font-semibold text-gray-700 block mb-1.5">Endpoint</label>
+            <input type="url" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[13px] outline-none focus:border-gray-400"
+              value={(cfg.url as string) ?? ''} onChange={sel('url')}
+              placeholder="https://n8n.srv932301.hstgr.cloud/webhook-test/..." />
+          </div>
+
+          {/* Webhook Type — full-width stacked cards */}
+          <div>
+            <label className="text-[13px] font-semibold text-gray-700 block mb-2">Webhook Type</label>
+            <div className="space-y-2">
+              {/* Real-Time */}
+              {(() => {
+                const isSelected = webhookType === 'realtime';
+                const [expanded, setExpanded] = useState(false);
+                return (
+                  <div onClick={() => onUpdate({ config: { ...cfg, webhook_type: 'realtime' } })}
+                    className={`cursor-pointer rounded-xl border-2 p-4 transition-all ${isSelected ? 'border-green-500 bg-white' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center shrink-0 mt-0.5">
+                          <Zap className="w-4 h-4 text-green-600" />
+                        </div>
+                        <div>
+                          <p className={`text-[14px] font-bold ${isSelected ? 'text-green-600' : 'text-gray-800'}`}>Real-Time Webhook</p>
+                          <p className="text-[12px] text-gray-500 mt-0.5">Triggers immediately when the workflow reaches this step.</p>
+                          <div className="flex gap-3 mt-2">
+                            <button type="button" onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+                              className="text-[11px] text-green-600 font-semibold flex items-center gap-0.5 hover:underline">
+                              <ChevronDown className={`w-3 h-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                              How it works
+                            </button>
+                          </div>
+                          {expanded && (
+                            <div className="mt-2 text-[11px] text-gray-500 leading-relaxed border-t border-gray-100 pt-2">
+                              When the workflow reaches this step, it immediately sends an HTTP request to your endpoint without any delay. Best for real-time notifications and instant integrations.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-1 ${isSelected ? 'border-green-500 bg-green-500' : 'border-gray-300'}`}>
+                        {isSelected && <Check className="w-3 h-3 text-white" />}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Time-Aware */}
+              {(() => {
+                const isSelected = webhookType === 'time_aware';
+                const [expanded, setExpanded] = useState(false);
+                return (
+                  <div onClick={() => onUpdate({ config: { ...cfg, webhook_type: 'time_aware' } })}
+                    className={`cursor-pointer rounded-xl border-2 p-4 transition-all ${isSelected ? 'border-orange-400 bg-white' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center shrink-0 mt-0.5">
+                          <Clock className="w-4 h-4 text-orange-500" />
+                        </div>
+                        <div>
+                          <p className={`text-[14px] font-bold ${isSelected ? 'text-orange-500' : 'text-gray-800'}`}>Time-Aware Webhook</p>
+                          <p className="text-[12px] text-gray-500 mt-0.5">Triggers only if the action is within the allowed time window.</p>
+                          <div className="flex gap-3 mt-2">
+                            <button type="button" onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+                              className="text-[11px] text-orange-500 font-semibold flex items-center gap-0.5 hover:underline">
+                              <ChevronDown className={`w-3 h-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                              How it works
+                            </button>
+                          </div>
+                          {expanded && (
+                            <div className="mt-2 text-[11px] text-gray-500 leading-relaxed border-t border-gray-100 pt-2">
+                              The webhook only fires during your configured hours and days. Outside that window, this step is skipped and logged as "skipped (outside time window)".
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-1 ${isSelected ? 'border-orange-400 bg-orange-400' : 'border-gray-300'}`}>
+                        {isSelected && <Check className="w-3 h-3 text-white" />}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
           {/* Time window (only if time_aware) */}
           {webhookType === 'time_aware' && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
-              <p className="text-[12px] font-semibold text-amber-800">Time Window</p>
+            <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 space-y-3">
+              <p className="text-[13px] font-semibold text-orange-800">Allowed Time Window</p>
               <div className="flex items-center gap-2">
-                <input type="time" className="border border-black/10 rounded-lg px-2 py-1.5 text-[12px] outline-none"
+                <input type="time" className="border border-orange-200 bg-white rounded-lg px-2 py-1.5 text-[13px] outline-none"
                   value={(cfg.time_start as string) ?? '09:00'}
                   onChange={(e) => onUpdate({ config: { ...cfg, time_start: e.target.value } })} />
-                <span className="text-[12px] text-muted-foreground">to</span>
-                <input type="time" className="border border-black/10 rounded-lg px-2 py-1.5 text-[12px] outline-none"
+                <span className="text-[12px] text-gray-500">to</span>
+                <input type="time" className="border border-orange-200 bg-white rounded-lg px-2 py-1.5 text-[13px] outline-none"
                   value={(cfg.time_end as string) ?? '18:00'}
                   onChange={(e) => onUpdate({ config: { ...cfg, time_end: e.target.value } })} />
               </div>
-              <div className="flex flex-wrap gap-1">
+              <div className="flex flex-wrap gap-1.5">
                 {(['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] as const).map((day) => {
                   const days: string[] = (cfg.time_days as string[]) ?? ['Mon','Tue','Wed','Thu','Fri'];
                   const active = days.includes(day);
                   return (
                     <button key={day} type="button"
                       onClick={() => onUpdate({ config: { ...cfg, time_days: active ? days.filter((d) => d !== day) : [...days, day] } })}
-                      className={`px-2 py-0.5 rounded text-[11px] font-semibold border transition-colors ${active ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-[#7a6b5c] border-black/10'}`}
+                      className={`px-3 py-1 rounded-lg text-[12px] font-semibold border transition-colors ${active ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-500 border-gray-200'}`}
                     >{day}</button>
                   );
                 })}
               </div>
-              <p className="text-[10px] text-amber-700">If triggered outside this window, the node is skipped and logged as "skipped (outside time window)"</p>
             </div>
           )}
 
-          {/* Request Format (only for methods with body) */}
+          {/* Request Type */}
           {hasBody && (
             <div>
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-2">Request Format</label>
-              <div className="flex gap-2">
-                {([['json','JSON','application/json'],['form','Form','application/x-www-form-urlencoded']] as const).map(([val, label, sub]) => (
-                  <button key={val} type="button"
-                    onClick={() => onUpdate({ config: { ...cfg, request_format: val } })}
-                    className={`flex-1 text-center p-2 rounded-xl border-2 transition-colors ${requestFormat === val ? 'border-primary bg-primary/5' : 'border-black/10 hover:border-black/20'}`}
-                  >
-                    <span className="text-[12px] font-bold block">{label}</span>
-                    <span className="text-[10px] text-muted-foreground font-mono">{sub}</span>
-                  </button>
+              <label className="text-[13px] font-semibold text-gray-700 block mb-1.5">Request Type</label>
+              <select className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[13px] outline-none bg-white"
+                value={requestFormat}
+                onChange={(e) => onUpdate({ config: { ...cfg, request_format: e.target.value } })}>
+                <option value="json">JSON</option>
+                <option value="form">Form</option>
+              </select>
+            </div>
+          )}
+
+          {/* Body */}
+          {hasBody && (
+            <div className="border border-gray-200 rounded-xl overflow-hidden">
+              <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-gray-500" />
+                  <span className="text-[14px] font-bold text-gray-800">Body</span>
+                </div>
+                <p className="text-[12px] text-gray-500 mt-0.5">
+                  {requestFormat === 'form' ? 'Form fields sent as the request body' : 'JSON fields sent as the request body'}
+                </p>
+              </div>
+              <div className="p-4 space-y-2">
+                {bodyFields.map((_, i) => (
+                  <KVRow key={i} section="body" fields={bodyFields} setFn={updateBodyFields} idx={i} />
                 ))}
-              </div>
-            </div>
-          )}
-
-          {/* Body fields */}
-          {hasBody && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Body Fields</label>
+                {bodyFields.length === 0 && (
+                  <p className="text-[12px] text-gray-400 text-center py-2">No fields — full lead object sent by default</p>
+                )}
                 <button type="button" onClick={() => addRow(bodyFields, updateBodyFields)}
-                  className="text-[11px] text-primary font-semibold hover:underline">+ Add field</button>
+                  className="mt-1 flex items-center gap-1 text-[13px] text-gray-500 border border-dashed border-gray-300 rounded-lg px-3 py-2 hover:bg-gray-50 w-full justify-center">
+                  <Plus className="w-3.5 h-3.5" /> Add Item
+                </button>
               </div>
-              {bodyFields.length === 0 ? (
-                <div className="text-[11px] text-muted-foreground bg-muted/30 rounded-lg p-2 text-center">
-                  No fields — full lead object will be sent by default
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {bodyFields.map((row, i) => (
-                    <div key={i} className="flex gap-1.5 items-start">
-                      <input placeholder="Field name" value={row.key}
-                        onChange={(e) => updateRow(bodyFields, updateBodyFields, i, { key: e.target.value })}
-                        className="w-32 shrink-0 border border-black/10 rounded-lg px-2 py-1.5 text-[12px] outline-none focus:border-primary/40" />
-                      <div className="flex-1 min-w-0">
-                        <input placeholder="{variable} or static value" value={row.value}
-                          onChange={(e) => updateRow(bodyFields, updateBodyFields, i, { value: e.target.value })}
-                          className="w-full border border-black/10 rounded-lg px-2 py-1.5 text-[12px] outline-none focus:border-primary/40 font-mono" />
-                        {row.value === '' && (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {allVars.slice(0, 6).map((v) => (
-                              <button key={v} type="button"
-                                onClick={() => updateRow(bodyFields, updateBodyFields, i, { value: v })}
-                                className="text-[9px] px-1 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 font-mono">{v}</button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <button type="button" onClick={() => removeRow(bodyFields, updateBodyFields, i)}
-                        className="p-1 text-muted-foreground hover:text-red-500 shrink-0">✕</button>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           )}
 
           {/* Headers */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Headers</label>
-              <button type="button" onClick={() => addRow(headerFields, updateHeaderFields)}
-                className="text-[11px] text-primary font-semibold hover:underline">+ Add header</button>
+          <div className="border border-gray-200 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <Code2 className="w-4 h-4 text-gray-500" />
+                <span className="text-[14px] font-bold text-gray-800">Headers</span>
+              </div>
+              <p className="text-[12px] text-gray-500 mt-0.5">Custom HTTP headers sent with the webhook request</p>
             </div>
-            {headerFields.length === 0 ? (
-              <div className="text-[11px] text-muted-foreground bg-muted/30 rounded-lg p-2 text-center">
-                No custom headers — Content-Type is set automatically
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {headerFields.map((row, i) => (
-                  <div key={i} className="flex gap-1.5 items-center">
-                    <input placeholder="Header name" value={row.key}
-                      onChange={(e) => updateRow(headerFields, updateHeaderFields, i, { key: e.target.value })}
-                      className="w-32 shrink-0 border border-black/10 rounded-lg px-2 py-1.5 text-[12px] outline-none focus:border-primary/40" />
-                    <input placeholder="Value" value={row.value}
-                      onChange={(e) => updateRow(headerFields, updateHeaderFields, i, { value: e.target.value })}
-                      className="flex-1 border border-black/10 rounded-lg px-2 py-1.5 text-[12px] outline-none focus:border-primary/40 font-mono" />
-                    <button type="button" onClick={() => removeRow(headerFields, updateHeaderFields, i)}
-                      className="p-1 text-muted-foreground hover:text-red-500 shrink-0">✕</button>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="p-4 space-y-2">
+              {headerFields.map((_, i) => (
+                <KVRow key={i} section="header" fields={headerFields} setFn={updateHeaderFields} idx={i} />
+              ))}
+              {headerFields.length === 0 && (
+                <p className="text-[12px] text-gray-400 text-center py-2">No custom headers</p>
+              )}
+              <button type="button" onClick={() => addRow(headerFields, updateHeaderFields)}
+                className="mt-1 flex items-center gap-1 text-[13px] text-gray-500 border border-dashed border-gray-300 rounded-lg px-3 py-2 hover:bg-gray-50 w-full justify-center">
+                <Plus className="w-3.5 h-3.5" /> Add Item
+              </button>
+            </div>
           </div>
 
           {/* Save response */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-sm font-semibold block">Save response to field</span>
-                <span className="text-xs text-muted-foreground">Store the API response value in a custom field</span>
+                <span className="text-[13px] font-semibold text-gray-800 block">Save response to field</span>
+                <span className="text-[12px] text-gray-500">Store the API response value in a custom field</span>
               </div>
               <Switch checked={!!(cfg.save_response)} onCheckedChange={(v) => onUpdate({ config: { ...cfg, save_response: v } })} />
             </div>
