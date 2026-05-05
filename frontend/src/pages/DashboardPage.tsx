@@ -28,10 +28,12 @@ interface Analytics {
   conversion_rate:   number;
   stale_leads:       number;
   overdue_followups: number;
+  leads_today:       number;
+  won_today:         number;
   best_source:       { source: string; count: number } | null;
   source_breakdown:  Array<{ source: string; count: number }>;
   pipeline_funnels:  Array<{ id: string; name: string; stages: Array<{ stage: string; count: number; is_won: boolean }> }>;
-  staff_leaderboard: Array<{ id: string; name: string; assigned_count: number; converted: number; new_in_range: number; conversion_rate_pct: number }>;
+  staff_leaderboard: Array<{ id: string; name: string; assigned_count: number; converted: number; new_in_range: number; new_today: number; conversion_rate_pct: number }>;
   today_followups:   Array<{ id: string; lead_name: string; due_at: string; title: string; description: string; lead_id: string }>;
   role:              string;
 }
@@ -143,7 +145,7 @@ function DateFilterBar({ range, setRange, customFrom, setCustomFrom, customTo, s
   );
 }
 
-// ── Pipeline Funnel Card ──────────────────────────────────────────────────────
+// ── Pipeline Funnel Card (single, with dropdown) ──────────────────────────────
 function FunnelCard({ funnels, selectedId, setSelectedId }: {
   funnels: Array<{ id: string; name: string; stages: Array<{ stage: string; count: number; is_won: boolean }> }>;
   selectedId: string;
@@ -194,6 +196,91 @@ function FunnelCard({ funnels, selectedId, setSelectedId }: {
   );
 }
 
+const STAGE_COLORS = ['#ea580c', '#f97316', '#fbbf24', '#60a5fa', '#a78bfa', '#34d399', '#f472b6', '#38bdf8'];
+
+// ── All Pipelines Health — CEO view, all pipelines at once ────────────────────
+function AllPipelinesHealth({ funnels }: {
+  funnels: Array<{ id: string; name: string; stages: Array<{ stage: string; count: number; is_won: boolean }> }>;
+}) {
+  const list = funnels ?? [];
+  if (list.length === 0) return (
+    <div className="bg-white rounded-2xl border border-black/5 card-shadow p-5">
+      <h3 className="font-headline font-bold text-[#1c1410] text-[14px] mb-2">Pipeline Health</h3>
+      <p className="text-[12px] text-[#b09e8d]">No pipelines yet.</p>
+    </div>
+  );
+
+  return (
+    <div className="bg-white rounded-2xl border border-black/5 card-shadow p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-headline font-bold text-[#1c1410] text-[14px]">Pipeline Health</h3>
+        <span className="text-[11px] text-[#7a6b5c]">{list.length} pipeline{list.length !== 1 ? 's' : ''}</span>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {list.map((pipeline) => {
+          const total   = pipeline.stages.reduce((s, st) => s + st.count, 0);
+          const wonSt   = pipeline.stages.find((s) => s.is_won);
+          const wonCnt  = wonSt?.count ?? 0;
+          const convPct = total === 0 ? 0 : Math.round((wonCnt / total) * 100);
+
+          return (
+            <div key={pipeline.id} className="rounded-xl border border-black/5 bg-[#faf8f6] px-4 py-3">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-2.5">
+                <p className="text-[13px] font-bold text-[#1c1410] truncate">{pipeline.name}</p>
+                <div className="flex items-center gap-2 shrink-0 ml-2">
+                  <span className="text-[11px] text-[#7a6b5c] font-medium">{total} leads</span>
+                  {wonSt && (
+                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
+                      {convPct}% won
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Stacked progress bar */}
+              {total > 0 ? (
+                <div className="flex h-3 rounded-full overflow-hidden gap-px mb-2.5">
+                  {pipeline.stages.map((st, i) => {
+                    const pct = (st.count / total) * 100;
+                    if (pct === 0) return null;
+                    return (
+                      <div
+                        key={i}
+                        title={`${st.stage}: ${st.count}`}
+                        style={{
+                          width: `${pct}%`,
+                          backgroundColor: st.is_won ? '#10b981' : STAGE_COLORS[i % STAGE_COLORS.length],
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="h-3 rounded-full bg-[#e8e0d8] mb-2.5" />
+              )}
+
+              {/* Stage legend */}
+              <div className="flex flex-wrap gap-x-3 gap-y-1">
+                {pipeline.stages.map((st, i) => (
+                  <span key={i} className="flex items-center gap-1 text-[10px] text-[#7a6b5c]">
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: st.is_won ? '#10b981' : STAGE_COLORS[i % STAGE_COLORS.length] }}
+                    />
+                    {st.stage}
+                    <span className="font-bold text-[#1c1410]">{st.count}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Today's Follow-ups mini widget ────────────────────────────────────────────
 function FollowupsWidget({ followups }: { followups: Analytics['today_followups'] }) {
   const navigate = useNavigate();
@@ -237,12 +324,11 @@ function FollowupsWidget({ followups }: { followups: Analytics['today_followups'
   );
 }
 
-// ── Management Dashboard ──────────────────────────────────────────────────────
+// ── Management Dashboard (CEO view) ──────────────────────────────────────────
 function ManagementDashboard({ analytics, lineData }: {
   analytics: Analytics; lineData: any[];
 }) {
   const navigate = useNavigate();
-  const [selectedFunnelId, setSelectedFunnelId] = useState<string>('');
 
   const growth = analytics.growth_pct;
   const growthLabel = growth > 0 ? `+${growth}% vs last month` : growth < 0 ? `${growth}% vs last month` : 'Same as last month';
@@ -252,10 +338,41 @@ function ManagementDashboard({ analytics, lineData }: {
   }));
 
   const hasWon = (analytics.pipeline_funnels ?? []).flatMap((p) => p.stages ?? []).some((s) => s.is_won);
+  const todayDueCount = analytics.today_followups.length;
 
   return (
     <div className="space-y-4">
-      {/* KPI row — 5 compact horizontal cards */}
+
+      {/* ── Today's Pulse strip — always today, independent of period filter ── */}
+      <div
+        className="rounded-2xl px-5 py-4"
+        style={{ background: 'linear-gradient(135deg, #7c2d12 0%, #c2410c 50%, #ea580c 100%)' }}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+          <p className="text-white/80 text-[11px] font-semibold uppercase tracking-widest">Today's Activity</p>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: 'New Leads', value: analytics.leads_today, sub: 'Created today', onClick: () => navigate('/leads') },
+            { label: 'Won Today', value: analytics.won_today, sub: hasWon ? 'Closed deals' : 'Set a Won stage', onClick: () => navigate('/leads?filter=converted') },
+            { label: 'Due Today', value: todayDueCount, sub: 'Follow-ups pending', onClick: () => navigate('/lead-management/followups') },
+            { label: 'Overdue', value: analytics.overdue_followups, sub: 'Needs attention', onClick: () => navigate('/lead-management/followups') },
+          ].map(({ label, value, sub, onClick }) => (
+            <button
+              key={label}
+              onClick={onClick}
+              className="text-left bg-white/10 hover:bg-white/20 transition-colors rounded-xl px-4 py-3"
+            >
+              <p className="text-white/70 text-[10px] font-semibold uppercase tracking-wide mb-0.5">{label}</p>
+              <p className="text-white font-headline text-[28px] font-extrabold leading-none">{value}</p>
+              <p className="text-white/60 text-[10px] mt-0.5">{sub}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Period KPI row — 5 compact cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         <StatCard
           label="Total Leads" value={analytics.total_leads}
@@ -263,41 +380,41 @@ function ManagementDashboard({ analytics, lineData }: {
           onClick={() => navigate('/leads')}
         />
         <StatCard
-          label={analytics.range_label ?? 'This Period'} value={analytics.range_leads ?? 0}
-          sub="New leads in period" icon={TrendingUp}
+          label={`New — ${analytics.range_label ?? 'This Period'}`} value={analytics.range_leads ?? 0}
+          sub="Leads in selected period" icon={TrendingUp}
           onClick={() => navigate('/leads')}
         />
         <StatCard
-          label="Converted" value={analytics.converted_leads}
-          sub={hasWon ? `${analytics.conversion_rate}% conversion rate` : 'Mark a stage as Won'}
+          label="All-Time Converted" value={analytics.converted_leads}
+          sub={hasWon ? `${analytics.conversion_rate}% rate` : 'Mark a stage as Won'}
           icon={Target}
           onClick={() => navigate('/leads?filter=converted')}
         />
         <StatCard
           label="Stale Leads" value={analytics.stale_leads}
-          sub="No activity in 7+ days" icon={AlertTriangle}
+          sub="No activity 7+ days" icon={AlertTriangle}
           warn={analytics.stale_leads > 0}
           onClick={() => navigate('/leads?filter=stale')}
         />
         <StatCard
           label="Best Source"
           value={analytics.best_source ? sourceLabel(analytics.best_source.source) : 'N/A'}
-          sub={analytics.best_source ? `${analytics.best_source.count} leads` : 'No data yet'}
+          sub={analytics.best_source ? `${analytics.best_source.count} leads this period` : 'No data yet'}
           icon={Star}
         />
       </div>
 
-      {/* Charts row — 60/40 split for more line chart space */}
+      {/* ── Charts row — Lead Inflow + Source donut ── */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         <div className="bg-white rounded-2xl border border-black/5 card-shadow p-5 lg:col-span-3">
           <div className="flex items-center justify-between mb-3">
             <div>
               <h3 className="font-headline font-bold text-[#1c1410] text-[14px]">Lead Inflow</h3>
-              <p className="text-[11px] text-[#7a6b5c]">{analytics.range_label ?? 'Last 30 Days'}</p>
+              <p className="text-[11px] text-[#7a6b5c]">{analytics.range_label ?? 'This Period'}</p>
             </div>
-            <div className="flex items-center gap-3 text-[11px] text-[#7a6b5c]">
-              <span className="font-semibold text-[#1c1410]">{analytics.range_leads ?? 0}</span> leads this period
-            </div>
+            <span className="text-[11px] text-[#7a6b5c]">
+              <span className="font-bold text-[#1c1410]">{analytics.range_leads ?? 0}</span> leads
+            </span>
           </div>
           <ResponsiveContainer width="100%" height={185}>
             <LineChart data={lineData}>
@@ -312,7 +429,7 @@ function ManagementDashboard({ analytics, lineData }: {
         <div className="bg-white rounded-2xl border border-black/5 card-shadow p-5 lg:col-span-2">
           <div className="mb-3">
             <h3 className="font-headline font-bold text-[#1c1410] text-[14px]">Leads by Source</h3>
-            <p className="text-[11px] text-[#7a6b5c]">{analytics.range_label ?? 'Last 30 Days'}</p>
+            <p className="text-[11px] text-[#7a6b5c]">{analytics.range_label ?? 'This Period'}</p>
           </div>
           {pieData.length > 0 ? (
             <ResponsiveContainer width="100%" height={185}>
@@ -329,50 +446,64 @@ function ManagementDashboard({ analytics, lineData }: {
         </div>
       </div>
 
-      {/* Bottom row — 2 columns: staff + funnel */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Staff leaderboard */}
-        <div className="bg-white rounded-2xl border border-black/5 card-shadow p-5">
-          <h3 className="font-headline font-bold text-[#1c1410] text-[14px] mb-3">Staff Performance</h3>
-          {analytics.staff_leaderboard.length === 0
-            ? <p className="text-[12px] text-[#b09e8d]">No staff data yet.</p>
-            : (
-              <>
-                <div className="grid grid-cols-[1fr_44px_44px_54px_40px] gap-1 text-[10px] text-[#b09e8d] font-semibold uppercase px-1.5 mb-1.5">
-                  <span>Staff</span>
-                  <span className="text-right">Total</span>
-                  <span className="text-right">New</span>
-                  <span className="text-right">Won</span>
-                  <span className="text-right">Rate</span>
-                </div>
-                <div className="space-y-0.5">
-                  {analytics.staff_leaderboard.slice(0, 8).map((s, i) => (
-                    <div key={s.id} className="grid grid-cols-[1fr_44px_44px_54px_40px] gap-1 items-center px-1.5 py-1.5 rounded-lg hover:bg-[#faf8f6] transition-colors">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-[10px] text-[#c0b0a0] w-3.5 font-bold shrink-0">#{i + 1}</span>
-                        <div className="w-6 h-6 rounded-md bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary shrink-0">
-                          {s.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
-                        </div>
-                        <span className="text-[12px] font-semibold text-[#1c1410] truncate">{s.name}</span>
+      {/* ── All Pipelines Health ── */}
+      <AllPipelinesHealth funnels={analytics.pipeline_funnels} />
+
+      {/* ── Staff Performance ── */}
+      <div className="bg-white rounded-2xl border border-black/5 card-shadow p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-headline font-bold text-[#1c1410] text-[14px]">Staff Performance</h3>
+          <span className="text-[11px] text-[#7a6b5c]">{analytics.range_label ?? 'This Period'} · All time conversion</span>
+        </div>
+        {analytics.staff_leaderboard.length === 0
+          ? <p className="text-[12px] text-[#b09e8d]">No staff yet.</p>
+          : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-0.5">
+              {analytics.staff_leaderboard.slice(0, 10).map((s, i) => (
+                <div key={s.id} className="px-2 py-2.5 rounded-xl hover:bg-[#faf8f6] transition-colors">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[10px] text-[#c0b0a0] w-4 font-bold shrink-0">#{i + 1}</span>
+                      <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary shrink-0">
+                        {s.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
                       </div>
-                      <span className="text-[11px] text-right text-[#7a6b5c]">{s.assigned_count}</span>
-                      <span className="text-[11px] text-right text-[#7a6b5c]">{s.new_in_range}</span>
-                      <div className="flex items-center justify-end gap-1">
-                        <Award className="w-2.5 h-2.5 text-emerald-500" />
-                        <span className="text-[11px] font-bold text-emerald-600">{s.converted}</span>
-                      </div>
-                      <span className={`text-[10px] font-bold text-right ${s.conversion_rate_pct >= 50 ? 'text-emerald-600' : s.conversion_rate_pct >= 20 ? 'text-amber-500' : 'text-[#9a8a7a]'}`}>
+                      <span className="text-[12px] font-semibold text-[#1c1410] truncate">{s.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2.5 shrink-0 ml-2">
+                      <span className="text-[10px] text-[#7a6b5c]" title="Today">
+                        <span className="font-bold text-[#1c1410]">{s.new_today}</span> today
+                      </span>
+                      <span className="text-[10px] text-[#7a6b5c]">
+                        <span className="font-bold text-[#1c1410]">{s.new_in_range}</span> this period
+                      </span>
+                      <span className="text-[10px] font-bold text-emerald-600">
+                        {s.converted} won
+                      </span>
+                      <span
+                        className={`text-[11px] font-extrabold w-8 text-right ${
+                          s.conversion_rate_pct >= 50 ? 'text-emerald-600' :
+                          s.conversion_rate_pct >= 20 ? 'text-amber-500' : 'text-[#9a8a7a]'
+                        }`}
+                      >
                         {s.conversion_rate_pct}%
                       </span>
                     </div>
-                  ))}
+                  </div>
+                  {/* Visual conversion rate bar */}
+                  <div className="ml-11 h-1.5 bg-[#f0ece8] rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${s.conversion_rate_pct}%`,
+                        background: s.conversion_rate_pct >= 50 ? '#10b981' :
+                                    s.conversion_rate_pct >= 20 ? '#f59e0b' : '#ea580c',
+                      }}
+                    />
+                  </div>
                 </div>
-              </>
-            )}
-        </div>
-
-        {/* Pipeline funnel */}
-        <FunnelCard funnels={analytics.pipeline_funnels} selectedId={selectedFunnelId} setSelectedId={setSelectedFunnelId} />
+              ))}
+            </div>
+          )}
       </div>
     </div>
   );

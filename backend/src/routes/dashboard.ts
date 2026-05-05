@@ -210,6 +210,8 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
       pipelineFunnel,
       staffLeaderboard,
       todayFollowups,
+      leadsToday,
+      wonToday,
     ] = await Promise.all([
       // Total leads — all time
       query(`SELECT COUNT(*)::int AS n FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE ${leadFilter}`, [tenantId]),
@@ -248,12 +250,13 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
         ORDER BY p.name, ps.stage_order
       `, [tenantId]),
 
-      // Staff leaderboard — assigned_count (all time), converted (all time), new_in_range (range-filtered)
+      // Staff leaderboard — assigned_count (all time), converted (all time), new_in_range (range-filtered), new_today
       query(`
         SELECT u.name, u.id,
           COUNT(DISTINCT l.id)::int AS assigned_count,
           COUNT(DISTINCT CASE WHEN ps.is_won = TRUE THEN l.id END)::int AS converted,
-          COUNT(DISTINCT CASE WHEN l.created_at >= $2 AND l.created_at <= $3 THEN l.id END)::int AS new_in_range
+          COUNT(DISTINCT CASE WHEN l.created_at >= $2 AND l.created_at <= $3 THEN l.id END)::int AS new_in_range,
+          COUNT(DISTINCT CASE WHEN DATE(l.created_at) = CURRENT_DATE THEN l.id END)::int AS new_today
         FROM users u
         LEFT JOIN leads l ON l.assigned_to = u.id AND l.is_deleted = FALSE AND l.tenant_id = $1
         LEFT JOIN pipeline_stages ps ON ps.id = l.stage_id
@@ -264,6 +267,12 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
 
       // Today's follow-ups for this user
       query(`SELECT f.id, f.title, f.description, f.due_at, l.name AS lead_name, l.id AS lead_id FROM lead_followups f JOIN leads l ON l.id = f.lead_id WHERE f.tenant_id=$1 AND f.completed=FALSE AND DATE(f.due_at) = CURRENT_DATE ${onlyAssigned ? `AND l.assigned_to='${userId}'` : ''} ORDER BY f.due_at ASC LIMIT 10`, [tenantId]),
+
+      // Leads created today (always today, not range-filtered)
+      query(`SELECT COUNT(*)::int AS n FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND DATE(l.created_at) = CURRENT_DATE ${leadFilter}`, [tenantId]),
+
+      // Won today — leads in a won stage that were updated today
+      query(`SELECT COUNT(*)::int AS n FROM leads l JOIN pipeline_stages ps ON ps.id = l.stage_id WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND ps.is_won=TRUE AND DATE(l.updated_at) = CURRENT_DATE ${leadFilter}`, [tenantId]),
     ]);
 
     const total     = totalLeads.rows[0].n;
@@ -276,6 +285,7 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
     const leaderboardWithRate = staffLeaderboard.rows.map((s: any) => ({
       ...s,
       conversion_rate_pct: s.assigned_count === 0 ? 0 : Math.round((s.converted / s.assigned_count) * 100),
+      new_today: s.new_today ?? 0,
     }));
 
     // Best source from range-filtered breakdown (first non-null source)
@@ -309,6 +319,8 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
       pipeline_funnels,
       staff_leaderboard: leaderboardWithRate,
       today_followups:   todayFollowups.rows,
+      leads_today:       leadsToday.rows[0].n,
+      won_today:         wonToday.rows[0].n,
       role:              isPrivileged ? role : (isManager ? 'manager' : 'staff'),
     });
   } catch (err) {
