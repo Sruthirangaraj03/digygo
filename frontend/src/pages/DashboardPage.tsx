@@ -26,7 +26,7 @@ interface Analytics {
   source_breakdown:  Array<{ source: string; count: number }>;
   pipeline_funnel:   Array<{ stage: string; count: number; is_won: boolean }>;
   staff_leaderboard: Array<{ id: string; name: string; converted: number; new_this_month: number }>;
-  today_followups:   Array<{ id: string; lead_name: string; due_at: string; type: string; note: string; lead_id: string }>;
+  today_followups:   Array<{ id: string; lead_name: string; due_at: string; title: string; description: string; lead_id: string }>;
   role:              string;
 }
 
@@ -278,7 +278,7 @@ function StaffDashboard({ analytics }: { analytics: Analytics }) {
                     <div className={`w-2 h-2 rounded-full shrink-0 ${isOverdue ? 'bg-red-400' : 'bg-emerald-400'}`} />
                     <div className="flex-1 min-w-0">
                       <p className="text-[13px] font-semibold text-[#1c1410] truncate">{f.lead_name}</p>
-                      <p className="text-[11px] text-[#8a7c6e] truncate">{f.type} {f.note ? `· ${f.note}` : ''}</p>
+                      <p className="text-[11px] text-[#8a7c6e] truncate">{f.title}{f.description ? ` · ${f.description}` : ''}</p>
                     </div>
                     <span className={`text-[11px] shrink-0 font-medium ${isOverdue ? 'text-red-500' : 'text-[#8a7c6e]'}`}>
                       {formatDistanceToNow(new Date(f.due_at), { addSuffix: true })}
@@ -315,7 +315,7 @@ function StaffDashboard({ analytics }: { analytics: Analytics }) {
 // ── Main Dashboard Page ───────────────────────────────────────────────────────
 export default function DashboardPage() {
   const { leads } = useCrmStore();
-  const { role }  = useAuthStore((s) => s.user ?? { role: 'staff' });
+  const role = useAuthStore((s) => s.user?.role ?? 'staff');
 
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [loading,   setLoading]   = useState(true);

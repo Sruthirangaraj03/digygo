@@ -183,7 +183,7 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
       query(`SELECT u.name, u.id, COUNT(l.id)::int AS converted, COUNT(CASE WHEN l.created_at >= $2 THEN 1 END)::int AS new_this_month FROM users u LEFT JOIN leads l ON l.assigned_to = u.id AND l.is_deleted=FALSE AND l.tenant_id=$1 LEFT JOIN pipeline_stages ps ON ps.id = l.stage_id AND ps.is_won=TRUE WHERE u.tenant_id=$1 AND u.is_active=TRUE AND (u.is_owner IS NULL OR u.is_owner=FALSE) GROUP BY u.id, u.name ORDER BY converted DESC`, [tenantId, thisMonth]),
 
       // Today's follow-ups for this user
-      query(`SELECT f.id, f.note, f.due_at, f.type, l.name AS lead_name, l.id AS lead_id FROM lead_followups f JOIN leads l ON l.id = f.lead_id WHERE f.tenant_id=$1 AND f.completed=FALSE AND DATE(f.due_at) = CURRENT_DATE ${onlyAssigned ? `AND l.assigned_to='${userId}'` : ''} ORDER BY f.due_at ASC LIMIT 10`, [tenantId]),
+      query(`SELECT f.id, f.title, f.description, f.due_at, l.name AS lead_name, l.id AS lead_id FROM lead_followups f JOIN leads l ON l.id = f.lead_id WHERE f.tenant_id=$1 AND f.completed=FALSE AND DATE(f.due_at) = CURRENT_DATE ${onlyAssigned ? `AND l.assigned_to='${userId}'` : ''} ORDER BY f.due_at ASC LIMIT 10`, [tenantId]),
     ]);
 
     const total     = totalLeads.rows[0].n;
