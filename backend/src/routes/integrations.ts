@@ -164,16 +164,17 @@ async function syncPageForms(
   page: { id: string; name: string; access_token: string }
 ): Promise<number> {
   // Let errors propagate — callers handle per-page failures individually
-  const metaForms: Array<{ id: string; name: string }> = await graphGetAll(
+  const metaForms: Array<{ id: string; name: string; status?: string }> = await graphGetAll(
     `/${page.id}/leadgen_forms?fields=id,name,status`,
     page.access_token
   );
   for (const form of metaForms) {
+    const metaStatus = (form.status ?? 'ACTIVE').toUpperCase();
     await query(
-      `INSERT INTO meta_forms (tenant_id, page_id, page_name, form_id, form_name, is_active)
-       VALUES ($1,$2,$3,$4,$5,FALSE)
-       ON CONFLICT (tenant_id, form_id) DO UPDATE SET form_name=$5, page_name=$3`,
-      [tenantId, page.id, page.name, form.id, form.name]
+      `INSERT INTO meta_forms (tenant_id, page_id, page_name, form_id, form_name, is_active, meta_status)
+       VALUES ($1,$2,$3,$4,$5,FALSE,$6)
+       ON CONFLICT (tenant_id, form_id) DO UPDATE SET form_name=$5, page_name=$3, meta_status=$6`,
+      [tenantId, page.id, page.name, form.id, form.name, metaStatus]
     );
     // Fetch and cache questions, then auto-apply field mapping
     try {
@@ -1406,7 +1407,7 @@ router.post('/meta/forms/:formId/push-automation', checkPermission('meta_forms:e
     catch { res.status(500).json({ error: 'Failed to decrypt Meta token' }); return; }
 
     const mfRes = await query(
-      'SELECT id, form_id, form_name, field_mapping, last_sync_at, pipeline_id, stage_id, page_id FROM meta_forms WHERE tenant_id=$1 AND form_id=$2',
+      'SELECT id, form_id, form_name, field_mapping, last_sync_at, pipeline_id, stage_id, page_id, meta_status FROM meta_forms WHERE tenant_id=$1 AND form_id=$2',
       [tenantId, formId]
     );
     if (!mfRes.rows[0]) { res.status(404).json({ error: 'Form not found' }); return; }
@@ -1433,7 +1434,7 @@ router.post('/meta/forms/:formId/push-automation', checkPermission('meta_forms:e
     // Use page access token for lead retrieval — Meta requires it for /{formId}/leads
     const pageTokenMap = await buildPageTokenMap(token);
     const leadToken = pageTokenMap.get(mf.page_id) ?? token;
-    console.log(`[push-automation] form ${formId} page_id=${mf.page_id} using ${pageTokenMap.has(mf.page_id) ? 'page token' : 'user token (no page token found)'}`);
+    console.log(`[push-automation] form ${formId} meta_status=${mf.meta_status ?? 'unknown'} page_id=${mf.page_id} using ${pageTokenMap.has(mf.page_id) ? 'page token' : 'user token (no page token found)'}`);
 
     // Fetch leads from Meta — always proceed even if no workflows match yet
     let metaUrl = `/${formId}/leads?fields=id,created_time,field_data`;

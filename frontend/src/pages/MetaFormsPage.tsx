@@ -47,6 +47,7 @@ interface MetaFormRow {
   pipeline_name?: string | null;
   stage_name?: string | null;
   field_mapping?: Array<{ fb_field: string; crm_field: string }> | null;
+  meta_status?: string | null;
 }
 
 interface Lead {
@@ -954,7 +955,12 @@ export default function MetaFormsPage() {
       const { pushed, created, existing, workflows, done = 0, skipped = 0, failed = 0 } = result;
 
       if (pushed === 0) {
-        toast.info(`No ${type === 'old' ? 'historical' : 'new'} leads found in Meta for this form`);
+        const isArchived = form.meta_status && form.meta_status !== 'ACTIVE';
+        toast.info(
+          isArchived
+            ? `No leads found — this form is ${form.meta_status?.toLowerCase()} in Meta. Sync first or check Meta Ads Manager.`
+            : `No ${type === 'old' ? 'historical' : 'new'} leads found in Meta for this form`
+        );
       } else if (workflows.length === 0) {
         setPushResult({ formId: form.form_id, type, pushed, created, existing, workflows: [] });
         toast.warning('No live automation matched this form — leads are in CRM but no workflow ran. Create one in Automation.');
@@ -1353,6 +1359,11 @@ export default function MetaFormsPage() {
                       {isActive && (
                         <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
                           live
+                        </span>
+                      )}
+                      {form.meta_status && form.meta_status !== 'ACTIVE' && (
+                        <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                          {form.meta_status.toLowerCase()}
                         </span>
                       )}
                     </div>
