@@ -3865,10 +3865,14 @@ export default function WorkflowEditorPage() {
 
         {/* ── Canvas ── */}
         <div
-          className="flex-1 relative overflow-auto"
+          className="flex-1 relative overflow-hidden"
           style={{ backgroundImage: 'radial-gradient(circle, #c8bfb4 1px, transparent 1px)', backgroundSize: '24px 24px' }}
-          onClick={() => { setSelectedNodeId(null); setSelectedBranchCtx(null); }}
         >
+          {/* Scrollable inner canvas */}
+          <div
+            className="absolute inset-0 overflow-auto"
+            onClick={() => { setSelectedNodeId(null); setSelectedBranchCtx(null); }}
+          >
           {/* Loading overlay on refresh */}
           {loadingWF && (
             <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#f0ece7]/80 backdrop-blur-sm">
@@ -3938,8 +3942,10 @@ export default function WorkflowEditorPage() {
             </div>
           )}
 
-          {/* ── Bottom toolbar ── */}
-          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-[#1c1410] rounded-2xl px-3 py-2 shadow-xl z-10">
+          </div>{/* end scrollable inner canvas */}
+
+          {/* ── Bottom toolbar — anchored to canvas viewport, never scrolls ── */}
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-[#1c1410] rounded-2xl px-3 py-2 shadow-xl z-20">
             <button title="Undo" onClick={() => {}} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white transition-colors">
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
