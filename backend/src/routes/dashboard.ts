@@ -141,23 +141,58 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
 
     // Range param — affects range_leads, source_breakdown, staff leaderboard new_in_range
     const rangeParam = (req.query.range as string) || '30d';
+    const fromParam  = req.query.from as string | undefined;
+    const toParam    = req.query.to   as string | undefined;
     let rangeStart: Date;
+    let rangeEnd: Date = new Date();
     let rangeLabel: string;
+
+    const startOfToday     = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const endOfYesterday   = new Date(startOfToday.getTime() - 1);
+
     switch (rangeParam) {
-      case '90d':
-        rangeStart = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-        rangeLabel = 'Last 90 Days';
+      case 'today':
+        rangeStart = startOfToday;
+        rangeEnd   = new Date();
+        rangeLabel = 'Today';
         break;
+      case 'yesterday':
+        rangeStart = startOfYesterday;
+        rangeEnd   = endOfYesterday;
+        rangeLabel = 'Yesterday';
+        break;
+      case 'this_week': {
+        const dow  = now.getDay(); // 0=Sun
+        const diff = dow === 0 ? -6 : 1 - dow;
+        rangeStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
+        rangeEnd   = new Date();
+        rangeLabel = 'This Week';
+        break;
+      }
       case 'this_month':
         rangeStart = thisMonth;
+        rangeEnd   = new Date();
         rangeLabel = 'This Month';
+        break;
+      case '90d':
+        rangeStart = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+        rangeEnd   = new Date();
+        rangeLabel = 'Last 90 Days';
         break;
       case 'all':
         rangeStart = new Date(0);
+        rangeEnd   = new Date();
         rangeLabel = 'All Time';
+        break;
+      case 'custom':
+        rangeStart = fromParam ? new Date(fromParam) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        rangeEnd   = toParam   ? new Date(toParam + 'T23:59:59') : new Date();
+        rangeLabel = fromParam && toParam ? `${fromParam} to ${toParam}` : 'Custom Range';
         break;
       default:
         rangeStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        rangeEnd   = new Date();
         rangeLabel = 'Last 30 Days';
     }
 
@@ -186,7 +221,7 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
       query(`SELECT COUNT(*)::int AS n FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND l.created_at >= $2 AND l.created_at <= $3 ${leadFilter}`, [tenantId, lastMonth, lastMonthEnd]),
 
       // Leads in selected range
-      query(`SELECT COUNT(*)::int AS n FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND l.created_at >= $2 ${leadFilter}`, [tenantId, rangeStart]),
+      query(`SELECT COUNT(*)::int AS n FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND l.created_at >= $2 AND l.created_at <= $3 ${leadFilter}`, [tenantId, rangeStart, rangeEnd]),
 
       // Converted leads (in won stage) — all time
       query(`SELECT COUNT(*)::int AS n FROM leads l JOIN pipeline_stages ps ON ps.id = l.stage_id WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND ps.is_won=TRUE ${leadFilter}`, [tenantId]),
@@ -198,7 +233,7 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
       query(`SELECT COUNT(*)::int AS n FROM lead_followups f JOIN leads l ON l.id = f.lead_id WHERE f.tenant_id=$1 AND f.completed=FALSE AND f.due_at < NOW() ${onlyAssigned ? `AND l.assigned_to='${userId}'` : ''}`, [tenantId]),
 
       // Source breakdown — filtered by range
-      query(`SELECT l.source, COUNT(*)::int AS count FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND l.created_at >= $2 ${leadFilter} GROUP BY l.source ORDER BY count DESC`, [tenantId, rangeStart]),
+      query(`SELECT l.source, COUNT(*)::int AS count FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND l.created_at >= $2 AND l.created_at <= $3 ${leadFilter} GROUP BY l.source ORDER BY count DESC`, [tenantId, rangeStart, rangeEnd]),
 
       // Per-pipeline funnel — each pipeline with its own stages
       query(`
@@ -218,14 +253,14 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
         SELECT u.name, u.id,
           COUNT(DISTINCT l.id)::int AS assigned_count,
           COUNT(DISTINCT CASE WHEN ps.is_won = TRUE THEN l.id END)::int AS converted,
-          COUNT(DISTINCT CASE WHEN l.created_at >= $2 THEN l.id END)::int AS new_in_range
+          COUNT(DISTINCT CASE WHEN l.created_at >= $2 AND l.created_at <= $3 THEN l.id END)::int AS new_in_range
         FROM users u
         LEFT JOIN leads l ON l.assigned_to = u.id AND l.is_deleted = FALSE AND l.tenant_id = $1
         LEFT JOIN pipeline_stages ps ON ps.id = l.stage_id
         WHERE u.tenant_id = $1 AND u.is_active = TRUE AND (u.is_owner IS NULL OR u.is_owner = FALSE)
         GROUP BY u.id, u.name
         ORDER BY converted DESC
-      `, [tenantId, rangeStart]),
+      `, [tenantId, rangeStart, rangeEnd]),
 
       // Today's follow-ups for this user
       query(`SELECT f.id, f.title, f.description, f.due_at, l.name AS lead_name, l.id AS lead_id FROM lead_followups f JOIN leads l ON l.id = f.lead_id WHERE f.tenant_id=$1 AND f.completed=FALSE AND DATE(f.due_at) = CURRENT_DATE ${onlyAssigned ? `AND l.assigned_to='${userId}'` : ''} ORDER BY f.due_at ASC LIMIT 10`, [tenantId]),

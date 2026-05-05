@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Users, TrendingUp, AlertTriangle, Clock, Target, Award, Zap, CheckCircle,
-  Star, ChevronDown,
+  Users, TrendingUp, AlertTriangle, Clock, Target, Award, Zap, CheckCircle, Star,
 } from 'lucide-react';
 import { useCrmStore } from '@/store/crmStore';
 import { useAuth } from '@/hooks/useAuth';
@@ -47,11 +46,12 @@ function sourceLabel(raw: string | null | undefined): string {
   return raw;
 }
 
-const RANGE_OPTIONS = [
-  { value: '30d',        label: 'Last 30 Days' },
-  { value: '90d',        label: 'Last 90 Days' },
-  { value: 'this_month', label: 'This Month'   },
-  { value: 'all',        label: 'All Time'     },
+const FILTER_PRESETS = [
+  { value: 'today',      label: 'Today'      },
+  { value: 'yesterday',  label: 'Yesterday'  },
+  { value: 'this_week',  label: 'This Week'  },
+  { value: 'this_month', label: 'This Month' },
+  { value: 'custom',     label: 'Custom'     },
 ];
 
 // ── Compact horizontal Stat Card ──────────────────────────────────────────────
@@ -98,33 +98,45 @@ function StatCard({ label, value, sub, icon: Icon, accent = false, warn = false,
 
 const PIE_COLORS = ['#ea580c', '#3b82f6', '#10b981', '#7c3aed', '#f59e0b', '#ec4899', '#0ea5e9', '#14b8a6'];
 
-// ── Range Picker ──────────────────────────────────────────────────────────────
-function RangePicker({ range, setRange }: { range: string; setRange: (r: string) => void }) {
-  const [open, setOpen] = useState(false);
+// ── Date Filter Bar ───────────────────────────────────────────────────────────
+function DateFilterBar({ range, setRange, customFrom, setCustomFrom, customTo, setCustomTo }: {
+  range: string; setRange: (r: string) => void;
+  customFrom: string; setCustomFrom: (v: string) => void;
+  customTo: string;   setCustomTo:   (v: string) => void;
+}) {
   return (
-    <div className="relative shrink-0">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 px-4 py-2 rounded-xl border border-black/10 bg-white text-[13px] font-semibold text-[#1c1410] hover:border-primary/40 transition-colors shadow-sm"
-      >
-        {RANGE_OPTIONS.find((r) => r.value === range)?.label ?? 'Last 30 Days'}
-        <ChevronDown className={`w-4 h-4 text-[#9a8a7a] transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 bg-white rounded-xl border border-black/10 shadow-xl z-50 py-1 min-w-[160px]">
-            {RANGE_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => { setRange(opt.value); setOpen(false); }}
-                className={`w-full text-left px-4 py-2.5 text-[13px] hover:bg-[#faf8f6] transition-colors ${range === opt.value ? 'font-bold text-primary' : 'text-[#1c1410]'}`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </>
+    <div className="flex flex-wrap items-center gap-1.5">
+      {FILTER_PRESETS.map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => setRange(opt.value)}
+          className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors border ${
+            range === opt.value
+              ? 'bg-primary text-white border-primary shadow-sm'
+              : 'bg-white text-[#1c1410] border-black/10 hover:border-primary/40'
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+      {range === 'custom' && (
+        <div className="flex items-center gap-1.5 ml-1">
+          <input
+            type="date"
+            value={customFrom}
+            max={customTo || undefined}
+            onChange={(e) => setCustomFrom(e.target.value)}
+            className="text-[12px] border border-black/10 rounded-lg px-2 py-1.5 outline-none focus:border-primary/40 bg-white cursor-pointer"
+          />
+          <span className="text-[11px] text-[#7a6b5c] font-medium">to</span>
+          <input
+            type="date"
+            value={customTo}
+            min={customFrom || undefined}
+            onChange={(e) => setCustomTo(e.target.value)}
+            className="text-[12px] border border-black/10 rounded-lg px-2 py-1.5 outline-none focus:border-primary/40 bg-white cursor-pointer"
+          />
+        </div>
       )}
     </div>
   );
@@ -225,8 +237,8 @@ function FollowupsWidget({ followups }: { followups: Analytics['today_followups'
 }
 
 // ── Management Dashboard ──────────────────────────────────────────────────────
-function ManagementDashboard({ analytics, lineData, range }: {
-  analytics: Analytics; lineData: any[]; range: string;
+function ManagementDashboard({ analytics, lineData }: {
+  analytics: Analytics; lineData: any[];
 }) {
   const navigate = useNavigate();
   const [selectedFunnelId, setSelectedFunnelId] = useState<string>('');
@@ -403,14 +415,15 @@ function ManagerPipelineHealth({ funnels }: { funnels: Analytics['pipeline_funne
 
 // ── Sales Manager Dashboard ───────────────────────────────────────────────────
 function ManagerDashboard({ analytics, lineData }: { analytics: Analytics; lineData: any[] }) {
+  const rangeLabel = analytics.range_label ?? 'This Period';
   return (
     <div className="space-y-4">
       {/* KPI row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="Overdue Follow-ups" value={analytics.overdue_followups} sub="Needs immediate action"       icon={Clock}         warn={analytics.overdue_followups > 0} />
         <StatCard label="Stale Leads"         value={analytics.stale_leads}       sub="No activity in 7+ days"      icon={AlertTriangle} warn={analytics.stale_leads > 0} />
-        <StatCard label="Converted This Month" value={analytics.converted_leads}  sub={`${analytics.conversion_rate}% rate`} icon={Target} accent />
-        <StatCard label="New Leads"           value={analytics.leads_this_month}  sub="This month"                  icon={Zap} />
+        <StatCard label="Converted"           value={analytics.converted_leads}   sub={`${analytics.conversion_rate}% conversion rate`} icon={Target} accent />
+        <StatCard label="New Leads"           value={analytics.range_leads ?? 0}  sub={rangeLabel}                  icon={Zap} />
       </div>
 
       {/* Staff table + line chart */}
@@ -452,11 +465,11 @@ function ManagerDashboard({ analytics, lineData }: { analytics: Analytics; lineD
         </div>
         <div className="bg-white rounded-2xl border border-black/5 card-shadow p-5">
           <h3 className="font-headline font-bold text-[#1c1410] text-[14px] mb-0.5">Lead Inflow</h3>
-          <p className="text-[11px] text-[#7a6b5c] mb-3">Last 30 days</p>
+          <p className="text-[11px] text-[#7a6b5c] mb-3">{rangeLabel}</p>
           <ResponsiveContainer width="100%" height={185}>
             <LineChart data={lineData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0ece8" />
-              <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#8a7c6e' }} axisLine={false} tickLine={false} interval={4} />
+              <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#8a7c6e' }} axisLine={false} tickLine={false} interval={Math.max(0, Math.floor(lineData.length / 6))} />
               <YAxis tick={{ fontSize: 10, fill: '#8a7c6e' }} axisLine={false} tickLine={false} allowDecimals={false} width={28} />
               <Tooltip contentStyle={{ borderRadius: 10, border: 'none', background: '#1c1410', color: '#fff', fontSize: 11 }} />
               <Line type="monotone" dataKey="leads" stroke="#ea580c" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
@@ -529,8 +542,8 @@ function StaffDashboard({ analytics }: { analytics: Analytics }) {
               <p className="font-headline text-[22px] font-bold text-[#1c1410]">{analytics.total_leads}</p>
             </div>
             <div className="rounded-xl bg-[#faf8f6] px-4 py-3">
-              <p className="text-[11px] text-[#7a6b5c] mb-0.5">This Month</p>
-              <p className="font-headline text-[22px] font-bold text-[#1c1410]">{analytics.leads_this_month}</p>
+              <p className="text-[11px] text-[#7a6b5c] mb-0.5">{analytics.range_label ?? 'This Period'}</p>
+              <p className="font-headline text-[22px] font-bold text-[#1c1410]">{analytics.range_leads ?? 0}</p>
             </div>
             <div className="rounded-xl bg-emerald-50 px-4 py-3">
               <p className="text-[11px] text-emerald-600 mb-0.5">Converted</p>
@@ -548,21 +561,89 @@ export default function DashboardPage() {
   const { leads } = useCrmStore();
   const { role, isPrivileged } = useAuth();
 
-  const [analytics, setAnalytics] = useState<Analytics | null>(null);
-  const [loading,   setLoading]   = useState(true);
-  const [range,     setRange]     = useState('30d');
+  const [analytics,   setAnalytics]   = useState<Analytics | null>(null);
+  const [loading,     setLoading]     = useState(true);
+  const [range,       setRange]       = useState('this_month');
+  const [customFrom,  setCustomFrom]  = useState('');
+  const [customTo,    setCustomTo]    = useState('');
+
+  const apiUrl = useMemo(() => {
+    if (range === 'custom' && customFrom && customTo) {
+      return `/api/dashboard/analytics?range=custom&from=${customFrom}&to=${customTo}`;
+    }
+    return `/api/dashboard/analytics?range=${range}`;
+  }, [range, customFrom, customTo]);
 
   useEffect(() => {
+    if (range === 'custom' && (!customFrom || !customTo)) return;
     setLoading(true);
-    api.get<Analytics>(`/api/dashboard/analytics?range=${range}`)
+    api.get<Analytics>(apiUrl)
       .then((r) => setAnalytics(r))
       .catch(() => null)
       .finally(() => setLoading(false));
-  }, [range]);
+  }, [apiUrl]);
 
   const lineData = useMemo(() => {
     const today = startOfDay(new Date());
 
+    if (range === 'today') {
+      return Array.from({ length: 24 }, (_, h) => {
+        const count = leads.filter((l) => {
+          const d = new Date(l.createdAt);
+          return isToday(d) && d.getHours() === h;
+        }).length;
+        return { day: `${h}:00`, leads: count };
+      });
+    }
+
+    if (range === 'yesterday') {
+      const yesterday = subDays(today, 1);
+      return Array.from({ length: 24 }, (_, h) => {
+        const count = leads.filter((l) => {
+          const d = new Date(l.createdAt);
+          return format(d, 'yyyy-MM-dd') === format(yesterday, 'yyyy-MM-dd') && d.getHours() === h;
+        }).length;
+        return { day: `${h}:00`, leads: count };
+      });
+    }
+
+    if (range === 'this_week') {
+      const now = new Date();
+      const dow  = now.getDay();
+      const diff = dow === 0 ? -6 : 1 - dow;
+      const weekStart = startOfDay(addDays(today, diff));
+      return Array.from({ length: 7 }, (_, i) => {
+        const d = addDays(weekStart, i);
+        const dayStr = format(d, 'yyyy-MM-dd');
+        const count = d > now ? 0 : leads.filter((l) => format(startOfDay(new Date(l.createdAt)), 'yyyy-MM-dd') === dayStr).length;
+        return { day: format(d, 'EEE'), leads: count };
+      });
+    }
+
+    if (range === 'this_month') {
+      const dim = getDaysInMonth(today);
+      return Array.from({ length: dim }, (_, i) => {
+        const day    = new Date(today.getFullYear(), today.getMonth(), i + 1);
+        const dayStr = format(day, 'yyyy-MM-dd');
+        const count  = leads.filter((l) => format(startOfDay(new Date(l.createdAt)), 'yyyy-MM-dd') === dayStr).length;
+        return { day: String(i + 1), leads: count };
+      });
+    }
+
+    if (range === 'custom' && customFrom && customTo) {
+      const fromDate  = startOfDay(new Date(customFrom));
+      const toDate    = startOfDay(new Date(customTo));
+      const diffDays  = Math.round((toDate.getTime() - fromDate.getTime()) / 86400000) + 1;
+      const numPoints = Math.min(diffDays, 60);
+      return Array.from({ length: numPoints }, (_, i) => {
+        const d      = addDays(fromDate, i);
+        const dayStr = format(d, 'yyyy-MM-dd');
+        const count  = leads.filter((l) => format(startOfDay(new Date(l.createdAt)), 'yyyy-MM-dd') === dayStr).length;
+        return { day: diffDays > 20 ? format(d, 'MMM d') : format(d, 'M/d'), leads: count };
+      });
+    }
+
+    // 90d — weekly buckets
     if (range === '90d') {
       return Array.from({ length: 13 }, (_, i) => {
         const weekStart = subDays(today, (12 - i) * 7);
@@ -574,15 +655,8 @@ export default function DashboardPage() {
         return { day: format(weekStart, 'MMM d'), leads: count };
       });
     }
-    if (range === 'this_month') {
-      const dim = getDaysInMonth(today);
-      return Array.from({ length: dim }, (_, i) => {
-        const day    = new Date(today.getFullYear(), today.getMonth(), i + 1);
-        const dayStr = format(day, 'yyyy-MM-dd');
-        const count  = leads.filter((l) => format(startOfDay(new Date(l.createdAt)), 'yyyy-MM-dd') === dayStr).length;
-        return { day: String(i + 1), leads: count };
-      });
-    }
+
+    // all — monthly buckets
     if (range === 'all') {
       return Array.from({ length: 12 }, (_, i) => {
         const month    = startOfMonth(subMonths(today, 11 - i));
@@ -591,13 +665,15 @@ export default function DashboardPage() {
         return { day: format(month, 'MMM'), leads: count };
       });
     }
+
+    // default — last 30d daily
     return Array.from({ length: 30 }, (_, i) => {
       const day    = subDays(today, 29 - i);
       const dayStr = format(day, 'yyyy-MM-dd');
       const count  = leads.filter((l) => format(startOfDay(new Date(l.createdAt)), 'yyyy-MM-dd') === dayStr).length;
       return { day: format(day, 'd'), leads: count };
     });
-  }, [leads, range]);
+  }, [leads, range, customFrom, customTo]);
 
   const dashboardRole = analytics?.role ?? (role === 'owner' || role === 'super_admin' ? role : 'staff');
   const isManager     = dashboardRole === 'manager';
@@ -605,9 +681,13 @@ export default function DashboardPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="font-headline text-[22px] font-extrabold tracking-tight text-[#1c1410]">Dashboard</h2>
-        {isPrivileged && <RangePicker range={range} setRange={setRange} />}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <h2 className="font-headline text-[22px] font-extrabold tracking-tight text-[#1c1410] shrink-0">Dashboard</h2>
+        <DateFilterBar
+          range={range} setRange={setRange}
+          customFrom={customFrom} setCustomFrom={setCustomFrom}
+          customTo={customTo}     setCustomTo={setCustomTo}
+        />
       </div>
 
       {loading && (
@@ -620,7 +700,7 @@ export default function DashboardPage() {
 
       {!loading && analytics && (
         <>
-          {isPrivileged && <ManagementDashboard analytics={analytics} lineData={lineData} range={range} />}
+          {isPrivileged && <ManagementDashboard analytics={analytics} lineData={lineData} />}
           {!isPrivileged && isManager && <ManagerDashboard analytics={analytics} lineData={lineData} />}
           {!isPrivileged && !isManager && <StaffDashboard analytics={analytics} />}
         </>
