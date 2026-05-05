@@ -403,7 +403,6 @@ function ManagerPipelineHealth({ funnels }: { funnels: Analytics['pipeline_funne
 
 // ── Sales Manager Dashboard ───────────────────────────────────────────────────
 function ManagerDashboard({ analytics, lineData }: { analytics: Analytics; lineData: any[] }) {
-  const navigate = useNavigate();
   return (
     <div className="space-y-4">
       {/* KPI row */}
@@ -422,19 +421,30 @@ function ManagerDashboard({ analytics, lineData }: { analytics: Analytics; lineD
             ? <p className="text-[12px] text-[#b09e8d]">No staff yet.</p>
             : (
               <div className="space-y-0.5">
-                <div className="grid grid-cols-3 text-[10px] text-[#b09e8d] font-semibold uppercase px-1.5 mb-1.5">
-                  <span>Staff</span><span className="text-center">New</span><span className="text-right">Converted</span>
+                <div className="grid grid-cols-[1fr_44px_44px_54px_40px] gap-1 text-[10px] text-[#b09e8d] font-semibold uppercase px-1.5 mb-1.5">
+                  <span>Staff</span>
+                  <span className="text-right">Total</span>
+                  <span className="text-right">New</span>
+                  <span className="text-right">Won</span>
+                  <span className="text-right">Rate</span>
                 </div>
                 {analytics.staff_leaderboard.map((s) => (
-                  <div key={s.id} className="grid grid-cols-3 items-center px-1.5 py-1.5 rounded-lg hover:bg-[#faf8f6] transition-colors">
-                    <div className="flex items-center gap-2 min-w-0">
+                  <div key={s.id} className="grid grid-cols-[1fr_44px_44px_54px_40px] gap-1 items-center px-1.5 py-1.5 rounded-lg hover:bg-[#faf8f6] transition-colors">
+                    <div className="flex items-center gap-1.5 min-w-0">
                       <div className="w-6 h-6 rounded-md bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary shrink-0">
                         {s.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
                       </div>
                       <span className="text-[12px] font-semibold text-[#1c1410] truncate">{s.name}</span>
                     </div>
-                    <span className="text-[12px] text-center text-[#7a6b5c]">{s.new_in_range}</span>
-                    <span className="text-[12px] text-right font-bold text-emerald-600">{s.converted}</span>
+                    <span className="text-[11px] text-right text-[#7a6b5c]">{s.assigned_count}</span>
+                    <span className="text-[11px] text-right text-[#7a6b5c]">{s.new_in_range}</span>
+                    <div className="flex items-center justify-end gap-1">
+                      <Award className="w-2.5 h-2.5 text-emerald-500" />
+                      <span className="text-[11px] font-bold text-emerald-600">{s.converted}</span>
+                    </div>
+                    <span className={`text-[10px] font-bold text-right ${s.conversion_rate_pct >= 50 ? 'text-emerald-600' : s.conversion_rate_pct >= 20 ? 'text-amber-500' : 'text-[#9a8a7a]'}`}>
+                      {s.conversion_rate_pct}%
+                    </span>
                   </div>
                 ))}
               </div>
@@ -468,10 +478,11 @@ function StaffDashboard({ analytics }: { analytics: Analytics }) {
   return (
     <div className="space-y-4">
       {/* KPI row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <StatCard label="Today's Follow-ups" value={todayDue.length}             sub="Due today"             icon={CheckCircle} accent />
-        <StatCard label="Overdue"             value={analytics.overdue_followups} sub="Need your attention"   icon={Clock}       warn={analytics.overdue_followups > 0} />
-        <StatCard label="My Converted"        value={analytics.converted_leads}   sub="All time"              icon={Target} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard label="Today's Follow-ups" value={todayDue.length}             sub="Due today"             icon={CheckCircle} accent   onClick={() => navigate('/lead-management/followups')} />
+        <StatCard label="Overdue"             value={analytics.overdue_followups} sub="Need your attention"   icon={Clock}       warn={analytics.overdue_followups > 0} onClick={() => navigate('/lead-management/followups')} />
+        <StatCard label="Stale Leads"         value={analytics.stale_leads}       sub="No activity in 7+ days" icon={AlertTriangle} warn={analytics.stale_leads > 0}   onClick={() => navigate('/leads?filter=stale')} />
+        <StatCard label="My Converted"        value={analytics.converted_leads}   sub="All time"              icon={Target}                                             onClick={() => navigate('/leads?filter=converted')} />
       </div>
 
       {/* Today's tasks + my stats side by side */}
