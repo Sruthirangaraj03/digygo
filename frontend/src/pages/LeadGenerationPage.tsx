@@ -8,7 +8,7 @@ import {
 import { api } from '@/lib/api';
 import { formatDistanceToNow, format } from 'date-fns';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
 } from 'recharts';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -201,6 +201,12 @@ function ExpandedRow({ form }: { form: FormRow }) {
                   {data!.sparkline.map((entry, i) => (
                     <Cell key={i} fill={entry.count > 0 ? '#ea580c' : '#f0ece8'} />
                   ))}
+                  <LabelList
+                    dataKey="count"
+                    position="top"
+                    formatter={(v: number) => (v > 0 ? v : '')}
+                    style={{ fontSize: 10, fontWeight: 700, fill: '#1c1410' }}
+                  />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
