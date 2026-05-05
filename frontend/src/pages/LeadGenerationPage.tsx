@@ -1,158 +1,179 @@
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import { Facebook, FileText, ArrowRight, Users, Calendar, Zap } from 'lucide-react';
-import { useCrmStore } from '@/store/crmStore';
+import {
+  Facebook, FileText, Users, Zap, AlertTriangle, ChevronDown, ChevronUp,
+  Search, ArrowRight, Clock, Copy, Check, ExternalLink, RefreshCw,
+  TrendingUp, Star,
+} from 'lucide-react';
 import { api } from '@/lib/api';
-import { format } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { formatDistanceToNow, format } from 'date-fns';
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+} from 'recharts';
 
-const getSourceLabel = (source: string) => {
-  if (!source) return 'Unknown';
-  const s = source.toLowerCase();
-  if (s.includes('meta') || s.includes('facebook') || s.includes('instagram')) return 'Meta';
-  if (s.includes('form') || s.includes('custom')) return 'Custom Form';
-  if (s.includes('whatsapp')) return 'WhatsApp';
-  return source;
-};
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface FormRow {
+  id: string;
+  name: string;
+  channel: 'meta' | 'custom';
+  status: string;
+  page_name: string | null;
+  slug: string | null;
+  leads_today: number;
+  leads_week: number;
+  leads_month: number;
+  leads_total: number;
+  last_lead_at: string | null;
+}
 
-const getSourceColor = (source: string) => {
-  const s = getSourceLabel(source);
-  if (s === 'Meta') return 'bg-blue-50 text-blue-600';
-  if (s === 'Custom Form') return 'bg-primary/10 text-primary';
-  if (s === 'WhatsApp') return 'bg-emerald-50 text-emerald-600';
-  return 'bg-gray-100 text-gray-500';
-};
+interface Overview {
+  summary: {
+    total_leads: number;
+    active_forms_count: number;
+    leads_today: number;
+    best_form: { name: string; channel: string; count: number } | null;
+  };
+  dead_forms: Array<{ id: string; name: string; channel: string; last_lead_at: string | null }>;
+  forms: FormRow[];
+}
 
-export default function LeadGenerationPage() {
+interface SparklineData {
+  sparkline: Array<{ day: string; count: number }>;
+  recent_leads: Array<{ id: string; name: string; phone: string; email: string; created_at: string }>;
+}
+
+type SortKey = 'leads_month' | 'leads_week' | 'leads_today' | 'last_lead_at' | 'name';
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function lastLeadLabel(dateStr: string | null): string {
+  if (!dateStr) return 'Never';
+  return formatDistanceToNow(new Date(dateStr), { addSuffix: true });
+}
+
+function statusBadge(channel: 'meta' | 'custom', status: string) {
+  if (channel === 'meta') {
+    const s = (status ?? 'ACTIVE').toUpperCase();
+    if (s === 'ACTIVE')   return { label: 'Active',   cls: 'bg-emerald-50 text-emerald-600' };
+    if (s === 'ARCHIVED') return { label: 'Archived', cls: 'bg-amber-50 text-amber-600' };
+    if (s === 'DRAFT')    return { label: 'Draft',    cls: 'bg-blue-50 text-blue-500' };
+    if (s === 'DELETED')  return { label: 'Deleted',  cls: 'bg-red-50 text-red-500' };
+    return { label: s, cls: 'bg-gray-100 text-gray-500' };
+  }
+  return status === 'active'
+    ? { label: 'Published', cls: 'bg-emerald-50 text-emerald-600' }
+    : { label: 'Inactive',  cls: 'bg-gray-100 text-gray-400' };
+}
+
+// ── KPI card ──────────────────────────────────────────────────────────────────
+function KpiCard({ label, value, sub, icon: Icon, accent = false }: {
+  label: string; value: string | number; sub?: string;
+  icon: React.ElementType; accent?: boolean;
+}) {
+  if (accent) return (
+    <div className="rounded-xl px-4 py-3 flex items-center gap-3 text-white"
+      style={{ background: 'linear-gradient(135deg,#c2410c 0%,#ea580c 55%,#f97316 100%)', boxShadow: '0 4px 20px rgba(234,88,12,0.2)' }}>
+      <div className="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center shrink-0">
+        <Icon className="w-4 h-4 text-white" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] opacity-75 truncate">{label}</p>
+        <h3 className="font-headline text-[22px] font-bold leading-tight">{value}</h3>
+        {sub && <p className="text-[10px] opacity-65 truncate mt-0.5">{sub}</p>}
+      </div>
+    </div>
+  );
+  return (
+    <div className="bg-white rounded-xl px-4 py-3 flex items-center gap-3 card-shadow border border-black/5">
+      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+        <Icon className="w-4 h-4 text-primary" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] text-[#7a6b5c] truncate">{label}</p>
+        <h3 className="font-headline text-[22px] font-bold text-[#1c1410] leading-tight">{value}</h3>
+        {sub && <p className="text-[10px] text-[#9a8a7a] truncate mt-0.5">{sub}</p>}
+      </div>
+    </div>
+  );
+}
+
+// ── Expanded row (sparkline + recent leads) ───────────────────────────────────
+function ExpandedRow({ form, data }: { form: FormRow; data: SparklineData | null }) {
   const navigate = useNavigate();
-  const { leads } = useCrmStore();
-  const [formCount, setFormCount] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    api.get<any[]>('/api/forms').then((f) => setFormCount(Array.isArray(f) ? f.length : 0)).catch(() => setFormCount(0));
-  }, []);
+  const copyLink = () => {
+    const url = `${window.location.origin}/f/${form.slug}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  if (!data) {
+    return (
+      <div className="px-6 py-4 bg-[#faf8f6] border-t border-black/5">
+        <div className="flex gap-4">
+          {[1, 2, 3].map(i => <div key={i} className="h-20 flex-1 bg-white rounded-xl animate-pulse" />)}
+        </div>
+      </div>
+    );
+  }
 
-  const metaLeads   = leads.filter((l) => getSourceLabel(l.source ?? '') === 'Meta');
-  const formLeads   = leads.filter((l) => getSourceLabel(l.source ?? '') === 'Custom Form');
-  const thisMonth   = leads.filter((l) => new Date(l.createdAt) >= monthStart);
-  const recentLeads = [...leads].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 6);
-
-  const statCards = [
-    { label: 'Total Leads',   value: leads.length,    Icon: Users,     color: 'text-primary',      bg: 'bg-primary/10' },
-    { label: 'From Meta',     value: metaLeads.length, Icon: Facebook,  color: 'text-blue-600',     bg: 'bg-blue-50' },
-    { label: 'From Forms',    value: formLeads.length, Icon: FileText,  color: 'text-purple-600',   bg: 'bg-purple-50' },
-    { label: 'This Month',    value: thisMonth.length, Icon: Calendar,  color: 'text-emerald-600',  bg: 'bg-emerald-50' },
-  ];
-
-  const channels = [
-    {
-      label: 'Meta Forms',
-      description: 'Sync leads from Facebook & Instagram ad forms. Connect once — leads flow in automatically.',
-      icon: Facebook,
-      path: '/lead-generation/meta-forms',
-      color: 'text-blue-600',
-      bg: 'bg-blue-50',
-      cta: 'Manage Meta Forms',
-      badge: metaLeads.length > 0 ? `${metaLeads.length} leads` : null,
-    },
-    {
-      label: 'Custom Forms',
-      description: 'Build forms with drag-and-drop fields. Embed on any website or share as a link.',
-      icon: FileText,
-      path: '/lead-generation/custom-forms',
-      color: 'text-primary',
-      bg: 'bg-primary/10',
-      cta: formCount != null && formCount > 0 ? `${formCount} form${formCount > 1 ? 's' : ''} active` : 'Create a Form',
-      badge: formLeads.length > 0 ? `${formLeads.length} leads` : null,
-    },
-  ];
+  const maxCount = Math.max(...data.sparkline.map(d => d.count), 1);
 
   return (
-    <div className="space-y-6 max-w-5xl">
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {statCards.map(({ label, value, Icon, color, bg }) => (
-          <div key={label} className="bg-white rounded-2xl border border-black/5 card-shadow p-4 flex items-center gap-3">
-            <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center shrink-0', bg)}>
-              <Icon className={cn('w-4 h-4', color)} />
-            </div>
-            <div>
-              <p className="text-[11px] text-[#7a6b5c] font-medium leading-none mb-1">{label}</p>
-              <p className={cn('text-[20px] font-bold leading-none', color)}>{value}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Channel cards */}
-      <div>
-        <h3 className="text-[12px] font-bold text-[#7a6b5c] uppercase tracking-wider mb-3">Channels</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {channels.map((item) => (
-            <div
-              key={item.label}
-              onClick={() => navigate(item.path)}
-              className="group bg-white rounded-2xl border border-black/5 card-shadow p-5 flex flex-col gap-3 cursor-pointer hover:-translate-y-0.5 hover:shadow-md transition-all duration-200"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center shrink-0', item.bg)}>
-                    <item.icon className={cn('w-5 h-5', item.color)} />
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-[#1c1410] text-[14px]">{item.label}</h4>
-                    {item.badge && <span className={cn('text-[11px] font-medium', item.color)}>{item.badge}</span>}
-                  </div>
-                </div>
-                <ArrowRight className="w-4 h-4 text-[#c4b09e] group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
-              </div>
-              <p className="text-[12px] text-[#7a6b5c] leading-relaxed">{item.description}</p>
-              <div className={cn('inline-flex items-center gap-1.5 text-[12px] font-semibold mt-auto', item.color)}>
-                {item.cta} <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Recent leads */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-[12px] font-bold text-[#7a6b5c] uppercase tracking-wider">Recent Leads</h3>
-          <button onClick={() => navigate('/leads')} className="text-[12px] font-semibold text-primary hover:underline flex items-center gap-1">
-            View all <ArrowRight className="w-3 h-3" />
-          </button>
-        </div>
-        <div className="bg-white rounded-2xl border border-black/5 card-shadow overflow-hidden">
-          {recentLeads.length === 0 ? (
-            <div className="py-10 text-center">
-              <Zap className="w-8 h-8 text-[#e8d5c4] mx-auto mb-2" />
-              <p className="text-[13px] text-[#b09e8d]">No leads yet — connect a form to start capturing.</p>
-            </div>
+    <div className="px-4 py-4 bg-[#faf8f6] border-t border-black/[0.06]">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-4">
+        {/* Sparkline */}
+        <div className="bg-white rounded-xl border border-black/5 p-4">
+          <p className="text-[11px] font-bold text-[#7a6b5c] uppercase tracking-wider mb-3">Last 7 Days</p>
+          {maxCount === 0 ? (
+            <p className="text-[12px] text-[#b09e8d] py-4 text-center">No leads in the last 7 days.</p>
           ) : (
-            <div className="divide-y divide-black/[0.04]">
-              {recentLeads.map((lead) => (
-                <div key={lead.id} className="flex items-center gap-3 px-5 py-3 hover:bg-[#faf8f6] transition-colors cursor-pointer" onClick={() => navigate('/leads')}>
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0"
-                    style={{ background: 'linear-gradient(135deg, #c2410c 0%, #f97316 100%)' }}>
-                    {(lead.firstName ?? '?')[0].toUpperCase()}
+            <ResponsiveContainer width="100%" height={90}>
+              <BarChart data={data.sparkline} barSize={20}>
+                <XAxis
+                  dataKey="day"
+                  tick={{ fontSize: 9, fill: '#9a8a7a' }}
+                  tickFormatter={v => format(new Date(v), 'EEE')}
+                  axisLine={false} tickLine={false}
+                />
+                <YAxis hide allowDecimals={false} />
+                <Tooltip
+                  contentStyle={{ borderRadius: 8, border: 'none', background: '#1c1410', color: '#fff', fontSize: 11 }}
+                  labelFormatter={v => format(new Date(v), 'dd MMM')}
+                  formatter={(v) => [v, 'Leads']}
+                />
+                <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                  {data.sparkline.map((_, i) => (
+                    <Cell key={i} fill={_ .count > 0 ? '#ea580c' : '#f0ece8'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        {/* Recent leads */}
+        <div className="bg-white rounded-xl border border-black/5 p-4">
+          <p className="text-[11px] font-bold text-[#7a6b5c] uppercase tracking-wider mb-3">Recent Leads</p>
+          {data.recent_leads.length === 0 ? (
+            <p className="text-[12px] text-[#b09e8d] py-4 text-center">No leads yet from this form.</p>
+          ) : (
+            <div className="space-y-2">
+              {data.recent_leads.map(lead => (
+                <div key={lead.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-[#faf8f6] transition-colors cursor-pointer" onClick={() => navigate('/leads')}>
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0"
+                    style={{ background: 'linear-gradient(135deg,#c2410c,#f97316)' }}>
+                    {(lead.name ?? '?')[0].toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-semibold text-[#1c1410] truncate">{lead.firstName} {lead.lastName}</p>
-                    <p className="text-[11px] text-[#7a6b5c] truncate">{lead.phone}</p>
+                    <p className="text-[12px] font-semibold text-[#1c1410] truncate">{lead.name}</p>
+                    <p className="text-[10px] text-[#9a8a7a] truncate">{lead.phone || lead.email || '—'}</p>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full', getSourceColor(lead.source ?? ''))}>
-                      {getSourceLabel(lead.source ?? '')}
-                    </span>
-                    <span className="text-[11px] text-[#b09e8d]">
-                      {format(new Date(lead.createdAt), 'dd MMM')}
-                    </span>
-                  </div>
+                  <span className="text-[10px] text-[#b09e8d] shrink-0">
+                    {formatDistanceToNow(new Date(lead.created_at), { addSuffix: true })}
+                  </span>
                 </div>
               ))}
             </div>
@@ -160,6 +181,377 @@ export default function LeadGenerationPage() {
         </div>
       </div>
 
+      {/* Actions */}
+      <div className="flex flex-wrap items-center gap-2 mt-3">
+        <button
+          onClick={() => navigate('/leads')}
+          className="flex items-center gap-1.5 text-[12px] font-semibold text-primary hover:opacity-70 transition-opacity"
+        >
+          <ExternalLink className="w-3.5 h-3.5" /> View Leads
+        </button>
+        {form.channel === 'custom' && form.slug && (
+          <button
+            onClick={copyLink}
+            className="flex items-center gap-1.5 text-[12px] font-semibold text-[#7a6b5c] hover:text-primary transition-colors"
+          >
+            {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? 'Copied!' : 'Copy Link'}
+          </button>
+        )}
+        {form.channel === 'meta' && (
+          <button
+            onClick={() => navigate('/lead-generation/meta-forms')}
+            className="flex items-center gap-1.5 text-[12px] font-semibold text-[#7a6b5c] hover:text-primary transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Meta Forms
+          </button>
+        )}
+        {form.channel === 'custom' && (
+          <button
+            onClick={() => navigate('/lead-generation/custom-forms')}
+            className="flex items-center gap-1.5 text-[12px] font-semibold text-[#7a6b5c] hover:text-primary transition-colors"
+          >
+            <ArrowRight className="w-3.5 h-3.5" /> Edit Form
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Sort header button ────────────────────────────────────────────────────────
+function SortBtn({ col, current, dir, onSort, children }: {
+  col: SortKey; current: SortKey; dir: 'asc' | 'desc';
+  onSort: (k: SortKey) => void; children: React.ReactNode;
+}) {
+  const active = col === current;
+  return (
+    <button
+      onClick={() => onSort(col)}
+      className={`flex items-center gap-0.5 text-[10px] font-bold uppercase tracking-wide transition-colors ${active ? 'text-primary' : 'text-[#b09e8d] hover:text-[#7a6b5c]'}`}
+    >
+      {children}
+      {active && (dir === 'desc' ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />)}
+    </button>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
+export default function LeadGenerationPage() {
+  const navigate = useNavigate();
+
+  const [overview,   setOverview]   = useState<Overview | null>(null);
+  const [loading,    setLoading]    = useState(true);
+  const [tab,        setTab]        = useState<'all' | 'meta' | 'custom'>('all');
+  const [search,     setSearch]     = useState('');
+  const [sortBy,     setSortBy]     = useState<SortKey>('leads_month');
+  const [sortDir,    setSortDir]    = useState<'asc' | 'desc'>('desc');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [sparkCache, setSparkCache] = useState<Record<string, SparklineData>>({});
+  const [sparkLoading, setSparkLoading] = useState<Record<string, boolean>>({});
+
+  const load = useCallback(() => {
+    setLoading(true);
+    api.get<Overview>('/api/lead-generation/overview')
+      .then(d => setOverview(d))
+      .catch(() => null)
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleSort = (key: SortKey) => {
+    if (sortBy === key) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
+    else { setSortBy(key); setSortDir('desc'); }
+  };
+
+  const handleExpand = async (form: FormRow) => {
+    if (expandedId === form.id) { setExpandedId(null); return; }
+    setExpandedId(form.id);
+    if (sparkCache[form.id]) return;
+    setSparkLoading(p => ({ ...p, [form.id]: true }));
+    try {
+      const params = form.channel === 'meta'
+        ? `channel=meta&id=${encodeURIComponent(form.id)}`
+        : `channel=custom&id=${encodeURIComponent(form.id)}&name=${encodeURIComponent(form.name)}`;
+      const data = await api.get<SparklineData>(`/api/lead-generation/sparkline?${params}`);
+      setSparkCache(p => ({ ...p, [form.id]: data }));
+    } catch { /* ignore */ }
+    finally { setSparkLoading(p => ({ ...p, [form.id]: false })); }
+  };
+
+  const filteredForms = useMemo(() => {
+    if (!overview) return [];
+    let rows = overview.forms;
+    if (tab !== 'all') rows = rows.filter(f => f.channel === tab);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      rows = rows.filter(f =>
+        f.name.toLowerCase().includes(q) ||
+        (f.page_name ?? '').toLowerCase().includes(q)
+      );
+    }
+    return [...rows].sort((a, b) => {
+      let av: any = a[sortBy as keyof FormRow] ?? '';
+      let bv: any = b[sortBy as keyof FormRow] ?? '';
+      if (sortBy === 'last_lead_at') {
+        av = av ? new Date(av).getTime() : 0;
+        bv = bv ? new Date(bv).getTime() : 0;
+      }
+      if (av < bv) return sortDir === 'desc' ? 1 : -1;
+      if (av > bv) return sortDir === 'desc' ? -1 : 1;
+      return 0;
+    });
+  }, [overview, tab, search, sortBy, sortDir]);
+
+  const { summary, dead_forms } = overview ?? { summary: null, dead_forms: [] };
+
+  const tabCounts = useMemo(() => ({
+    all:    overview?.forms.length ?? 0,
+    meta:   overview?.forms.filter(f => f.channel === 'meta').length ?? 0,
+    custom: overview?.forms.filter(f => f.channel === 'custom').length ?? 0,
+  }), [overview]);
+
+  return (
+    <div className="space-y-4 max-w-6xl">
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="font-headline text-[22px] font-extrabold tracking-tight text-[#1c1410]">Lead Generation</h2>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate('/lead-generation/meta-forms')}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-black/10 bg-white text-[12px] font-semibold text-[#1c1410] hover:border-primary/40 transition-colors shadow-sm"
+          >
+            <Facebook className="w-3.5 h-3.5 text-blue-500" /> Meta Forms
+          </button>
+          <button
+            onClick={() => navigate('/lead-generation/custom-forms')}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold text-white transition-colors shadow-sm"
+            style={{ background: 'linear-gradient(135deg,#c2410c,#f97316)' }}
+          >
+            <FileText className="w-3.5 h-3.5" /> New Form
+          </button>
+        </div>
+      </div>
+
+      {/* ── KPI Cards ── */}
+      {loading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="bg-white rounded-xl px-4 py-3 h-16 animate-pulse border border-black/5 card-shadow" />
+          ))}
+        </div>
+      ) : summary && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <KpiCard label="Total Leads"   value={summary.total_leads}        sub="All sources, all time" icon={Users}      accent />
+          <KpiCard label="Active Forms"  value={summary.active_forms_count} sub="Meta + Custom"         icon={FileText} />
+          <KpiCard label="Leads Today"   value={summary.leads_today}        sub="Across all forms"      icon={TrendingUp} />
+          <KpiCard
+            label="Best This Month"
+            value={summary.best_form ? summary.best_form.name : '—'}
+            sub={summary.best_form ? `${summary.best_form.count} leads` : 'No data yet'}
+            icon={Star}
+          />
+        </div>
+      )}
+
+      {/* ── Dead forms alert ── */}
+      {!loading && dead_forms.length > 0 && (
+        <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-[13px] font-semibold text-amber-800">
+              {dead_forms.length} form{dead_forms.length > 1 ? 's have' : ' has'} received no leads in the last 7 days
+            </p>
+            <p className="text-[11px] text-amber-600 mt-0.5 truncate">
+              {dead_forms.map(f => f.name).join(' · ')}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Table ── */}
+      <div className="bg-white rounded-2xl border border-black/5 card-shadow overflow-hidden">
+        {/* Toolbar */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 pt-4 pb-3 border-b border-black/[0.06]">
+          {/* Tabs */}
+          <div className="flex items-center gap-1 bg-[#f5f0eb] rounded-lg p-0.5">
+            {(['all', 'meta', 'custom'] as const).map(t => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`px-3 py-1.5 rounded-md text-[12px] font-semibold transition-colors capitalize ${
+                  tab === t ? 'bg-white text-[#1c1410] shadow-sm' : 'text-[#7a6b5c] hover:text-[#1c1410]'
+                }`}
+              >
+                {t === 'all' ? 'All' : t === 'meta' ? 'Meta Forms' : 'Custom Forms'}
+                <span className="ml-1.5 text-[10px] text-[#b09e8d]">
+                  {tabCounts[t]}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* Search */}
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#b09e8d]" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search forms…"
+              className="w-full pl-8 pr-3 py-1.5 text-[12px] border border-black/10 rounded-lg outline-none focus:border-primary/40 bg-white"
+            />
+          </div>
+
+          <button onClick={load} className="ml-auto text-[#b09e8d] hover:text-primary transition-colors shrink-0">
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Column headers */}
+        <div className="grid grid-cols-[2fr_1fr_60px_60px_80px_110px_40px] gap-2 items-center px-4 py-2 border-b border-black/[0.04] bg-[#faf8f6]">
+          <SortBtn col="name"         current={sortBy} dir={sortDir} onSort={handleSort}>Form</SortBtn>
+          <span className="text-[10px] font-bold uppercase tracking-wide text-[#b09e8d]">Status</span>
+          <SortBtn col="leads_today"  current={sortBy} dir={sortDir} onSort={handleSort}>Today</SortBtn>
+          <SortBtn col="leads_week"   current={sortBy} dir={sortDir} onSort={handleSort}>Week</SortBtn>
+          <SortBtn col="leads_month"  current={sortBy} dir={sortDir} onSort={handleSort}>Month</SortBtn>
+          <SortBtn col="last_lead_at" current={sortBy} dir={sortDir} onSort={handleSort}>Last Lead</SortBtn>
+          <span />
+        </div>
+
+        {/* Rows */}
+        {loading ? (
+          <div className="divide-y divide-black/[0.04]">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="px-4 py-3 flex items-center gap-3">
+                <div className="flex-1 h-4 bg-[#f0ece8] rounded animate-pulse" />
+                <div className="w-16 h-4 bg-[#f0ece8] rounded animate-pulse" />
+                <div className="w-10 h-4 bg-[#f0ece8] rounded animate-pulse" />
+              </div>
+            ))}
+          </div>
+        ) : filteredForms.length === 0 ? (
+          <div className="py-16 text-center">
+            <Zap className="w-8 h-8 text-[#e8d5c4] mx-auto mb-2" />
+            <p className="text-[13px] text-[#b09e8d]">
+              {search ? 'No forms match your search.' : 'No forms yet — connect Meta or create a custom form.'}
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-black/[0.04]">
+            {filteredForms.map(form => {
+              const badge    = statusBadge(form.channel, form.status);
+              const expanded = expandedId === form.id;
+              const isDead   = (form.leads_total ?? 0) > 0 && (form.leads_week ?? 0) === 0;
+
+              return (
+                <div key={form.id}>
+                  <div
+                    onClick={() => handleExpand(form)}
+                    className="grid grid-cols-[2fr_1fr_60px_60px_80px_110px_40px] gap-2 items-center px-4 py-3 hover:bg-[#faf8f6] cursor-pointer transition-colors"
+                  >
+                    {/* Name + channel */}
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${form.channel === 'meta' ? 'bg-blue-50' : 'bg-primary/10'}`}>
+                        {form.channel === 'meta'
+                          ? <Facebook className="w-3.5 h-3.5 text-blue-500" />
+                          : <FileText  className="w-3.5 h-3.5 text-primary" />
+                        }
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold text-[#1c1410] truncate flex items-center gap-1.5">
+                          {form.name}
+                          {isDead && <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />}
+                        </p>
+                        {form.page_name && (
+                          <p className="text-[10px] text-[#9a8a7a] truncate">{form.page_name}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Status */}
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit ${badge.cls}`}>
+                      {badge.label}
+                    </span>
+
+                    {/* Counts */}
+                    <span className="text-[13px] font-semibold text-[#1c1410] text-right">{form.leads_today}</span>
+                    <span className="text-[13px] font-semibold text-[#1c1410] text-right">{form.leads_week}</span>
+                    <span className="text-[13px] font-bold text-primary text-right">{form.leads_month}</span>
+
+                    {/* Last lead */}
+                    <span className={`text-[11px] truncate flex items-center gap-1 ${isDead && form.last_lead_at ? 'text-amber-500' : 'text-[#9a8a7a]'}`}>
+                      {form.last_lead_at && <Clock className="w-3 h-3 shrink-0" />}
+                      {lastLeadLabel(form.last_lead_at)}
+                    </span>
+
+                    {/* Expand toggle */}
+                    {expanded
+                      ? <ChevronUp className="w-4 h-4 text-[#b09e8d] justify-self-end" />
+                      : <ChevronDown className="w-4 h-4 text-[#b09e8d] justify-self-end" />
+                    }
+                  </div>
+
+                  {expanded && (
+                    <ExpandedRow
+                      form={form}
+                      data={sparkLoading[form.id] ? null : (sparkCache[form.id] ?? null)}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Footer count */}
+        {!loading && filteredForms.length > 0 && (
+          <div className="px-4 py-2.5 border-t border-black/[0.04] bg-[#faf8f6]">
+            <p className="text-[11px] text-[#b09e8d]">
+              {filteredForms.length} form{filteredForms.length !== 1 ? 's' : ''}
+              {search ? ` matching "${search}"` : ''}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* ── Quick links ── */}
+      {!loading && overview?.forms.length === 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {[
+            {
+              label: 'Connect Meta Forms',
+              desc: 'Sync leads from Facebook & Instagram ad forms automatically.',
+              icon: Facebook, iconCls: 'bg-blue-50 text-blue-500',
+              path: '/lead-generation/meta-forms', cta: 'Connect Now',
+            },
+            {
+              label: 'Create Custom Form',
+              desc: 'Build forms with drag-and-drop. Embed anywhere or share as a link.',
+              icon: FileText, iconCls: 'bg-primary/10 text-primary',
+              path: '/lead-generation/custom-forms', cta: 'Create Form',
+            },
+          ].map(item => (
+            <div
+              key={item.label}
+              onClick={() => navigate(item.path)}
+              className="group bg-white rounded-2xl border border-black/5 card-shadow p-5 flex flex-col gap-3 cursor-pointer hover:-translate-y-0.5 hover:shadow-md transition-all duration-200"
+            >
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${item.iconCls}`}>
+                <item.icon className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-semibold text-[#1c1410] text-[14px]">{item.label}</h4>
+                <p className="text-[12px] text-[#7a6b5c] mt-1 leading-relaxed">{item.desc}</p>
+              </div>
+              <div className="flex items-center gap-1 text-[12px] font-semibold text-primary mt-auto">
+                {item.cta} <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

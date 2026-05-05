@@ -33,6 +33,7 @@ import whatsappFlowsRoutes    from './routes/whatsapp_flows';
 import dashboardRoutes        from './routes/dashboard';
 import pincodeRoutingRoutes   from './routes/pincode_routing';
 import fieldRoutingRoutes     from './routes/field_routing';
+import leadGenerationRoutes   from './routes/leadGeneration';
 
 const app        = express();
 const httpServer = createServer(app);
@@ -141,6 +142,7 @@ app.use('/api/notifications',     notificationsRoutes);
 app.use('/api/whatsapp-flows',    whatsappFlowsRoutes);
 app.use('/api/pincode-routing',   pincodeRoutingRoutes);
 app.use('/api/field-routing',     fieldRoutingRoutes);
+app.use('/api/lead-generation',   leadGenerationRoutes);
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
