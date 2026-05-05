@@ -501,7 +501,7 @@ function ImportConfigModal({
               className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white disabled:opacity-40 transition-all"
               style={canImport ? { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' } : { background: '#d1cbc7' }}
             >
-              {type === 'old' ? 'Import Old Leads' : 'Import New Leads'}
+              Import All Leads
             </button>
           </div>
         </div>
@@ -726,14 +726,20 @@ export default function MetaFormsPage() {
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [fetchingLeads, setFetchingLeads] = useState(false);
   const [showManual, setShowManual] = useState(false);
   const [manualToken, setManualToken] = useState('');
   const [savingToken, setSavingToken] = useState(false);
 
-  // Detail view — which page is open
+  // Detail view — which page is open (persisted in URL so refresh keeps position)
+  const pidParam = searchParams.get('pid');
   const [detailPage, setDetailPage] = useState<{ id: string; name: string } | null>(null);
+
+  const goToPage = (page: { id: string; name: string } | null) => {
+    setDetailPage(page);
+    if (page) setSearchParams((p) => { p.set('pid', page.id); return p; }, { replace: true });
+    else setSearchParams((p) => { p.delete('pid'); return p; }, { replace: true });
+  };
 
 
   // Blocked pages — visible via Business Manager but no page token
@@ -781,6 +787,10 @@ export default function MetaFormsPage() {
         if (s) {
           setStatus(s);
           setBlockedPages(s.blockedPages ?? []);
+          if (pidParam) {
+            const match = s.connectedPages?.find((p) => p.id === pidParam);
+            if (match) setDetailPage(match);
+          }
         }
       })
       .catch(() => null)
@@ -869,7 +879,7 @@ export default function MetaFormsPage() {
       await api.delete('/api/integrations/meta/disconnect');
       setStatus({ connected: false });
       setForms([]);
-      setDetailPage(null);
+      goToPage(null);
       setShowDisconnectConfirm(false);
       toast.success('Meta disconnected');
     } catch { toast.error('Failed to disconnect'); }
@@ -883,7 +893,7 @@ export default function MetaFormsPage() {
       if (res.fullyDisconnected) {
         setStatus({ connected: false });
         setForms([]);
-        setDetailPage(null);
+        goToPage(null);
         toast.success('Meta disconnected — no pages remaining');
       } else {
         setStatus((prev) => ({
@@ -982,7 +992,6 @@ export default function MetaFormsPage() {
 
   const handleSync = async () => {
     setSyncing(true);
-    setSyncStatus(null);
     try {
       const [formRes, leadsRes] = await Promise.all([
         api.get<{ forms: MetaFormRow[]; synced: number; failed: number; errors: string[] }>(
@@ -997,12 +1006,12 @@ export default function MetaFormsPage() {
         const newLeads = leadsRes.totalInserted ?? 0;
         const newForms = formRes.synced ?? 0;
         if (newLeads === 0 && newForms === 0) {
-          setSyncStatus('All forms and leads are up to date');
+          toast.success('All forms and leads are up to date');
         } else {
           const parts = [];
           if (newLeads > 0) parts.push(`${newLeads} new lead${newLeads !== 1 ? 's' : ''}`);
           if (newForms > 0) parts.push(`${newForms} new form${newForms !== 1 ? 's' : ''}`);
-          setSyncStatus(`Sync complete — ${parts.join(', ')} added`);
+          toast.success(`Sync complete — ${parts.join(', ')} added`);
         }
       }
     } catch { toast.error('Sync failed — your Meta token may have expired. Reconnect to fix.'); }
@@ -1262,9 +1271,7 @@ export default function MetaFormsPage() {
               <Plus className="w-3.5 h-3.5" /> New Form in Meta
             </Button>
           </div>
-          {syncStatus && (
-            <p className="text-[11px] text-emerald-600 font-medium mt-1 text-right">{syncStatus}</p>
-          )}
+
         </div>
 
         {/* Forms list */}
@@ -1409,16 +1416,7 @@ export default function MetaFormsPage() {
                           : <History className="w-3 h-3" />}
                         Import All Leads
                       </button>
-                      <button
-                        onClick={() => handlePushToAutomation(form, 'new')}
-                        disabled={!!exportingId}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white disabled:opacity-50 transition-colors whitespace-nowrap"
-                      >
-                        {exportingId === `${form.form_id}-new`
-                          ? <RefreshCw className="w-3 h-3 animate-spin" />
-                          : <CalendarDays className="w-3 h-3" />}
-                        Import New Leads
-                      </button>
+
                       <button
                         onClick={() => { setOpenForm(form); setContactSearch(''); }}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#f5ede3] text-primary hover:bg-[#fde8d5] text-[12px] font-semibold transition-colors whitespace-nowrap"
@@ -1605,7 +1603,7 @@ export default function MetaFormsPage() {
           return (
             <div
               key={page.id}
-              onClick={() => setDetailPage(page)}
+              onClick={() => goToPage(page)}
               className="bg-white rounded-2xl border border-black/5 card-shadow p-5 flex flex-col gap-4 text-left cursor-pointer hover:border-blue-200 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 w-full relative"
             >
               {/* Top row: profile pic + Connected badge + disconnect icon */}
