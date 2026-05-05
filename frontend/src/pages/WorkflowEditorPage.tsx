@@ -41,7 +41,6 @@ const TRIGGER_CATEGORIES: TriggerCategory[] = [
   {
     id: 'crm', label: 'CRM',
     items: [
-      { id: 'lead_created', label: 'Added to Pipeline', Icon: Network, sourceId: 'crm' },
       { id: 'stage_changed', label: 'Stage Changed', Icon: ArrowLeftRight, sourceId: 'crm' },
       { id: 'follow_up', label: 'Follow Up', Icon: History, sourceId: 'crm' },
       { id: 'notes_added', label: 'Notes Added', Icon: FilePlus, sourceId: 'crm' },
@@ -413,21 +412,6 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
         </FieldRow>
       </>)}
 
-      {/* CRM — lead created */}
-      {node.actionType === 'lead_created' && (<>
-        <FieldRow label="Select Pipeline">
-          <select className={selectCls} value={(cfg.pipeline_id as string) ?? ''} onChange={(e) => onUpdate({ config: { ...cfg, pipeline_id: e.target.value, stage_id: '' } })}>
-            <option value="">Any pipeline</option>
-            {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </FieldRow>
-        <FieldRow label="Select Pipeline Stage">
-          <select className={selectCls} value={(cfg.stage_id as string) ?? ''} onChange={sel('stage_id')}>
-            <option value="">Any stage</option>
-            {(pipelines.find(p => p.id === (cfg.pipeline_id as string)))?.stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        </FieldRow>
-      </>)}
 
       {/* CRM — follow up */}
       {node.actionType === 'follow_up' && (<>
