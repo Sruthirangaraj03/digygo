@@ -34,7 +34,7 @@ function getSourceLabel(lead: { source: string; meta_form_name?: string }) {
   if (s.startsWith('form:'))     return s.slice(5);
   if (s === 'calendar_booking')  return 'Calendar Booking';
   if (s === 'Custom Form')       return 'Custom Form';
-  if (s === 'meta_form') return lead.meta_form_name ? `Meta · ${lead.meta_form_name}` : 'Meta Form';
+  if (s === 'meta_form') return 'Meta';
   if (s === 'whatsapp' || s === 'WhatsApp') return 'WhatsApp';
   if (s === 'Landing Page') return 'Landing Page';
   return s || 'Manual';
