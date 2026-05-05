@@ -33,7 +33,7 @@ router.get('/', checkPermission('custom_forms:read'), async (req: AuthRequest, r
        LEFT JOIN pipelines p ON p.id = f.pipeline_id
        LEFT JOIN pipeline_stages ps ON ps.id = f.stage_id
        LEFT JOIN form_submissions s ON s.form_id = f.id
-       WHERE f.tenant_id = $1
+       WHERE f.tenant_id = $1 AND f.is_active = TRUE
        GROUP BY f.id, p.name, ps.name
        ORDER BY f.created_at DESC`,
       [req.user!.tenantId]
