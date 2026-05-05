@@ -379,16 +379,38 @@ function DeactivateDialog({ member, onClose, onConfirm }: { member: StaffMember;
 function PermissionsModal({ member, onClose }: { member: StaffMember; onClose: () => void }) {
   const blankPerms = () => Object.fromEntries(getAllPermKeys().map((k) => [k, false]));
   const [permissions, setPermissions] = useState<Record<string, boolean>>(blankPerms);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving]   = useState(false);
+  const [loading,    setLoading]    = useState(true);
+  const [saving,     setSaving]     = useState(false);
+  const [accessType, setAccessType] = useState<'full' | 'custom'>('custom');
+
+  const isFullAccessPerms = (perms: Record<string, boolean>) =>
+    getAllPermKeys().filter((k) => !FULL_ACCESS_EXCLUDED.has(k)).every((k) => perms[k] === true) &&
+    [...FULL_ACCESS_EXCLUDED].every((k) => perms[k] === false);
 
   React.useEffect(() => {
     setLoading(true);
     api.get<{ permissions: Record<string, boolean> }>(`/api/settings/staff/${member.id}/permissions`)
-      .then((data) => setPermissions({ ...blankPerms(), ...(data.permissions ?? {}) }))
-      .catch(() => setPermissions(blankPerms()))
+      .then((data) => {
+        const perms = { ...blankPerms(), ...(data.permissions ?? {}) };
+        setPermissions(perms);
+        setAccessType(isFullAccessPerms(perms) ? 'full' : 'custom');
+      })
+      .catch(() => { setPermissions(blankPerms()); setAccessType('custom'); })
       .finally(() => setLoading(false));
   }, [member.id, member.role]);
+
+  const handleGrantFullAccess = async () => {
+    setSaving(true);
+    try {
+      await api.delete(`/api/settings/staff/${member.id}/permissions`);
+      const data = await api.get<{ permissions: Record<string, boolean> }>(`/api/settings/staff/${member.id}/permissions`);
+      const perms = { ...blankPerms(), ...(data.permissions ?? {}) };
+      setPermissions(perms);
+      setAccessType('full');
+      toast.success('Full access granted');
+    } catch { toast.error('Failed to update permissions'); }
+    finally { setSaving(false); }
+  };
 
   const togglePerm = (key: string) => {
     setPermissions((prev) => {
@@ -450,6 +472,38 @@ function PermissionsModal({ member, onClose }: { member: StaffMember; onClose: (
             </div>
           ) : (
             <div className="bg-white m-4 rounded-2xl border border-[#ede8e2] divide-y divide-[#f2ede8] overflow-hidden">
+
+              {/* Access Type Toggle */}
+              <div className="p-5">
+                <label className="text-[11px] font-bold text-[#7a6b5c] uppercase tracking-widest block mb-2.5">Access Type</label>
+                <div className="flex gap-2">
+                  {(['full', 'custom'] as const).map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      disabled={saving}
+                      onClick={() => {
+                        if (type === accessType) return;
+                        if (type === 'full') { handleGrantFullAccess(); }
+                        else { setAccessType('custom'); }
+                      }}
+                      className={cn(
+                        'flex-1 py-2 rounded-xl text-xs font-semibold border transition-all',
+                        accessType === type
+                          ? 'border-primary bg-primary text-white'
+                          : 'border-[#e8ddd4] bg-white text-[#7a6b5c] hover:border-primary/40 hover:bg-[#fdf5f0]',
+                      )}
+                    >
+                      {type === 'full' ? 'Full Access' : 'Custom'}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-[#7a6b5c] mt-1.5">
+                  {accessType === 'full'
+                    ? 'All permissions enabled — switch to Custom to restrict specific access.'
+                    : 'Configure individual permissions below, then click Save.'}
+                </p>
+              </div>
 
               {/* Only Assigned Leads + extras */}
               <div className="p-5 space-y-4">
@@ -582,33 +636,18 @@ function PermissionsModal({ member, onClose }: { member: StaffMember; onClose: (
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between gap-2 px-5 py-3.5 bg-white border-t border-[#ede6dd] shrink-0">
-          <button type="button" disabled={saving || loading}
-            onClick={async () => {
-              if (!confirm('Grant full access? All permissions will be set to ON for this member.')) return;
-              setSaving(true);
-              try {
-                await api.delete(`/api/settings/staff/${member.id}/permissions`);
-                const data = await api.get<{ permissions: Record<string, boolean> }>(`/api/settings/staff/${member.id}/permissions`);
-                setPermissions({ ...blankPerms(), ...(data.permissions ?? {}) });
-                toast.success('Full access granted');
-              } catch { toast.error('Failed to update permissions'); }
-              finally { setSaving(false); }
-            }}
-            className="px-4 py-2 rounded-xl text-xs font-semibold text-[#9c8f84] bg-transparent hover:bg-orange-50 hover:text-[#c2410c] transition-colors uppercase tracking-wide disabled:opacity-40">
-            Grant Full Access
+        <div className="flex items-center justify-end gap-2 px-5 py-3.5 bg-white border-t border-[#ede6dd] shrink-0">
+          <button type="button" onClick={onClose}
+            className="px-5 py-2 rounded-xl text-xs font-semibold text-[#7a6b5c] bg-[#f0ebe5] hover:bg-[#e8ddd4] transition-colors uppercase tracking-wide">
+            Cancel
           </button>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={onClose}
-              className="px-5 py-2 rounded-xl text-xs font-semibold text-[#7a6b5c] bg-[#f0ebe5] hover:bg-[#e8ddd4] transition-colors uppercase tracking-wide">
-              Cancel
-            </button>
+          {accessType === 'custom' && (
             <button type="button" onClick={handleSave} disabled={saving || loading}
               className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-semibold text-white bg-primary hover:bg-primary/90 disabled:opacity-50 transition-colors uppercase tracking-wide">
               <Check className="w-3.5 h-3.5" />
               {saving ? 'Saving…' : 'Save Permissions'}
             </button>
-          </div>
+          )}
         </div>
       </div>
     </div>
