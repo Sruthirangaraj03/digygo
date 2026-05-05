@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -501,7 +501,7 @@ function ImportConfigModal({
               className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white disabled:opacity-40 transition-all"
               style={canImport ? { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' } : { background: '#d1cbc7' }}
             >
-              Import All Leads
+              {type === 'old' ? 'Import Old Leads' : 'Import New Leads'}
             </button>
           </div>
         </div>
@@ -719,7 +719,7 @@ function PageProfilePic({
 
 export default function MetaFormsPage() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
   const [status, setStatus] = useState<MetaStatus | null>(null);
   const [forms, setForms] = useState<MetaFormRow[]>([]);
@@ -727,22 +727,12 @@ export default function MetaFormsPage() {
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [fetchingLeads, setFetchingLeads] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
-  const [exportFormId, setExportFormId] = useState<string>('all');
-  const [exporting, setExporting] = useState(false);
   const [showManual, setShowManual] = useState(false);
   const [manualToken, setManualToken] = useState('');
   const [savingToken, setSavingToken] = useState(false);
 
-  // Detail view — which page is open (persisted in URL so refresh keeps position)
-  const pidParam = searchParams.get('pid');
+  // Detail view — which page is open
   const [detailPage, setDetailPage] = useState<{ id: string; name: string } | null>(null);
-
-  const goToPage = (page: { id: string; name: string } | null) => {
-    setDetailPage(page);
-    if (page) setSearchParams((p) => { p.set('pid', page.id); return p; }, { replace: true });
-    else setSearchParams((p) => { p.delete('pid'); return p; }, { replace: true });
-  };
 
 
   // Blocked pages — visible via Business Manager but no page token
@@ -790,10 +780,6 @@ export default function MetaFormsPage() {
         if (s) {
           setStatus(s);
           setBlockedPages(s.blockedPages ?? []);
-          if (pidParam) {
-            const match = s.connectedPages?.find((p) => p.id === pidParam);
-            if (match) setDetailPage(match);
-          }
         }
       })
       .catch(() => null)
@@ -882,7 +868,7 @@ export default function MetaFormsPage() {
       await api.delete('/api/integrations/meta/disconnect');
       setStatus({ connected: false });
       setForms([]);
-      goToPage(null);
+      setDetailPage(null);
       setShowDisconnectConfirm(false);
       toast.success('Meta disconnected');
     } catch { toast.error('Failed to disconnect'); }
@@ -896,7 +882,7 @@ export default function MetaFormsPage() {
       if (res.fullyDisconnected) {
         setStatus({ connected: false });
         setForms([]);
-        goToPage(null);
+        setDetailPage(null);
         toast.success('Meta disconnected — no pages remaining');
       } else {
         setStatus((prev) => ({
@@ -996,26 +982,16 @@ export default function MetaFormsPage() {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const [formRes, leadsRes] = await Promise.all([
-        api.get<{ forms: MetaFormRow[]; synced: number; failed: number; errors: string[] }>(
-          '/api/integrations/meta/sync-forms?force=1'
-        ),
-        api.post<{ totalInserted: number; forms: any[] }>('/api/integrations/meta/fetch-all-leads', {}).catch(() => ({ totalInserted: 0, forms: [] })),
-      ]);
-      setForms(formRes.forms);
-      if (formRes.failed > 0 && formRes.errors.length > 0) {
-        toast.error(`Sync issue: ${formRes.errors[0]}`);
+      const res = await api.get<{ forms: MetaFormRow[]; synced: number; failed: number; errors: string[] }>(
+        '/api/integrations/meta/sync-forms?force=1'
+      );
+      setForms(res.forms);
+      if (res.failed > 0 && res.errors.length > 0) {
+        toast.error(`Sync issue: ${res.errors[0]}${res.errors.length > 1 ? ` (+${res.errors.length - 1} more)` : ''}`);
+      } else if (res.forms.length === 0) {
+        toast.warning('No forms found — create a Lead Ad form in Meta Ads Manager first, then sync again.');
       } else {
-        const newLeads = leadsRes.totalInserted ?? 0;
-        const newForms = formRes.synced ?? 0;
-        if (newLeads === 0 && newForms === 0) {
-          toast.success('All forms and leads are up to date');
-        } else {
-          const parts = [];
-          if (newLeads > 0) parts.push(`${newLeads} new lead${newLeads !== 1 ? 's' : ''}`);
-          if (newForms > 0) parts.push(`${newForms} new form${newForms !== 1 ? 's' : ''}`);
-          toast.success(`Sync complete — ${parts.join(', ')} added`);
-        }
+        toast.success(`Forms synced — ${res.synced} form${res.synced !== 1 ? 's' : ''} found across all pages`);
       }
     } catch { toast.error('Sync failed — your Meta token may have expired. Reconnect to fix.'); }
     finally { setSyncing(false); }
@@ -1037,25 +1013,6 @@ export default function MetaFormsPage() {
       setForms(fresh);
     } catch (err: any) { toast.error(err?.message ?? 'Failed to fetch leads from Meta'); }
     finally { setFetchingLeads(false); }
-  };
-
-  const handleExport = async (pageForms: MetaFormRow[], formId: string) => {
-    setExporting(true);
-    try {
-      const formIds = formId === 'all' ? pageForms.map((f) => f.id) : [formId];
-      const result = await api.post<{ rows: Record<string, string>[] }>(
-        '/api/integrations/meta/export-leads', { form_ids: formIds }
-      );
-      if (!result.rows.length) { toast.error('No leads found for the selected form(s)'); return; }
-      const ws = XLSX.utils.json_to_sheet(result.rows);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Meta Leads');
-      const label = formId === 'all' ? 'all_forms' : (pageForms.find((f) => f.id === formId)?.form_name ?? 'leads');
-      XLSX.writeFile(wb, `meta_leads_${label.replace(/\s+/g, '_')}_${Date.now()}.xlsx`);
-      setExportOpen(false);
-      toast.success(`Downloaded ${result.rows.length} lead${result.rows.length !== 1 ? 's' : ''}`);
-    } catch (err: any) { toast.error(err?.message ?? 'Export failed'); }
-    finally { setExporting(false); }
   };
 
   const toggleForm = async (form: MetaFormRow) => {
@@ -1273,15 +1230,17 @@ export default function MetaFormsPage() {
           <div className="flex gap-2 shrink-0">
             <Button
               size="sm"
-              onClick={() => { setExportFormId('all'); setExportOpen(true); }}
-              disabled={syncing}
+              onClick={handleFetchAllLeads}
+              disabled={fetchingLeads || syncing}
               className="bg-primary hover:bg-primary/90 text-white"
             >
-              <Download className="w-3.5 h-3.5" />Download
+              {fetchingLeads
+                ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" />Importing…</>
+                : <><Download className="w-3.5 h-3.5" />Fetch All Leads</>}
             </Button>
             <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing || fetchingLeads}>
               <RefreshCw className={cn('w-3.5 h-3.5', syncing && 'animate-spin')} />
-              {syncing ? 'Syncing…' : 'Sync Data'}
+              {syncing ? 'Syncing…' : 'Sync Forms'}
             </Button>
             <Button
               size="sm"
@@ -1291,7 +1250,6 @@ export default function MetaFormsPage() {
               <Plus className="w-3.5 h-3.5" /> New Form in Meta
             </Button>
           </div>
-
         </div>
 
         {/* Forms list */}
@@ -1436,7 +1394,16 @@ export default function MetaFormsPage() {
                           : <History className="w-3 h-3" />}
                         Import All Leads
                       </button>
-
+                      <button
+                        onClick={() => handlePushToAutomation(form, 'new')}
+                        disabled={!!exportingId}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white disabled:opacity-50 transition-colors whitespace-nowrap"
+                      >
+                        {exportingId === `${form.form_id}-new`
+                          ? <RefreshCw className="w-3 h-3 animate-spin" />
+                          : <CalendarDays className="w-3 h-3" />}
+                        Import New Leads
+                      </button>
                       <button
                         onClick={() => { setOpenForm(form); setContactSearch(''); }}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#f5ede3] text-primary hover:bg-[#fde8d5] text-[12px] font-semibold transition-colors whitespace-nowrap"
@@ -1569,54 +1536,6 @@ export default function MetaFormsPage() {
           }} />
         )}
 
-        {/* Export Leads modal */}
-        {exportOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }}>
-            <div className="bg-white rounded-2xl w-full max-w-md" style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
-              <div className="flex items-center justify-between px-6 py-4 border-b border-black/5">
-                <div>
-                  <h3 className="font-headline font-bold text-[#1c1410] text-[15px]">Export Meta Leads</h3>
-                  <p className="text-[11px] text-[#7a6b5c] mt-0.5">Download raw form submissions as Excel</p>
-                </div>
-                <button onClick={() => setExportOpen(false)} className="p-1.5 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="px-6 py-5 space-y-4">
-                <div>
-                  <label className="text-[12px] font-semibold text-[#1c1410] mb-2 block">Select Form</label>
-                  <select
-                    value={exportFormId}
-                    onChange={(e) => setExportFormId(e.target.value)}
-                    className="w-full border border-black/10 rounded-xl px-3 py-2.5 text-[13px] text-[#1c1410] outline-none focus:border-primary/40 bg-white cursor-pointer"
-                  >
-                    <option value="all">All Forms ({pageForms.length})</option>
-                    {pageForms.map((f) => (
-                      <option key={f.id} value={f.id}>{f.form_name} ({f.leads_count ?? 0} leads)</option>
-                    ))}
-                  </select>
-                </div>
-                <p className="text-[11px] text-[#7a6b5c]">
-                  Exports all raw fields captured in the Meta form exactly as submitted by leads.
-                </p>
-              </div>
-              <div className="px-6 py-4 border-t border-black/5 flex justify-end gap-2">
-                <Button variant="outline" size="sm" onClick={() => setExportOpen(false)}>Cancel</Button>
-                <Button
-                  size="sm"
-                  onClick={() => handleExport(pageForms, exportFormId)}
-                  disabled={exporting}
-                  className="bg-primary hover:bg-primary/90 text-white"
-                >
-                  {exporting
-                    ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" />Exporting…</>
-                    : <><Download className="w-3.5 h-3.5" />Download Excel</>}
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
       </div>
     );
   }
@@ -1671,7 +1590,7 @@ export default function MetaFormsPage() {
           return (
             <div
               key={page.id}
-              onClick={() => goToPage(page)}
+              onClick={() => setDetailPage(page)}
               className="bg-white rounded-2xl border border-black/5 card-shadow p-5 flex flex-col gap-4 text-left cursor-pointer hover:border-blue-200 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 w-full relative"
             >
               {/* Top row: profile pic + Connected badge + disconnect icon */}
