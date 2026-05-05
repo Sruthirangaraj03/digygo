@@ -4,7 +4,7 @@ import {
   AlertTriangle, Clock, Target, Award, Zap, CheckCircle,
 } from 'lucide-react';
 import { useCrmStore } from '@/store/crmStore';
-import { useAuthStore } from '@/store/authStore';
+import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -315,7 +315,7 @@ function StaffDashboard({ analytics }: { analytics: Analytics }) {
 // ── Main Dashboard Page ───────────────────────────────────────────────────────
 export default function DashboardPage() {
   const { leads } = useCrmStore();
-  const role = useAuthStore((s) => s.user?.role ?? 'staff');
+  const { role, isPrivileged } = useAuth();
 
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [loading,   setLoading]   = useState(true);
@@ -338,7 +338,6 @@ export default function DashboardPage() {
   }, [leads]);
 
   const dashboardRole = analytics?.role ?? (role === 'owner' || role === 'super_admin' ? role : 'staff');
-  const isPrivileged  = role === 'owner' || role === 'super_admin';
   const isManager     = dashboardRole === 'manager';
 
   const roleLabel = isPrivileged ? 'Management' : isManager ? 'Sales Manager' : 'My Dashboard';
