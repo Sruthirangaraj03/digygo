@@ -96,15 +96,16 @@ async function fetchAllPages(token: string): Promise<{
 
 // Build a pageId→pageToken map from the user token so lead fetches use page tokens.
 // Meta requires a Page Access Token (not a User Access Token) for /{formId}/leads.
-// Falls back gracefully — if /me/accounts fails, returns an empty map so callers use user token.
+// Uses fetchAllPages so BM-owned and client pages are also covered, not just /me/accounts.
+// Falls back gracefully — callers use the user token for any page not in the map.
 async function buildPageTokenMap(userToken: string): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   try {
-    const pages: PageResult[] = await graphGetAll('/me/accounts?fields=id,name,access_token', userToken);
-    for (const p of pages) {
+    const { connected } = await fetchAllPages(userToken);
+    for (const p of connected) {
       if (p.access_token) map.set(p.id, p.access_token);
     }
-  } catch { /* no BM pages or network issue — callers fall back to user token */ }
+  } catch { /* network issue — callers fall back to user token */ }
   return map;
 }
 
@@ -1260,7 +1261,7 @@ router.post('/meta/forms/:formId/import', checkPermission('meta_forms:create'), 
     catch { res.status(500).json({ error: 'Failed to decrypt Meta token' }); return; }
 
     const mfRes = await query(
-      'SELECT id, form_id, form_name, field_mapping, pipeline_id, stage_id, last_sync_at FROM meta_forms WHERE tenant_id=$1 AND form_id=$2',
+      'SELECT id, form_id, form_name, field_mapping, pipeline_id, stage_id, last_sync_at, page_id FROM meta_forms WHERE tenant_id=$1 AND form_id=$2',
       [tenantId, formId]
     );
     if (!mfRes.rows[0]) { res.status(404).json({ error: 'Form not found' }); return; }
@@ -1281,6 +1282,9 @@ router.post('/meta/forms/:formId/import', checkPermission('meta_forms:create'), 
       ).catch((e: any) => console.error('[form-import] pipeline persist failed:', e.message));
     }
 
+    const pageTokenMap = await buildPageTokenMap(token);
+    const leadToken = pageTokenMap.get(mf.page_id) ?? token;
+
     let metaUrl = `/${formId}/leads?fields=id,created_time,field_data`;
     if (type === 'new' && mf.last_sync_at) {
       const since = Math.floor(new Date(mf.last_sync_at).getTime() / 1000) - 60;
@@ -1289,7 +1293,7 @@ router.post('/meta/forms/:formId/import', checkPermission('meta_forms:create'), 
 
     let allLeads: any[] = [];
     try {
-      allLeads = await graphGetAll(metaUrl, token);
+      allLeads = await graphGetAll(metaUrl, leadToken);
     } catch (metaErr: any) {
       console.error('[form-import] Meta API error:', metaErr.message);
       res.status(502).json({ error: `Meta API error: ${metaErr.message}` });
