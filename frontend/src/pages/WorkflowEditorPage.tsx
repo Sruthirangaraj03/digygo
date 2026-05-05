@@ -140,7 +140,7 @@ const ACTION_LIST: { id: string; label: string; desc: string; category: ActionCa
   { id: 'execute_automation',   label: 'Execute Automation',          desc: 'Can run another automation workflow',                 category: 'Operation',     Icon: Play,          color: 'bg-primary/10 text-primary' },
   { id: 'exit_workflow',        label: 'Exit Workflow',               desc: 'Stop executing the workflow',                        category: 'Operation',     Icon: LogOut,        color: 'bg-gray-100 text-gray-600' },
   { id: 'remove_workflow',      label: 'Remove Workflow',             desc: 'Remove a contact from the current workflow',         category: 'Operation',     Icon: X,             color: 'bg-slate-100 text-slate-600' },
-  { id: 'pincode_routing',      label: 'Pincode Routing',             desc: 'Route lead to pipeline based on pincode',            category: 'Operation',     Icon: MapPin,        color: 'bg-green-100 text-green-700' },
+  { id: 'pincode_routing',      label: 'Field Routing',               desc: 'Route lead to pipeline based on a field value',      category: 'Operation',     Icon: MapPin,        color: 'bg-green-100 text-green-700' },
   // ── Communication ───────────────────────────────────────────────────────────
   { id: 'send_email',           label: 'Send Email',                  desc: 'Send an automated email',                            category: 'Communication', Icon: Mail,          color: 'bg-blue-100 text-blue-600' },
   { id: 'send_sms',             label: 'Send SMS',                    desc: 'Send an automated SMS',                              category: 'Communication', Icon: Smartphone,    color: 'bg-green-100 text-green-700' },
