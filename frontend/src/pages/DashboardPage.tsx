@@ -146,17 +146,13 @@ function FunnelCard({ funnels, selectedId, setSelectedId }: {
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-headline font-bold text-[#1c1410]">Pipeline Funnel</h3>
         {list.length > 1 && (
-          <div className="flex items-center gap-1 bg-[#faf8f6] rounded-xl p-1">
-            {list.map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setSelectedId(f.id)}
-                className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${(activeFunnel?.id === f.id) ? 'bg-white shadow-sm text-[#1c1410]' : 'text-[#8a7c6e] hover:text-[#1c1410]'}`}
-              >
-                {f.name}
-              </button>
-            ))}
-          </div>
+          <select
+            value={activeFunnel?.id ?? ''}
+            onChange={(e) => setSelectedId(e.target.value)}
+            className="text-[12px] font-semibold text-[#1c1410] border border-black/10 rounded-lg px-3 py-1.5 bg-white outline-none focus:border-primary/40 cursor-pointer"
+          >
+            {list.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
         )}
       </div>
       {!hasWon && activeFunnel && (
@@ -321,14 +317,13 @@ function ManagerPipelineHealth({ funnels }: { funnels: Analytics['pipeline_funne
       <div className="flex items-center justify-between mb-5">
         <h3 className="font-headline font-bold text-[#1c1410]">Pipeline Stage Health</h3>
         {list2.length > 1 && (
-          <div className="flex items-center gap-1 bg-[#faf8f6] rounded-xl p-1">
-            {list2.map((f) => (
-              <button key={f.id} onClick={() => setSelectedId(f.id)}
-                className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${active?.id === f.id ? 'bg-white shadow-sm text-[#1c1410]' : 'text-[#8a7c6e] hover:text-[#1c1410]'}`}>
-                {f.name}
-              </button>
-            ))}
-          </div>
+          <select
+            value={active?.id ?? ''}
+            onChange={(e) => setSelectedId(e.target.value)}
+            className="text-[12px] font-semibold text-[#1c1410] border border-black/10 rounded-lg px-3 py-1.5 bg-white outline-none focus:border-primary/40 cursor-pointer"
+          >
+            {list2.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
         )}
       </div>
       {!active
