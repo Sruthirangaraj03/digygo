@@ -726,6 +726,7 @@ export default function MetaFormsPage() {
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [fetchingLeads, setFetchingLeads] = useState(false);
   const [showManual, setShowManual] = useState(false);
   const [manualToken, setManualToken] = useState('');
@@ -981,17 +982,28 @@ export default function MetaFormsPage() {
 
   const handleSync = async () => {
     setSyncing(true);
+    setSyncStatus(null);
     try {
-      const res = await api.get<{ forms: MetaFormRow[]; synced: number; failed: number; errors: string[] }>(
-        '/api/integrations/meta/sync-forms?force=1'
-      );
-      setForms(res.forms);
-      if (res.failed > 0 && res.errors.length > 0) {
-        toast.error(`Sync issue: ${res.errors[0]}${res.errors.length > 1 ? ` (+${res.errors.length - 1} more)` : ''}`);
-      } else if (res.forms.length === 0) {
-        toast.warning('No forms found — create a Lead Ad form in Meta Ads Manager first, then sync again.');
+      const [formRes, leadsRes] = await Promise.all([
+        api.get<{ forms: MetaFormRow[]; synced: number; failed: number; errors: string[] }>(
+          '/api/integrations/meta/sync-forms?force=1'
+        ),
+        api.post<{ totalInserted: number; forms: any[] }>('/api/integrations/meta/fetch-all-leads', {}).catch(() => ({ totalInserted: 0, forms: [] })),
+      ]);
+      setForms(formRes.forms);
+      if (formRes.failed > 0 && formRes.errors.length > 0) {
+        toast.error(`Sync issue: ${formRes.errors[0]}`);
       } else {
-        toast.success(`Forms synced — ${res.synced} form${res.synced !== 1 ? 's' : ''} found across all pages`);
+        const newLeads = leadsRes.totalInserted ?? 0;
+        const newForms = formRes.synced ?? 0;
+        if (newLeads === 0 && newForms === 0) {
+          setSyncStatus('All forms and leads are up to date');
+        } else {
+          const parts = [];
+          if (newLeads > 0) parts.push(`${newLeads} new lead${newLeads !== 1 ? 's' : ''}`);
+          if (newForms > 0) parts.push(`${newForms} new form${newForms !== 1 ? 's' : ''}`);
+          setSyncStatus(`Sync complete — ${parts.join(', ')} added`);
+        }
       }
     } catch { toast.error('Sync failed — your Meta token may have expired. Reconnect to fix.'); }
     finally { setSyncing(false); }
@@ -1240,7 +1252,7 @@ export default function MetaFormsPage() {
             </Button>
             <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing || fetchingLeads}>
               <RefreshCw className={cn('w-3.5 h-3.5', syncing && 'animate-spin')} />
-              {syncing ? 'Syncing…' : 'Sync Forms'}
+              {syncing ? 'Syncing…' : 'Sync Data'}
             </Button>
             <Button
               size="sm"
@@ -1250,6 +1262,9 @@ export default function MetaFormsPage() {
               <Plus className="w-3.5 h-3.5" /> New Form in Meta
             </Button>
           </div>
+          {syncStatus && (
+            <p className="text-[11px] text-emerald-600 font-medium mt-1 text-right">{syncStatus}</p>
+          )}
         </div>
 
         {/* Forms list */}
