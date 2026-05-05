@@ -94,6 +94,20 @@ async function fetchAllPages(token: string): Promise<{
   return { connected, needsToken };
 }
 
+// Build a pageId→pageToken map from the user token so lead fetches use page tokens.
+// Meta requires a Page Access Token (not a User Access Token) for /{formId}/leads.
+// Falls back gracefully — if /me/accounts fails, returns an empty map so callers use user token.
+async function buildPageTokenMap(userToken: string): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  try {
+    const pages: PageResult[] = await graphGetAll('/me/accounts?fields=id,name,access_token', userToken);
+    for (const p of pages) {
+      if (p.access_token) map.set(p.id, p.access_token);
+    }
+  } catch { /* no BM pages or network issue — callers fall back to user token */ }
+  return map;
+}
+
 function parseMetaTimestamp(raw: unknown): string {
   if (!raw) return new Date().toISOString();
   const asNum = Number(raw);
@@ -228,17 +242,20 @@ async function storeCustomValues(
 // Processes ALL active forms in parallel — one form failing never blocks another.
 async function fetchAndInsertAllLeads(tenantId: string, token: string): Promise<number> {
   const formsRes = await query(
-    `SELECT id, form_id, form_name, field_mapping, pipeline_id, stage_id
+    `SELECT id, form_id, form_name, field_mapping, pipeline_id, stage_id, page_id
      FROM meta_forms WHERE tenant_id=$1 AND is_active=TRUE`,
     [tenantId]
   );
 
+  const pageTokenMap = await buildPageTokenMap(token);
+
   // Process every form in parallel; errors are isolated per form
   const results = await Promise.allSettled(
     formsRes.rows.map(async (mf: any) => {
+      const leadToken = pageTokenMap.get(mf.page_id) ?? token;
       const allLeads = await graphGetAll(
         `/${mf.form_id}/leads?fields=id,created_time,field_data`,
-        token
+        leadToken
       );
       console.log(`[fetchAndInsertAllLeads] form ${mf.form_id}: ${allLeads.length} leads`);
 
@@ -1182,20 +1199,23 @@ router.post('/meta/export-leads', checkPermission('meta_forms:read'), async (req
     let formsRes;
     if (Array.isArray(form_ids) && form_ids.length > 0) {
       formsRes = await query(
-        `SELECT id, form_id, form_name FROM meta_forms WHERE tenant_id=$1 AND id = ANY($2::uuid[])`,
+        `SELECT id, form_id, form_name, page_id FROM meta_forms WHERE tenant_id=$1 AND id = ANY($2::uuid[])`,
         [tenantId, form_ids]
       );
     } else {
       formsRes = await query(
-        `SELECT id, form_id, form_name FROM meta_forms WHERE tenant_id=$1 ORDER BY created_at DESC`,
+        `SELECT id, form_id, form_name, page_id FROM meta_forms WHERE tenant_id=$1 ORDER BY created_at DESC`,
         [tenantId]
       );
     }
 
+    const pageTokenMap = await buildPageTokenMap(token);
+
     const rows: Record<string, string>[] = [];
     for (const mf of formsRes.rows) {
+      const leadToken = pageTokenMap.get(mf.page_id) ?? token;
       const leads = await graphGetAll(
-        `/${mf.form_id}/leads?fields=id,created_time,field_data`, token
+        `/${mf.form_id}/leads?fields=id,created_time,field_data`, leadToken
       ).catch(() => [] as any[]);
 
       for (const lead of leads) {
@@ -1382,7 +1402,7 @@ router.post('/meta/forms/:formId/push-automation', checkPermission('meta_forms:e
     catch { res.status(500).json({ error: 'Failed to decrypt Meta token' }); return; }
 
     const mfRes = await query(
-      'SELECT id, form_id, form_name, field_mapping, last_sync_at, pipeline_id, stage_id FROM meta_forms WHERE tenant_id=$1 AND form_id=$2',
+      'SELECT id, form_id, form_name, field_mapping, last_sync_at, pipeline_id, stage_id, page_id FROM meta_forms WHERE tenant_id=$1 AND form_id=$2',
       [tenantId, formId]
     );
     if (!mfRes.rows[0]) { res.status(404).json({ error: 'Form not found' }); return; }
@@ -1406,6 +1426,11 @@ router.post('/meta/forms/:formId/push-automation', checkPermission('meta_forms:e
       }
       matchingWFs.push({ id: wf.id, name: wf.name });
     }
+    // Use page access token for lead retrieval — Meta requires it for /{formId}/leads
+    const pageTokenMap = await buildPageTokenMap(token);
+    const leadToken = pageTokenMap.get(mf.page_id) ?? token;
+    console.log(`[push-automation] form ${formId} page_id=${mf.page_id} using ${pageTokenMap.has(mf.page_id) ? 'page token' : 'user token (no page token found)'}`);
+
     // Fetch leads from Meta — always proceed even if no workflows match yet
     let metaUrl = `/${formId}/leads?fields=id,created_time,field_data`;
     if (type === 'new' && mf.last_sync_at) {
@@ -1413,8 +1438,9 @@ router.post('/meta/forms/:formId/push-automation', checkPermission('meta_forms:e
       metaUrl += `&since=${since}`;
     }
     let allMetaLeads: any[] = [];
-    try { allMetaLeads = await graphGetAll(metaUrl, token); }
+    try { allMetaLeads = await graphGetAll(metaUrl, leadToken); }
     catch (metaErr: any) { res.status(502).json({ error: `Meta API error: ${metaErr.message}` }); return; }
+    console.log(`[push-automation] Meta returned ${allMetaLeads.length} leads for form ${formId}`);
 
     let created = 0;
     let existing = 0;
