@@ -316,8 +316,8 @@ function ManagementDashboard({ analytics, lineData, range }: {
         </div>
       </div>
 
-      {/* Bottom row — 3 columns: staff (45%) + funnel (35%) + followups (20%) */}
-      <div className="grid grid-cols-1 lg:grid-cols-[9fr_7fr_5fr] gap-4">
+      {/* Bottom row — 2 columns: staff + funnel */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Staff leaderboard */}
         <div className="bg-white rounded-2xl border border-black/5 card-shadow p-5">
           <h3 className="font-headline font-bold text-[#1c1410] text-[14px] mb-3">Staff Performance</h3>
@@ -360,9 +360,6 @@ function ManagementDashboard({ analytics, lineData, range }: {
 
         {/* Pipeline funnel */}
         <FunnelCard funnels={analytics.pipeline_funnels} selectedId={selectedFunnelId} setSelectedId={setSelectedFunnelId} />
-
-        {/* Today's follow-ups */}
-        <FollowupsWidget followups={analytics.today_followups} />
       </div>
     </div>
   );
@@ -594,19 +591,11 @@ export default function DashboardPage() {
   const dashboardRole = analytics?.role ?? (role === 'owner' || role === 'super_admin' ? role : 'staff');
   const isManager     = dashboardRole === 'manager';
 
-  const roleLabel = isPrivileged ? 'Management' : isManager ? 'Sales Manager' : 'My Dashboard';
-
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <p className="section-label mb-1">{roleLabel}</p>
-          <h2 className="font-headline text-[27px] font-extrabold tracking-tight text-[#1c1410]">Dashboard</h2>
-          <p className="text-[#7a6b5c] mt-0.5 text-[13px]">
-            {isPrivileged ? 'Business health at a glance.' : isManager ? 'Team activity and pipeline health.' : "Here's what needs your attention today."}
-          </p>
-        </div>
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="font-headline text-[22px] font-extrabold tracking-tight text-[#1c1410]">Dashboard</h2>
         {isPrivileged && <RangePicker range={range} setRange={setRange} />}
       </div>
 
