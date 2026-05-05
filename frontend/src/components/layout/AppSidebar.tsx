@@ -25,7 +25,7 @@ const navItems: NavItem[] = [
     anyOf: ['meta_forms:read', 'custom_forms:read', 'landing_pages:read', 'whatsapp_setup:read'],
   },
   {
-    label: 'Lead Management', icon: Users,              path: '/lead-management',
+    label: 'Lead Management', icon: Users,              path: '/leads',
     anyOf: ['leads:view_all', 'leads:view_own', 'contacts:read'],
   },
   { label: 'Automation',      icon: Zap,               path: '/automation',      permKey: 'automation:view' },
@@ -58,6 +58,12 @@ export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => vo
     if (!path) return false;
     const [p, q] = path.split('?');
     if (q) return location.pathname === p && location.search === `?${q}`;
+    // Lead Management sidebar item lives at /leads but also covers /lead-management/*
+    if (p === '/leads') {
+      return location.pathname === '/leads'
+        || location.pathname === '/lead-management'
+        || location.pathname.startsWith('/lead-management/');
+    }
     return location.pathname === p || location.pathname.startsWith(p + '/');
   };
 
