@@ -97,9 +97,31 @@ function KpiCard({ label, value, sub, icon: Icon, accent = false }: {
 }
 
 // ── Expanded row (sparkline + recent leads) ───────────────────────────────────
-function ExpandedRow({ form, data }: { form: FormRow; data: SparklineData | null }) {
+type SparkPeriod = '7d' | 'month' | 'all';
+const SPARK_PERIODS: { value: SparkPeriod; label: string }[] = [
+  { value: '7d',    label: 'Last 7 Days' },
+  { value: 'month', label: 'This Month'  },
+  { value: 'all',   label: 'All Time'    },
+];
+
+function ExpandedRow({ form }: { form: FormRow }) {
   const navigate = useNavigate();
-  const [copied, setCopied] = useState(false);
+  const [copied,  setCopied]  = useState(false);
+  const [period,  setPeriod]  = useState<SparkPeriod>('7d');
+  const [data,    setData]    = useState<SparklineData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    setData(null);
+    const params = form.channel === 'meta'
+      ? `channel=meta&id=${encodeURIComponent(form.id)}&period=${period}`
+      : `channel=custom&id=${encodeURIComponent(form.id)}&name=${encodeURIComponent(form.name)}&period=${period}`;
+    api.get<SparklineData>(`/api/lead-generation/sparkline?${params}`)
+      .then(d => setData(d))
+      .catch(() => setData({ sparkline: [], recent_leads: [] }))
+      .finally(() => setLoading(false));
+  }, [form.id, form.channel, form.name, period]);
 
   const copyLink = () => {
     const url = `${window.location.origin}/f/${form.slug}`;
@@ -109,44 +131,75 @@ function ExpandedRow({ form, data }: { form: FormRow; data: SparklineData | null
     });
   };
 
-  if (!data) {
-    return (
-      <div className="px-6 py-4 bg-[#faf8f6] border-t border-black/5">
-        <div className="flex gap-4">
-          {[1, 2, 3].map(i => <div key={i} className="h-20 flex-1 bg-white rounded-xl animate-pulse" />)}
-        </div>
-      </div>
-    );
-  }
+  const tickFmt = (v: string) => {
+    try {
+      const d = new Date(v);
+      if (period === 'all')   return format(d, 'MMM yy');
+      if (period === 'month') return format(d, 'd');
+      return format(d, 'EEE');
+    } catch { return v; }
+  };
 
-  const maxCount = Math.max(...data.sparkline.map(d => d.count), 1);
+  const tooltipFmt = (v: string) => {
+    try {
+      const d = new Date(v);
+      if (period === 'all')   return format(d, 'MMM yyyy');
+      return format(d, 'dd MMM');
+    } catch { return v; }
+  };
+
+  const maxCount = data ? Math.max(...data.sparkline.map(d => d.count), 1) : 1;
+  const hasData  = data && data.sparkline.some(d => d.count > 0);
 
   return (
     <div className="px-4 py-4 bg-[#faf8f6] border-t border-black/[0.06]">
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-4">
+
         {/* Sparkline */}
         <div className="bg-white rounded-xl border border-black/5 p-4">
-          <p className="text-[11px] font-bold text-[#7a6b5c] uppercase tracking-wider mb-3">Last 7 Days</p>
-          {maxCount === 0 ? (
-            <p className="text-[12px] text-[#b09e8d] py-4 text-center">No leads in the last 7 days.</p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[11px] font-bold text-[#7a6b5c] uppercase tracking-wider">Lead Inflow</p>
+            {/* Period picker */}
+            <div className="flex items-center gap-1 bg-[#f5f0eb] rounded-lg p-0.5">
+              {SPARK_PERIODS.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setPeriod(opt.value)}
+                  className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-colors ${
+                    period === opt.value
+                      ? 'bg-white text-[#1c1410] shadow-sm'
+                      : 'text-[#9a8a7a] hover:text-[#1c1410]'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="h-[100px] bg-[#f5f0eb] rounded-lg animate-pulse" />
+          ) : !hasData ? (
+            <p className="text-[12px] text-[#b09e8d] py-6 text-center">No leads in this period.</p>
           ) : (
-            <ResponsiveContainer width="100%" height={90}>
-              <BarChart data={data.sparkline} barSize={20}>
+            <ResponsiveContainer width="100%" height={100}>
+              <BarChart data={data!.sparkline} barSize={period === 'all' ? 18 : period === 'month' ? 8 : 20}>
                 <XAxis
                   dataKey="day"
                   tick={{ fontSize: 9, fill: '#9a8a7a' }}
-                  tickFormatter={v => format(new Date(v), 'EEE')}
+                  tickFormatter={tickFmt}
                   axisLine={false} tickLine={false}
+                  interval={period === 'month' ? Math.floor((data!.sparkline.length) / 6) : 0}
                 />
                 <YAxis hide allowDecimals={false} />
                 <Tooltip
                   contentStyle={{ borderRadius: 8, border: 'none', background: '#1c1410', color: '#fff', fontSize: 11 }}
-                  labelFormatter={v => format(new Date(v), 'dd MMM')}
+                  labelFormatter={tooltipFmt}
                   formatter={(v) => [v, 'Leads']}
                 />
                 <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                  {data.sparkline.map((_, i) => (
-                    <Cell key={i} fill={_ .count > 0 ? '#ea580c' : '#f0ece8'} />
+                  {data!.sparkline.map((entry, i) => (
+                    <Cell key={i} fill={entry.count > 0 ? '#ea580c' : '#f0ece8'} />
                   ))}
                 </Bar>
               </BarChart>
@@ -157,12 +210,20 @@ function ExpandedRow({ form, data }: { form: FormRow; data: SparklineData | null
         {/* Recent leads */}
         <div className="bg-white rounded-xl border border-black/5 p-4">
           <p className="text-[11px] font-bold text-[#7a6b5c] uppercase tracking-wider mb-3">Recent Leads</p>
-          {data.recent_leads.length === 0 ? (
+          {!data ? (
+            <div className="space-y-2">
+              {[1, 2, 3].map(i => <div key={i} className="h-8 bg-[#f5f0eb] rounded-lg animate-pulse" />)}
+            </div>
+          ) : data.recent_leads.length === 0 ? (
             <p className="text-[12px] text-[#b09e8d] py-4 text-center">No leads yet from this form.</p>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {data.recent_leads.map(lead => (
-                <div key={lead.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-[#faf8f6] transition-colors cursor-pointer" onClick={() => navigate('/leads')}>
+                <div
+                  key={lead.id}
+                  onClick={() => navigate('/leads')}
+                  className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-[#faf8f6] transition-colors cursor-pointer"
+                >
                   <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0"
                     style={{ background: 'linear-gradient(135deg,#c2410c,#f97316)' }}>
                     {(lead.name ?? '?')[0].toUpperCase()}
@@ -171,7 +232,7 @@ function ExpandedRow({ form, data }: { form: FormRow; data: SparklineData | null
                     <p className="text-[12px] font-semibold text-[#1c1410] truncate">{lead.name}</p>
                     <p className="text-[10px] text-[#9a8a7a] truncate">{lead.phone || lead.email || '—'}</p>
                   </div>
-                  <span className="text-[10px] text-[#b09e8d] shrink-0">
+                  <span className="text-[10px] text-[#b09e8d] shrink-0 whitespace-nowrap">
                     {formatDistanceToNow(new Date(lead.created_at), { addSuffix: true })}
                   </span>
                 </div>
@@ -182,35 +243,23 @@ function ExpandedRow({ form, data }: { form: FormRow; data: SparklineData | null
       </div>
 
       {/* Actions */}
-      <div className="flex flex-wrap items-center gap-2 mt-3">
-        <button
-          onClick={() => navigate('/leads')}
-          className="flex items-center gap-1.5 text-[12px] font-semibold text-primary hover:opacity-70 transition-opacity"
-        >
+      <div className="flex flex-wrap items-center gap-3 mt-3">
+        <button onClick={() => navigate('/leads')} className="flex items-center gap-1.5 text-[12px] font-semibold text-primary hover:opacity-70 transition-opacity">
           <ExternalLink className="w-3.5 h-3.5" /> View Leads
         </button>
         {form.channel === 'custom' && form.slug && (
-          <button
-            onClick={copyLink}
-            className="flex items-center gap-1.5 text-[12px] font-semibold text-[#7a6b5c] hover:text-primary transition-colors"
-          >
+          <button onClick={copyLink} className="flex items-center gap-1.5 text-[12px] font-semibold text-[#7a6b5c] hover:text-primary transition-colors">
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
             {copied ? 'Copied!' : 'Copy Link'}
           </button>
         )}
         {form.channel === 'meta' && (
-          <button
-            onClick={() => navigate('/lead-generation/meta-forms')}
-            className="flex items-center gap-1.5 text-[12px] font-semibold text-[#7a6b5c] hover:text-primary transition-colors"
-          >
+          <button onClick={() => navigate('/lead-generation/meta-forms')} className="flex items-center gap-1.5 text-[12px] font-semibold text-[#7a6b5c] hover:text-primary transition-colors">
             <RefreshCw className="w-3.5 h-3.5" /> Meta Forms
           </button>
         )}
         {form.channel === 'custom' && (
-          <button
-            onClick={() => navigate('/lead-generation/custom-forms')}
-            className="flex items-center gap-1.5 text-[12px] font-semibold text-[#7a6b5c] hover:text-primary transition-colors"
-          >
+          <button onClick={() => navigate('/lead-generation/custom-forms')} className="flex items-center gap-1.5 text-[12px] font-semibold text-[#7a6b5c] hover:text-primary transition-colors">
             <ArrowRight className="w-3.5 h-3.5" /> Edit Form
           </button>
         )}
@@ -247,8 +296,6 @@ export default function LeadGenerationPage() {
   const [sortBy,     setSortBy]     = useState<SortKey>('leads_month');
   const [sortDir,    setSortDir]    = useState<'asc' | 'desc'>('desc');
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [sparkCache, setSparkCache] = useState<Record<string, SparklineData>>({});
-  const [sparkLoading, setSparkLoading] = useState<Record<string, boolean>>({});
 
   const load = useCallback(() => {
     setLoading(true);
@@ -265,19 +312,8 @@ export default function LeadGenerationPage() {
     else { setSortBy(key); setSortDir('desc'); }
   };
 
-  const handleExpand = async (form: FormRow) => {
-    if (expandedId === form.id) { setExpandedId(null); return; }
-    setExpandedId(form.id);
-    if (sparkCache[form.id]) return;
-    setSparkLoading(p => ({ ...p, [form.id]: true }));
-    try {
-      const params = form.channel === 'meta'
-        ? `channel=meta&id=${encodeURIComponent(form.id)}`
-        : `channel=custom&id=${encodeURIComponent(form.id)}&name=${encodeURIComponent(form.name)}`;
-      const data = await api.get<SparklineData>(`/api/lead-generation/sparkline?${params}`);
-      setSparkCache(p => ({ ...p, [form.id]: data }));
-    } catch { /* ignore */ }
-    finally { setSparkLoading(p => ({ ...p, [form.id]: false })); }
+  const handleExpand = (form: FormRow) => {
+    setExpandedId(id => id === form.id ? null : form.id);
   };
 
   const filteredForms = useMemo(() => {
@@ -493,12 +529,7 @@ export default function LeadGenerationPage() {
                     }
                   </div>
 
-                  {expanded && (
-                    <ExpandedRow
-                      form={form}
-                      data={sparkLoading[form.id] ? null : (sparkCache[form.id] ?? null)}
-                    />
-                  )}
+                  {expanded && <ExpandedRow form={form} />}
                 </div>
               );
             })}

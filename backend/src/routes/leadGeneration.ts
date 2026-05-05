@@ -113,69 +113,93 @@ router.get('/overview', async (req: AuthRequest, res: Response) => {
   }
 });
 
-// GET /api/lead-generation/sparkline?channel=meta|custom&id={id}&name={form_name}
-// Returns 7-day daily counts + last 5 leads for the form
+// GET /api/lead-generation/sparkline?channel=meta|custom&id={id}&name={name}&period=7d|month|all
+// Returns chart data + last 5 leads for the form
 router.get('/sparkline', async (req: AuthRequest, res: Response) => {
   const { tenantId } = req.user!;
-  const { channel, id, name } = req.query as Record<string, string>;
+  const { channel, id, name, period = '7d' } = req.query as Record<string, string>;
+
+  // Build the WHERE clause fragment for this form
+  const formFilter = channel === 'meta'
+    ? { clause: 'l.meta_form_id = $2', param: id }
+    : { clause: "l.source = 'form:' || $2", param: name };
+
+  // Build the date filter and bucket strategy
+  let dateClause: string;
+  let bucketSql: string;
+
+  if (period === 'month') {
+    dateClause = `l.created_at >= DATE_TRUNC('month', CURRENT_DATE)`;
+    bucketSql  = `DATE(l.created_at)`;
+  } else if (period === 'all') {
+    dateClause = `l.created_at >= NOW() - INTERVAL '12 months'`;
+    bucketSql  = `DATE_TRUNC('month', l.created_at)`;
+  } else {
+    // 7d default
+    dateClause = `l.created_at >= CURRENT_DATE - 6`;
+    bucketSql  = `DATE(l.created_at)`;
+  }
 
   try {
-    let countRows: any[];
-    let recentRows: any[];
+    const [cr, rr] = await Promise.all([
+      query(`
+        SELECT ${bucketSql} AS day, COUNT(*)::int AS count
+        FROM leads l
+        WHERE l.tenant_id = $1 AND ${formFilter.clause} AND l.is_deleted = FALSE
+          AND ${dateClause}
+        GROUP BY ${bucketSql}
+        ORDER BY day ASC
+      `, [tenantId, formFilter.param]),
+      query(`
+        SELECT l.id, l.name, l.phone, l.email, l.created_at
+        FROM leads l
+        WHERE l.tenant_id = $1 AND ${formFilter.clause} AND l.is_deleted = FALSE
+        ORDER BY l.created_at DESC LIMIT 5
+      `, [tenantId, formFilter.param]),
+    ]);
 
-    if (channel === 'meta') {
-      const [cr, rr] = await Promise.all([
-        query(`
-          SELECT DATE(l.created_at) AS day, COUNT(*)::int AS count
-          FROM leads l
-          WHERE l.tenant_id = $1 AND l.meta_form_id = $2 AND l.is_deleted = FALSE
-            AND l.created_at >= CURRENT_DATE - 6
-          GROUP BY DATE(l.created_at)
-          ORDER BY day ASC
-        `, [tenantId, id]),
-        query(`
-          SELECT l.id, l.name, l.phone, l.email, l.created_at
-          FROM leads l
-          WHERE l.tenant_id = $1 AND l.meta_form_id = $2 AND l.is_deleted = FALSE
-          ORDER BY l.created_at DESC LIMIT 5
-        `, [tenantId, id]),
-      ]);
-      countRows  = cr.rows;
-      recentRows = rr.rows;
+    const countRows = cr.rows;
+
+    const toDateStr = (v: any): string => {
+      const d = v instanceof Date ? v : new Date(v);
+      return d.toISOString().split('T')[0];
+    };
+
+    let sparkline: Array<{ day: string; count: number }>;
+
+    if (period === 'all') {
+      // 12 monthly buckets
+      sparkline = Array.from({ length: 12 }, (_, i) => {
+        const d = new Date();
+        d.setDate(1);
+        d.setMonth(d.getMonth() - (11 - i));
+        const monthStr = d.toISOString().slice(0, 7); // 'yyyy-MM'
+        const found = countRows.find(r => toDateStr(r.day).slice(0, 7) === monthStr);
+        return { day: d.toISOString().split('T')[0], count: found?.count ?? 0 };
+      });
+    } else if (period === 'month') {
+      // daily for every day of current month up to today
+      const now = new Date();
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      const today = now.getDate();
+      sparkline = Array.from({ length: Math.min(daysInMonth, today) }, (_, i) => {
+        const d = new Date(now.getFullYear(), now.getMonth(), i + 1);
+        const dayStr = d.toISOString().split('T')[0];
+        const found = countRows.find(r => toDateStr(r.day) === dayStr);
+        return { day: dayStr, count: found?.count ?? 0 };
+      });
     } else {
-      const [cr, rr] = await Promise.all([
-        query(`
-          SELECT DATE(l.created_at) AS day, COUNT(*)::int AS count
-          FROM leads l
-          WHERE l.tenant_id = $1 AND l.source = 'form:' || $2 AND l.is_deleted = FALSE
-            AND l.created_at >= CURRENT_DATE - 6
-          GROUP BY DATE(l.created_at)
-          ORDER BY day ASC
-        `, [tenantId, name]),
-        query(`
-          SELECT l.id, l.name, l.phone, l.email, l.created_at
-          FROM leads l
-          WHERE l.tenant_id = $1 AND l.source = 'form:' || $2 AND l.is_deleted = FALSE
-          ORDER BY l.created_at DESC LIMIT 5
-        `, [tenantId, name]),
-      ]);
-      countRows  = cr.rows;
-      recentRows = rr.rows;
+      // 7 daily buckets
+      sparkline = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date();
+        d.setDate(d.getDate() - (6 - i));
+        const dayStr = d.toISOString().split('T')[0];
+        const found = countRows.find(r => toDateStr(r.day) === dayStr);
+        return { day: dayStr, count: found?.count ?? 0 };
+      });
     }
 
-    // Fill all 7 days (gaps = 0)
-    const sparkline = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (6 - i));
-      const dayStr = d.toISOString().split('T')[0];
-      const found  = countRows.find(r => {
-        const rd = r.day instanceof Date ? r.day : new Date(r.day);
-        return rd.toISOString().split('T')[0] === dayStr;
-      });
-      return { day: dayStr, count: found?.count ?? 0 };
-    });
-
-    res.json({ sparkline, recent_leads: recentRows });
+    res.json({ sparkline, recent_leads: rr.rows });
   } catch (err: any) {
     console.error('[lead-generation:sparkline]', err.message);
     res.status(500).json({ error: 'Server error' });
