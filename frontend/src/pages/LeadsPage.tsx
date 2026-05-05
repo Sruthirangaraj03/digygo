@@ -3005,6 +3005,7 @@ export default function LeadsPage() {
   const [pipelineSearch, setPipelineSearch] = useState('');
   const [pipelineOpen, setPipelineOpen] = useState(false);
   const [searchParams] = useSearchParams();
+  const dashFilter = searchParams.get('filter') as 'stale' | 'converted' | null;
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(
     () => searchParams.get('pipeline') ?? localStorage.getItem('crm_selected_pipeline') ?? null
   );
@@ -3031,7 +3032,7 @@ export default function LeadsPage() {
     const valid = saved && pipelines.find((p) => p.id === saved);
     setPipeline(valid ? saved! : pipelines[0].id);
   }, [pipelines]);
-  const [kanbanView, setKanbanView] = useState(true);
+  const [kanbanView, setKanbanView] = useState(!dashFilter);
   const [showPhone, setShowPhone] = useState(true);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const selectedLead = leads.find((l) => l.id === selectedLeadId) ?? null;
@@ -3201,6 +3202,16 @@ export default function LeadsPage() {
   }, [filters, search, selectedPipelineId, selectedPipeline?.id, hasServerFilter]);
 
   const filteredLeads = useMemo(() => {
+    // Dashboard quick-filter — cross-pipeline, bypasses server fetch
+    if (dashFilter === 'stale') {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      return leads.filter((l) => new Date(l.lastActivity) < sevenDaysAgo);
+    }
+    if (dashFilter === 'converted') {
+      const wonStageIds = new Set(pipelines.flatMap((p) => p.stages.filter((s) => s.is_won).map((s) => s.id)));
+      return wonStageIds.size > 0 ? leads.filter((l) => wonStageIds.has(l.stageId)) : [];
+    }
+
     // Use server-fetched leads when active filters exist, otherwise use store leads
     let result = apiLeads ?? leads;
 
@@ -3242,7 +3253,7 @@ export default function LeadsPage() {
     }
 
     return result;
-  }, [leads, apiLeads, selectedPipelineId, search, filters]);
+  }, [leads, apiLeads, selectedPipelineId, search, filters, dashFilter, pipelines]);
 
   const totalCount = filteredLeads.length;
   const leadCount = filteredLeads.filter((l) => l.stage !== 'Closed Won').length;
@@ -3346,6 +3357,18 @@ export default function LeadsPage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 animate-fade-in">
+
+      {/* ── Dashboard filter banner ── */}
+      {dashFilter && (
+        <div className={`flex items-center gap-3 mb-3 px-4 py-2.5 rounded-xl border text-[13px] font-medium ${dashFilter === 'stale' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}>
+          <span className="flex-1">
+            {dashFilter === 'stale'
+              ? `Showing ${filteredLeads.length} stale lead${filteredLeads.length !== 1 ? 's' : ''} — no activity in 7+ days`
+              : `Showing ${filteredLeads.length} converted lead${filteredLeads.length !== 1 ? 's' : ''} — in won stage`}
+          </span>
+          <a href="/leads" className="text-[11px] font-semibold underline underline-offset-2 opacity-70 hover:opacity-100">Clear filter</a>
+        </div>
+      )}
 
       {/* ── Smart Toolbar ── */}
       <div className="sticky top-0 z-20 bg-[#faf8f6] pt-2 pb-3 space-y-2.5">

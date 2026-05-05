@@ -133,20 +133,41 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
   }
 
   try {
-    const now        = new Date();
-    const thisMonth  = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastMonth  = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const now          = new Date();
+    const thisMonth    = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonth    = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const leadFilter = onlyAssigned
-      ? `AND l.assigned_to = '${userId}'`
-      : '';
+    // Range param — affects range_leads, source_breakdown, staff leaderboard new_in_range
+    const rangeParam = (req.query.range as string) || '30d';
+    let rangeStart: Date;
+    let rangeLabel: string;
+    switch (rangeParam) {
+      case '90d':
+        rangeStart = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+        rangeLabel = 'Last 90 Days';
+        break;
+      case 'this_month':
+        rangeStart = thisMonth;
+        rangeLabel = 'This Month';
+        break;
+      case 'all':
+        rangeStart = new Date(0);
+        rangeLabel = 'All Time';
+        break;
+      default:
+        rangeStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        rangeLabel = 'Last 30 Days';
+    }
+
+    const leadFilter = onlyAssigned ? `AND l.assigned_to = '${userId}'` : '';
 
     const [
       totalLeads,
       leadsThisMonth,
       leadsLastMonth,
+      leadsInRange,
       convertedLeads,
       staleLeads,
       overdueFollowups,
@@ -155,16 +176,19 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
       staffLeaderboard,
       todayFollowups,
     ] = await Promise.all([
-      // Total leads
+      // Total leads — all time
       query(`SELECT COUNT(*)::int AS n FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE ${leadFilter}`, [tenantId]),
 
-      // Leads this month
+      // Leads this calendar month
       query(`SELECT COUNT(*)::int AS n FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND l.created_at >= $2 ${leadFilter}`, [tenantId, thisMonth]),
 
-      // Leads last month
+      // Leads last calendar month
       query(`SELECT COUNT(*)::int AS n FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND l.created_at >= $2 AND l.created_at <= $3 ${leadFilter}`, [tenantId, lastMonth, lastMonthEnd]),
 
-      // Converted leads (in a won stage)
+      // Leads in selected range
+      query(`SELECT COUNT(*)::int AS n FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND l.created_at >= $2 ${leadFilter}`, [tenantId, rangeStart]),
+
+      // Converted leads (in won stage) — all time
       query(`SELECT COUNT(*)::int AS n FROM leads l JOIN pipeline_stages ps ON ps.id = l.stage_id WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND ps.is_won=TRUE ${leadFilter}`, [tenantId]),
 
       // Stale leads — no activity in 7+ days
@@ -173,14 +197,25 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
       // Overdue follow-ups
       query(`SELECT COUNT(*)::int AS n FROM lead_followups f JOIN leads l ON l.id = f.lead_id WHERE f.tenant_id=$1 AND f.completed=FALSE AND f.due_at < NOW() ${onlyAssigned ? `AND l.assigned_to='${userId}'` : ''}`, [tenantId]),
 
-      // Source breakdown
-      query(`SELECT l.source, COUNT(*)::int AS count FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE ${leadFilter} GROUP BY l.source ORDER BY count DESC`, [tenantId]),
+      // Source breakdown — filtered by range
+      query(`SELECT l.source, COUNT(*)::int AS count FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND l.created_at >= $2 ${leadFilter} GROUP BY l.source ORDER BY count DESC`, [tenantId, rangeStart]),
 
-      // Pipeline funnel
+      // Pipeline funnel — current state (not range-filtered)
       query(`SELECT ps.name AS stage, ps.is_won, COUNT(l.id)::int AS count FROM pipeline_stages ps LEFT JOIN leads l ON l.stage_id = ps.id AND l.is_deleted=FALSE AND l.tenant_id=$1 WHERE ps.tenant_id=$1 GROUP BY ps.id, ps.name, ps.is_won, ps.stage_order ORDER BY ps.stage_order`, [tenantId]),
 
-      // Staff leaderboard — leads in won stages per staff member
-      query(`SELECT u.name, u.id, COUNT(l.id)::int AS converted, COUNT(CASE WHEN l.created_at >= $2 THEN 1 END)::int AS new_this_month FROM users u LEFT JOIN leads l ON l.assigned_to = u.id AND l.is_deleted=FALSE AND l.tenant_id=$1 LEFT JOIN pipeline_stages ps ON ps.id = l.stage_id AND ps.is_won=TRUE WHERE u.tenant_id=$1 AND u.is_active=TRUE AND (u.is_owner IS NULL OR u.is_owner=FALSE) GROUP BY u.id, u.name ORDER BY converted DESC`, [tenantId, thisMonth]),
+      // Staff leaderboard — assigned_count (all time), converted (all time), new_in_range (range-filtered)
+      query(`
+        SELECT u.name, u.id,
+          COUNT(DISTINCT l.id)::int AS assigned_count,
+          COUNT(DISTINCT CASE WHEN ps.is_won = TRUE THEN l.id END)::int AS converted,
+          COUNT(DISTINCT CASE WHEN l.created_at >= $2 THEN l.id END)::int AS new_in_range
+        FROM users u
+        LEFT JOIN leads l ON l.assigned_to = u.id AND l.is_deleted = FALSE AND l.tenant_id = $1
+        LEFT JOIN pipeline_stages ps ON ps.id = l.stage_id
+        WHERE u.tenant_id = $1 AND u.is_active = TRUE AND (u.is_owner IS NULL OR u.is_owner = FALSE)
+        GROUP BY u.id, u.name
+        ORDER BY converted DESC
+      `, [tenantId, rangeStart]),
 
       // Today's follow-ups for this user
       query(`SELECT f.id, f.title, f.description, f.due_at, l.name AS lead_name, l.id AS lead_id FROM lead_followups f JOIN leads l ON l.id = f.lead_id WHERE f.tenant_id=$1 AND f.completed=FALSE AND DATE(f.due_at) = CURRENT_DATE ${onlyAssigned ? `AND l.assigned_to='${userId}'` : ''} ORDER BY f.due_at ASC LIMIT 10`, [tenantId]),
@@ -192,18 +227,32 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
     const lastM     = leadsLastMonth.rows[0].n;
     const growth    = lastM === 0 ? (thisM > 0 ? 100 : 0) : Math.round(((thisM - lastM) / lastM) * 100);
 
+    // Per-staff conversion rate
+    const leaderboardWithRate = staffLeaderboard.rows.map((s: any) => ({
+      ...s,
+      conversion_rate_pct: s.assigned_count === 0 ? 0 : Math.round((s.converted / s.assigned_count) * 100),
+    }));
+
+    // Best source from range-filtered breakdown (first non-null source)
+    const bestSourceRow = sourceBreakdown.rows.find((s: any) => s.source) ?? null;
+    const bestSource = bestSourceRow ? { source: bestSourceRow.source as string, count: bestSourceRow.count as number } : null;
+
     res.json({
       total_leads:       total,
       leads_this_month:  thisM,
       leads_last_month:  lastM,
       growth_pct:        growth,
+      range_leads:       leadsInRange.rows[0].n,
+      range:             rangeParam,
+      range_label:       rangeLabel,
       converted_leads:   converted,
       conversion_rate:   total === 0 ? 0 : Math.round((converted / total) * 100),
       stale_leads:       staleLeads.rows[0].n,
       overdue_followups: overdueFollowups.rows[0].n,
+      best_source:       bestSource,
       source_breakdown:  sourceBreakdown.rows,
       pipeline_funnel:   pipelineFunnel.rows,
-      staff_leaderboard: staffLeaderboard.rows,
+      staff_leaderboard: leaderboardWithRate,
       today_followups:   todayFollowups.rows,
       role:              isPrivileged ? role : (isManager ? 'manager' : 'staff'),
     });

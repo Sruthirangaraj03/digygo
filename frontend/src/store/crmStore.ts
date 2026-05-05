@@ -344,7 +344,7 @@ export const useCrmStore = create<CrmState>((set) => ({
     const mapped: Pipeline = {
       id: created.id,
       name: created.name,
-      stages: (created.stages ?? []).map((s: any) => ({ id: s.id, name: s.name, color: s.color ?? '#94a3b8' })),
+      stages: (created.stages ?? []).map((s: any) => ({ id: s.id, name: s.name, color: s.color ?? '#94a3b8', is_won: s.is_won ?? false })),
     };
     set((s) => ({ pipelines: [...s.pipelines, mapped] }));
   },
@@ -416,7 +416,7 @@ export const useCrmStore = create<CrmState>((set) => ({
       const mapped: Pipeline = {
         id: created.id,
         name: created.name,
-        stages: (created.stages ?? []).map((s: any) => ({ id: s.id, name: s.name, color: s.color ?? '#94a3b8' })),
+        stages: (created.stages ?? []).map((s: any) => ({ id: s.id, name: s.name, color: s.color ?? '#94a3b8', is_won: s.is_won ?? false })),
       };
       set((s) => ({ pipelines: [...s.pipelines, mapped] }));
     } catch {
@@ -430,7 +430,7 @@ export const useCrmStore = create<CrmState>((set) => ({
     const mapped: Pipeline[] = res.map((p) => ({
       id: p.id,
       name: p.name,
-      stages: (p.stages ?? []).map((s: any) => ({ id: s.id, name: s.name, color: s.color ?? '#94a3b8' })),
+      stages: (p.stages ?? []).map((s: any) => ({ id: s.id, name: s.name, color: s.color ?? '#94a3b8', is_won: s.is_won ?? false })),
     }));
     set({ pipelines: mapped });
   },
@@ -471,6 +471,7 @@ export const useCrmStore = create<CrmState>((set) => ({
           id: s.id,
           name: s.name,
           color: s.color ?? '#94a3b8',
+          is_won: s.is_won ?? false,
         })),
       }));
 
