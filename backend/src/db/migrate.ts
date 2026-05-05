@@ -52,6 +52,7 @@ const MIGRATIONS = [
   'migration_050_field_routing.sql',
   'migration_051_workflow_api_token.sql',
   'migration_052_is_won_stage.sql',
+  'migration_053_meta_forms_status.sql',
 ];
 
 // Split SQL file into individual statements and execute each one separately.
