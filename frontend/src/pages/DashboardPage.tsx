@@ -137,16 +137,17 @@ function FunnelCard({ funnels, selectedId, setSelectedId }: {
   selectedId: string;
   setSelectedId: (id: string) => void;
 }) {
-  const activeFunnel = funnels.find((f) => f.id === selectedId) ?? funnels[0] ?? null;
-  const hasWon = activeFunnel?.stages.some((s) => s.is_won) ?? false;
+  const list = funnels ?? [];
+  const activeFunnel = list.find((f) => f.id === selectedId) ?? list[0] ?? null;
+  const hasWon = (activeFunnel?.stages ?? []).some((s) => s.is_won);
 
   return (
     <div className="bg-white rounded-2xl border border-black/5 card-shadow p-6">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-headline font-bold text-[#1c1410]">Pipeline Funnel</h3>
-        {funnels.length > 1 && (
+        {list.length > 1 && (
           <div className="flex items-center gap-1 bg-[#faf8f6] rounded-xl p-1">
-            {funnels.map((f) => (
+            {list.map((f) => (
               <button
                 key={f.id}
                 onClick={() => setSelectedId(f.id)}
@@ -213,7 +214,7 @@ function ManagementDashboard({ analytics, lineData, range }: {
         />
         <StatCard
           label="Converted" value={analytics.converted_leads}
-          sub={analytics.pipeline_funnel.some((s) => s.is_won)
+          sub={(analytics.pipeline_funnels ?? []).flatMap((p) => p.stages ?? []).some((s) => s.is_won)
             ? `${analytics.conversion_rate}% conversion rate`
             : 'Mark a stage as Won to track'}
           icon={Target}
@@ -313,14 +314,15 @@ function ManagementDashboard({ analytics, lineData, range }: {
 // ── Manager pipeline health (cards view) ─────────────────────────────────────
 function ManagerPipelineHealth({ funnels }: { funnels: Analytics['pipeline_funnels'] }) {
   const [selectedId, setSelectedId] = useState('');
-  const active = funnels.find((f) => f.id === selectedId) ?? funnels[0] ?? null;
+  const list2 = funnels ?? [];
+  const active = list2.find((f) => f.id === selectedId) ?? list2[0] ?? null;
   return (
     <div className="bg-white rounded-2xl border border-black/5 card-shadow p-6">
       <div className="flex items-center justify-between mb-5">
         <h3 className="font-headline font-bold text-[#1c1410]">Pipeline Stage Health</h3>
-        {funnels.length > 1 && (
+        {list2.length > 1 && (
           <div className="flex items-center gap-1 bg-[#faf8f6] rounded-xl p-1">
-            {funnels.map((f) => (
+            {list2.map((f) => (
               <button key={f.id} onClick={() => setSelectedId(f.id)}
                 className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${active?.id === f.id ? 'bg-white shadow-sm text-[#1c1410]' : 'text-[#8a7c6e] hover:text-[#1c1410]'}`}>
                 {f.name}
