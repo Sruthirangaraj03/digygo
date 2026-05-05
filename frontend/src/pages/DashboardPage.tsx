@@ -242,7 +242,6 @@ function ManagementDashboard({ analytics, lineData }: {
   analytics: Analytics; lineData: any[];
 }) {
   const navigate = useNavigate();
-  const [selectedFunnelId, setSelectedFunnelId] = useState<string>('');
 
   const growth = analytics.growth_pct;
   const growthLabel = growth > 0 ? `+${growth}% vs last month` : growth < 0 ? `${growth}% vs last month` : 'Same as last month';
@@ -338,16 +337,15 @@ function ManagementDashboard({ analytics, lineData }: {
             ? <p className="text-[12px] text-[#b09e8d]">No staff data yet.</p>
             : (
               <>
-                <div className="grid grid-cols-[1fr_44px_44px_54px_40px] gap-1 text-[10px] text-[#b09e8d] font-semibold uppercase px-1.5 mb-1.5">
+                <div className="grid grid-cols-[1fr_56px_72px_44px] gap-1 text-[10px] text-[#b09e8d] font-semibold uppercase px-1.5 mb-1.5">
                   <span>Staff</span>
-                  <span className="text-right">Total</span>
-                  <span className="text-right">New</span>
-                  <span className="text-right">Won</span>
+                  <span className="text-right">Leads</span>
+                  <span className="text-right">Converted</span>
                   <span className="text-right">Rate</span>
                 </div>
                 <div className="space-y-0.5">
                   {analytics.staff_leaderboard.slice(0, 8).map((s, i) => (
-                    <div key={s.id} className="grid grid-cols-[1fr_44px_44px_54px_40px] gap-1 items-center px-1.5 py-1.5 rounded-lg hover:bg-[#faf8f6] transition-colors">
+                    <div key={s.id} className="grid grid-cols-[1fr_56px_72px_44px] gap-1 items-center px-1.5 py-1.5 rounded-lg hover:bg-[#faf8f6] transition-colors">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span className="text-[10px] text-[#c0b0a0] w-3.5 font-bold shrink-0">#{i + 1}</span>
                         <div className="w-6 h-6 rounded-md bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary shrink-0">
@@ -356,11 +354,7 @@ function ManagementDashboard({ analytics, lineData }: {
                         <span className="text-[12px] font-semibold text-[#1c1410] truncate">{s.name}</span>
                       </div>
                       <span className="text-[11px] text-right text-[#7a6b5c]">{s.assigned_count}</span>
-                      <span className="text-[11px] text-right text-[#7a6b5c]">{s.new_in_range}</span>
-                      <div className="flex items-center justify-end gap-1">
-                        <Award className="w-2.5 h-2.5 text-emerald-500" />
-                        <span className="text-[11px] font-bold text-emerald-600">{s.converted}</span>
-                      </div>
+                      <span className="text-[11px] text-right font-bold text-emerald-600">{s.converted}</span>
                       <span className={`text-[10px] font-bold text-right ${s.conversion_rate_pct >= 50 ? 'text-emerald-600' : s.conversion_rate_pct >= 20 ? 'text-amber-500' : 'text-[#9a8a7a]'}`}>
                         {s.conversion_rate_pct}%
                       </span>
@@ -371,8 +365,33 @@ function ManagementDashboard({ analytics, lineData }: {
             )}
         </div>
 
-        {/* Pipeline funnel */}
-        <FunnelCard funnels={analytics.pipeline_funnels} selectedId={selectedFunnelId} setSelectedId={setSelectedFunnelId} />
+        {/* Pipeline — total leads per pipeline as a bar chart */}
+        <div className="bg-white rounded-2xl border border-black/5 card-shadow p-5 flex flex-col">
+          <h3 className="font-headline font-bold text-[#1c1410] text-[14px] mb-3">Leads per Pipeline</h3>
+          {(() => {
+            const pipelineData = (analytics.pipeline_funnels ?? []).map((p) => ({
+              name: p.name,
+              count: p.stages.reduce((sum, s) => sum + s.count, 0),
+            }));
+            if (pipelineData.length === 0) {
+              return <p className="text-[12px] text-[#b09e8d]">No pipeline data yet.</p>;
+            }
+            return (
+              <ResponsiveContainer width="100%" height={Math.max(120, pipelineData.length * 40)}>
+                <BarChart data={pipelineData} layout="vertical">
+                  <XAxis type="number" tick={{ fontSize: 10, fill: '#8a7c6e' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: '#1c1410', fontWeight: 600 }} axisLine={false} tickLine={false} width={90} />
+                  <Tooltip
+                    cursor={{ fill: '#faf8f6' }}
+                    contentStyle={{ borderRadius: 10, border: 'none', background: '#1c1410', color: '#fff', fontSize: 11 }}
+                    formatter={(v: number) => [v, 'Leads']}
+                  />
+                  <Bar dataKey="count" radius={[0, 6, 6, 0]} fill="#ea580c" label={{ position: 'right', fontSize: 11, fill: '#7a6b5c', fontWeight: 700 }} />
+                </BarChart>
+              </ResponsiveContainer>
+            );
+          })()}
+        </div>
       </div>
     </div>
   );
