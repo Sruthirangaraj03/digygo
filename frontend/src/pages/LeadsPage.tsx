@@ -3645,7 +3645,7 @@ export default function LeadsPage() {
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {kanbanView ? (
         <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-          <div className="flex gap-4 overflow-x-auto overflow-y-hidden flex-1 min-h-0 pb-4 items-stretch scrollbar-hide h-full">
+          <div className="flex gap-4 overflow-x-auto overflow-y-hidden flex-1 min-h-0 pb-4 items-stretch scrollbar-hide">
             {activeStages.map((stage, stageIndex) => {
               const now = new Date();
               const stageLeadsSorted = filteredLeads
