@@ -2663,25 +2663,47 @@ function LeadCard({ lead, onClick, onFollowUp, onNote, onAssign, showPhone }: { 
 }
 
 // ─── Stage Column ──────────────────────────────────────────────────────────────
-function StageColumn({ stage, leads: stageLeads, onLeadClick, onFollowUp, onNote, onAssign, showPhone }: {
+const STAGE_ACCENT_COLORS = [
+  '#ea580c', '#3b82f6', '#8b5cf6', '#10b981', '#f59e0b',
+  '#f43f5e', '#06b6d4', '#84cc16', '#ec4899', '#0ea5e9',
+];
+
+function StageColumn({ stage, leads: stageLeads, onLeadClick, onFollowUp, onNote, onAssign, showPhone, stageIndex }: {
   stage: string; leads: Lead[]; onLeadClick: (l: Lead) => void;
-  onFollowUp: (l: Lead) => void; onNote: (l: Lead) => void; onAssign: (l: Lead) => void; showPhone: boolean;
+  onFollowUp: (l: Lead) => void; onNote: (l: Lead) => void; onAssign: (l: Lead) => void;
+  showPhone: boolean; stageIndex: number;
 }) {
   const { setNodeRef } = useDroppable({ id: stage });
-  const dotPalette = ['#3b82f6','#f59e0b','#8b5cf6','#10b981','#f43f5e','#06b6d4','#ea580c'];
-  const dotColor = dotPalette[(stage.charCodeAt(0) ?? 0) % dotPalette.length];
+  const accent  = STAGE_ACCENT_COLORS[stageIndex % STAGE_ACCENT_COLORS.length];
+  const isEmpty = stageLeads.length === 0;
+
   return (
-    <div className="min-w-[280px] w-[280px] flex-shrink-0 flex flex-col min-h-0">
-      {/* Column header — centered name with colored dot + count */}
-      <div className="mb-3 flex items-center justify-center gap-1.5 shrink-0 px-0.5">
-        <h3 className="text-[14px] font-bold text-[#c2410c]">{stage}</h3>
-        <span className="flex items-center gap-0.5 text-[13px] font-semibold">
-          <span style={{ color: dotColor }}>•</span>
-          <span className="text-[#1c1410] font-bold">({stageLeads.length})</span>
+    <div
+      className="min-w-[280px] w-[280px] flex-shrink-0 flex flex-col min-h-0 rounded-2xl overflow-hidden border"
+      style={{ background: isEmpty ? '#f8f6f3' : '#f2efeb', borderColor: 'rgba(0,0,0,0.07)' }}
+    >
+      {/* Colored top accent strip */}
+      <div className="h-[3px] shrink-0" style={{ background: accent }} />
+
+      {/* Column header */}
+      <div className="px-4 pt-3 pb-2.5 flex items-center justify-between shrink-0 border-b border-black/[0.06]">
+        <h3 className="text-[13px] font-bold text-[#1c1410] truncate leading-tight">{stage}</h3>
+        <span
+          className="text-[11px] font-bold px-2 py-0.5 rounded-full text-white shrink-0 ml-2 tabular-nums"
+          style={{ background: accent }}
+        >
+          {stageLeads.length}
         </span>
       </div>
 
-      <div ref={setNodeRef} className="space-y-2.5 flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-0.5 pb-2 scrollbar-hide">
+      {/* Drop zone + cards */}
+      <div
+        ref={setNodeRef}
+        className={cn(
+          'flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 py-3 scrollbar-hide',
+          isEmpty ? 'flex flex-col items-center justify-center' : 'space-y-2.5'
+        )}
+      >
         <SortableContext items={stageLeads.map((l) => l.id)} strategy={verticalListSortingStrategy}>
           {stageLeads.map((lead) => (
             <LeadCard key={lead.id} lead={lead}
@@ -2693,10 +2715,16 @@ function StageColumn({ stage, leads: stageLeads, onLeadClick, onFollowUp, onNote
             />
           ))}
         </SortableContext>
-        {stageLeads.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-12 gap-2 rounded-xl border-2 border-dashed border-gray-100">
-            <User className="w-5 h-5 text-gray-200" />
-            <p className="text-[11px] text-gray-300">No leads</p>
+        {isEmpty && (
+          <div className="flex flex-col items-center justify-center gap-2 py-10 w-full">
+            <div
+              className="w-10 h-10 rounded-xl border-2 border-dashed flex items-center justify-center"
+              style={{ borderColor: accent + '50' }}
+            >
+              <User className="w-4 h-4" style={{ color: accent + '90' }} />
+            </div>
+            <p className="text-[11px] font-semibold text-[#c4b09e]">No leads</p>
+            <p className="text-[10px] text-[#d4c4b4]">Drag here to move</p>
           </div>
         )}
       </div>
@@ -3507,10 +3535,9 @@ export default function LeadsPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
-              {!search
-                ? <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-[#c4b09e] bg-gray-50 border border-black/[0.07] rounded px-1.5 py-0.5">⌘K</kbd>
-                : <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full hover:bg-gray-100 flex items-center justify-center text-[#b09e8d]"><X className="w-3 h-3" /></button>
-              }
+              {search && (
+                <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full hover:bg-gray-100 flex items-center justify-center text-[#b09e8d]"><X className="w-3 h-3" /></button>
+              )}
             </div>
 
             <div className="flex-1" />
@@ -3619,7 +3646,7 @@ export default function LeadsPage() {
       {kanbanView ? (
         <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="flex gap-4 overflow-x-auto overflow-y-hidden flex-1 min-h-0 pb-4 items-stretch scrollbar-hide">
-            {activeStages.map((stage) => {
+            {activeStages.map((stage, stageIndex) => {
               const now = new Date();
               const stageLeadsSorted = filteredLeads
                 .filter((l) => l.stage === stage)
@@ -3644,6 +3671,7 @@ export default function LeadsPage() {
                 onNote={setQuickNoteLead}
                 onAssign={setQuickAssignLead}
                 showPhone={showPhone}
+                stageIndex={stageIndex}
               />
               );
             })}
