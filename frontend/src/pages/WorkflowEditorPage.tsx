@@ -1536,16 +1536,11 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
           <div className="flex gap-2">
             <input type="number" className="w-24 border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-primary outline-none" value={(cfg.dueDays as string) ?? '1'} onChange={sel('dueDays')} min="0" />
             <select className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-card focus:border-primary outline-none" value={(cfg.dueUnit as string) ?? 'days'} onChange={sel('dueUnit')}>
-              <option value="hours">hours from now</option>
-              <option value="days">days from now</option>
+              <option value="minutes">minutes</option>
+              <option value="hours">hours</option>
+              <option value="days">days</option>
             </select>
           </div>
-        </FieldRow>
-        <FieldRow label="Assign To">
-          <select className={selectCls} value={(cfg.assignTo as string) ?? ''} onChange={sel('assignTo')}>
-            <option value="">Assigned staff</option>
-            {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
         </FieldRow>
         <FieldRow label="Notes (optional)">
           <textarea className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card focus:border-primary outline-none resize-none" rows={3} placeholder="Add notes for the follow-up..." value={(cfg.notes as string) ?? ''} onChange={sel('notes')} />
