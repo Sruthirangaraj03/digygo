@@ -3482,102 +3482,117 @@ export default function LeadsPage() {
           </div>
         ) : (
           /* ── Default Toolbar ── */
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-2.5">
 
-            {/* Pipeline selector */}
-            <div className="relative shrink-0">
-              <button
-                onClick={() => { setPipelineOpen((o) => !o); setPipelineSearch(''); }}
-                className="flex items-center gap-2.5 pl-3 pr-2.5 h-10 rounded-xl bg-white border border-black/10 text-[13px] font-semibold text-[#1c1410] hover:border-primary/40 hover:bg-orange-50/30 transition-all"
-              >
-                <div className="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                  <Layers className="w-3.5 h-3.5 text-primary" />
-                </div>
-                <span className="truncate max-w-[130px]">{selectedPipeline?.name ?? 'Select pipeline'}</span>
-                <span className="text-[11px] font-bold bg-primary/10 text-primary rounded-md px-1.5 py-0.5 min-w-[22px] text-center">{pipelineLeads.length}</span>
-                <ChevronDown className="w-3.5 h-3.5 text-[#9a8a7a]" />
-              </button>
+            {/* Row 1 — Pipeline context + primary action */}
+            <div className="flex items-center gap-3">
 
-              {pipelineOpen && (
-                <>
-                  <div className="fixed inset-0 z-30" onClick={() => setPipelineOpen(false)} />
-                  <div className="absolute left-0 top-12 z-40 bg-white rounded-2xl border border-black/5 shadow-2xl w-64 overflow-hidden">
-                    <div className="flex items-center gap-2 px-3 py-2.5 border-b border-black/5">
-                      <Search className="w-3.5 h-3.5 text-[#b09e8d] shrink-0" />
-                      <input autoFocus className="flex-1 text-[12px] outline-none text-[#1c1410] placeholder:text-gray-400" placeholder="Search pipeline..." value={pipelineSearch} onChange={(e) => setPipelineSearch(e.target.value)} />
-                    </div>
-                    <div className="max-h-60 overflow-y-auto py-1.5">
-                      {filteredPipelines.map((p) => {
-                        const cnt = leads.filter((l) => l.pipelineId === p.id).length;
-                        return (
-                          <button key={p.id} onClick={() => { setPipeline(p.id); setPipelineOpen(false); }}
-                            className={cn('w-full text-left px-4 py-2.5 text-[13px] transition-colors flex items-center gap-2', p.id === selectedPipelineId ? 'bg-[#faf0e8] text-primary font-semibold' : 'text-[#1c1410] hover:bg-[#faf8f6]')}>
-                            {p.id === selectedPipelineId && <div className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />}
-                            <span className="flex-1 truncate">{p.name}</span>
-                            <span className="text-[10px] text-[#b09e8d] font-normal">{cnt}</span>
-                          </button>
-                        );
-                      })}
-                      {filteredPipelines.length === 0 && <p className="px-4 py-3 text-[12px] text-[#7a6b5c]">No pipelines found</p>}
-                    </div>
+              {/* Pipeline selector */}
+              <div className="relative shrink-0">
+                <button
+                  onClick={() => { setPipelineOpen((o) => !o); setPipelineSearch(''); }}
+                  className="flex items-center gap-2 pl-2 pr-3 h-11 rounded-xl bg-white border border-black/10 hover:border-primary/40 hover:bg-orange-50/30 transition-all"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                    <Layers className="w-4 h-4 text-primary" />
                   </div>
-                </>
-              )}
-            </div>
-
-            {/* Search */}
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#b09e8d] pointer-events-none" />
-              <input
-                ref={searchInputRef}
-                className="w-full h-10 pl-9 pr-10 text-[13px] bg-white border border-black/10 rounded-xl outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 placeholder:text-[#b09e8d] transition-all"
-                placeholder="Search leads…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-              {search && (
-                <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full hover:bg-gray-100 flex items-center justify-center text-[#b09e8d]"><X className="w-3 h-3" /></button>
-              )}
-            </div>
-
-            <div className="flex-1" />
-
-            {/* Right action group */}
-            <div className="flex items-center gap-2 shrink-0">
-
-              {/* View toggle — segmented pill */}
-              <div className="flex items-center h-10 bg-gray-100 rounded-xl p-1 gap-0.5">
-                <button title="Board" onClick={() => setKanbanView(true)}
-                  className={cn('flex items-center justify-center w-8 h-8 rounded-lg transition-all', kanbanView ? 'bg-white shadow-sm text-primary' : 'text-[#7a6b5c] hover:text-[#1c1410]')}>
-                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <div className="flex flex-col items-start min-w-0">
+                    <span className="text-[10px] font-semibold text-[#b09e8d] uppercase tracking-wide leading-none mb-0.5">Pipeline</span>
+                    <span className="text-[13px] font-bold text-[#1c1410] truncate max-w-[140px] leading-none">{selectedPipeline?.name ?? 'Select pipeline'}</span>
+                  </div>
+                  <span className="text-[11px] font-bold bg-primary text-white rounded-full px-2 py-0.5 min-w-[22px] text-center shrink-0 ml-1">{pipelineLeads.length}</span>
+                  <ChevronDown className="w-3.5 h-3.5 text-[#9a8a7a] shrink-0" />
                 </button>
-                <button title="List" onClick={() => setKanbanView(false)}
-                  className={cn('flex items-center justify-center w-8 h-8 rounded-lg transition-all', !kanbanView ? 'bg-white shadow-sm text-primary' : 'text-[#7a6b5c] hover:text-[#1c1410]')}>
-                  <List className="w-3.5 h-3.5" />
+
+                {pipelineOpen && (
+                  <>
+                    <div className="fixed inset-0 z-30" onClick={() => setPipelineOpen(false)} />
+                    <div className="absolute left-0 top-13 z-40 bg-white rounded-2xl border border-black/5 shadow-2xl w-64 overflow-hidden">
+                      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-black/5">
+                        <Search className="w-3.5 h-3.5 text-[#b09e8d] shrink-0" />
+                        <input autoFocus className="flex-1 text-[12px] outline-none text-[#1c1410] placeholder:text-gray-400" placeholder="Search pipeline..." value={pipelineSearch} onChange={(e) => setPipelineSearch(e.target.value)} />
+                      </div>
+                      <div className="max-h-60 overflow-y-auto py-1.5">
+                        {filteredPipelines.map((p) => {
+                          const cnt = leads.filter((l) => l.pipelineId === p.id).length;
+                          return (
+                            <button key={p.id} onClick={() => { setPipeline(p.id); setPipelineOpen(false); }}
+                              className={cn('w-full text-left px-4 py-2.5 text-[13px] transition-colors flex items-center gap-2', p.id === selectedPipelineId ? 'bg-[#faf0e8] text-primary font-semibold' : 'text-[#1c1410] hover:bg-[#faf8f6]')}>
+                              {p.id === selectedPipelineId && <div className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />}
+                              <span className="flex-1 truncate">{p.name}</span>
+                              <span className="text-[10px] text-[#b09e8d] font-normal">{cnt}</span>
+                            </button>
+                          );
+                        })}
+                        {filteredPipelines.length === 0 && <p className="px-4 py-3 text-[12px] text-[#7a6b5c]">No pipelines found</p>}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="flex-1" />
+
+              {/* Add Lead */}
+              {canCreateLead && (
+                <button onClick={() => setShowAddLead(true)}
+                  className="flex items-center gap-2 px-5 h-11 rounded-xl text-[13px] font-bold text-white bg-primary hover:bg-primary/90 transition-all active:scale-95 shrink-0">
+                  <Plus className="w-4 h-4" /> Add Lead
+                </button>
+              )}
+            </div>
+
+            {/* Row 2 — Search + view controls */}
+            <div className="flex items-center gap-2">
+
+              {/* Search */}
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#b09e8d] pointer-events-none" />
+                <input
+                  ref={searchInputRef}
+                  className="w-full h-9 pl-9 pr-8 text-[13px] bg-white border border-black/10 rounded-xl outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 placeholder:text-[#b09e8d] transition-all"
+                  placeholder="Search leads by name, phone, email…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+                {search && (
+                  <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full hover:bg-gray-100 flex items-center justify-center text-[#b09e8d]"><X className="w-3 h-3" /></button>
+                )}
+              </div>
+
+              {/* View toggle — labeled */}
+              <div className="flex items-center h-9 bg-gray-100 rounded-xl p-1 gap-0.5 shrink-0">
+                <button onClick={() => setKanbanView(true)}
+                  className={cn('flex items-center gap-1.5 px-3 h-7 rounded-lg text-[12px] font-semibold transition-all', kanbanView ? 'bg-white shadow-sm text-primary' : 'text-[#7a6b5c] hover:text-[#1c1410]')}>
+                  <LayoutGrid className="w-3.5 h-3.5" /> Board
+                </button>
+                <button onClick={() => setKanbanView(false)}
+                  className={cn('flex items-center gap-1.5 px-3 h-7 rounded-lg text-[12px] font-semibold transition-all', !kanbanView ? 'bg-white shadow-sm text-primary' : 'text-[#7a6b5c] hover:text-[#1c1410]')}>
+                  <List className="w-3.5 h-3.5" /> List
                 </button>
               </div>
 
               {/* Filter */}
-              <div className="relative">
+              <div className="relative shrink-0">
                 <button ref={filterBtnRef} onClick={() => setShowFilters((v) => !v)}
-                  title={activeFiltersCount > 0 ? `${activeFiltersCount} filter${activeFiltersCount > 1 ? 's' : ''} active` : 'Filter'}
-                  className={cn('relative flex items-center justify-center w-10 h-10 rounded-xl border transition-all',
+                  className={cn('relative flex items-center gap-1.5 px-3 h-9 rounded-xl border text-[12px] font-semibold transition-all',
                     activeFiltersCount > 0 || showFilters ? 'bg-orange-50 border-primary/30 text-primary' : 'bg-white border-black/10 text-[#7a6b5c] hover:border-primary/30 hover:text-primary'
                   )}>
-                  <Filter className="w-4 h-4" />
-                  {activeFiltersCount > 0 && <span className="absolute -top-1 -right-1 bg-primary text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{activeFiltersCount}</span>}
+                  <Filter className="w-3.5 h-3.5" />
+                  Filter
+                  {activeFiltersCount > 0 && <span className="bg-primary text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{activeFiltersCount}</span>}
                 </button>
                 {showFilters && <FilterPopover filters={filters} onChange={setFilters} onClose={() => setShowFilters(false)} stages={activeStages} anchorRef={filterBtnRef} />}
               </div>
 
               {/* More */}
-              <div className="relative" ref={moreMenuRef}>
+              <div className="relative shrink-0" ref={moreMenuRef}>
                 <button onClick={() => setShowMoreMenu((v) => !v)}
-                  className={cn('flex items-center justify-center w-10 h-10 rounded-xl border transition-all', showMoreMenu ? 'bg-orange-50 border-primary/30 text-primary' : 'bg-white border-black/10 text-[#7a6b5c] hover:border-primary/30 hover:text-primary')}>
+                  className={cn('flex items-center justify-center w-9 h-9 rounded-xl border transition-all', showMoreMenu ? 'bg-orange-50 border-primary/30 text-primary' : 'bg-white border-black/10 text-[#7a6b5c] hover:border-primary/30 hover:text-primary')}>
                   <MoreHorizontal className="w-4 h-4" />
                 </button>
                 {showMoreMenu && (
-                  <div className="absolute right-0 top-12 z-40 w-56 bg-white rounded-xl border border-black/5 shadow-xl overflow-hidden py-1">
+                  <div className="absolute right-0 top-11 z-40 w-56 bg-white rounded-xl border border-black/5 shadow-xl overflow-hidden py-1">
                     <button onClick={() => { setShowMoreMenu(false); setShowImport(true); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
                       <Package className="w-3.5 h-3.5 text-[#7a6b5c]" /> Import leads
                     </button>
@@ -3600,13 +3615,6 @@ export default function LeadsPage() {
                 )}
               </div>
 
-              {/* Add Lead */}
-              {canCreateLead && (
-                <button onClick={() => setShowAddLead(true)}
-                  className="flex items-center gap-2 px-4 h-10 rounded-xl text-[13px] font-bold text-white bg-primary hover:bg-primary/90 transition-all active:scale-95 shrink-0">
-                  <Plus className="w-4 h-4" /> Add Lead
-                </button>
-              )}
             </div>
           </div>
         )}
