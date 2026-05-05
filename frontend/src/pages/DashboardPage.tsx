@@ -99,6 +99,38 @@ function StatCard({ label, value, sub, icon: Icon, accent = false, warn = false,
 
 const PIE_COLORS = ['#ea580c', '#f97316', '#c2410c', '#fed7aa', '#7c3aed', '#0ea5e9'];
 
+// ── Range Picker ──────────────────────────────────────────────────────────────
+function RangePicker({ range, setRange }: { range: string; setRange: (r: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative shrink-0">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 px-4 py-2 rounded-xl border border-black/10 bg-white text-[13px] font-semibold text-[#1c1410] hover:border-primary/40 transition-colors shadow-sm"
+      >
+        {RANGE_OPTIONS.find((r) => r.value === range)?.label ?? 'Last 30 Days'}
+        <ChevronDown className={`w-4 h-4 text-[#9a8a7a] transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 bg-white rounded-xl border border-black/10 shadow-xl z-50 py-1 min-w-[160px]">
+            {RANGE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => { setRange(opt.value); setOpen(false); }}
+                className={`w-full text-left px-4 py-2.5 text-[13px] hover:bg-[#faf8f6] transition-colors ${range === opt.value ? 'font-bold text-primary' : 'text-[#1c1410]'}`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Pipeline Funnel Card (pipeline-specific) ──────────────────────────────────
 function FunnelCard({ funnels, selectedId, setSelectedId }: {
   funnels: Array<{ id: string; name: string; stages: Array<{ stage: string; count: number; is_won: boolean }> }>;
@@ -152,11 +184,10 @@ function FunnelCard({ funnels, selectedId, setSelectedId }: {
 }
 
 // ── Management Dashboard ──────────────────────────────────────────────────────
-function ManagementDashboard({ analytics, lineData, range, setRange }: {
-  analytics: Analytics; lineData: any[]; range: string; setRange: (r: string) => void;
+function ManagementDashboard({ analytics, lineData, range }: {
+  analytics: Analytics; lineData: any[]; range: string;
 }) {
   const navigate = useNavigate();
-  const [rangeOpen, setRangeOpen] = useState(false);
   const [selectedFunnelId, setSelectedFunnelId] = useState<string>('');
 
   const growth = analytics.growth_pct;
@@ -168,35 +199,6 @@ function ManagementDashboard({ analytics, lineData, range, setRange }: {
 
   return (
     <div className="space-y-6">
-      {/* Range filter */}
-      <div className="flex items-center justify-end">
-        <div className="relative">
-          <button
-            onClick={() => setRangeOpen((o) => !o)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-black/10 bg-white text-[13px] font-semibold text-[#1c1410] hover:border-primary/40 transition-colors shadow-sm"
-          >
-            {RANGE_OPTIONS.find((r) => r.value === range)?.label ?? 'Last 30 Days'}
-            <ChevronDown className={`w-4 h-4 text-[#9a8a7a] transition-transform ${rangeOpen ? 'rotate-180' : ''}`} />
-          </button>
-          {rangeOpen && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setRangeOpen(false)} />
-              <div className="absolute right-0 top-full mt-1 bg-white rounded-xl border border-black/10 shadow-xl z-50 py-1 min-w-[160px]">
-                {RANGE_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    onClick={() => { setRange(opt.value); setRangeOpen(false); }}
-                    className={`w-full text-left px-4 py-2.5 text-[13px] hover:bg-[#faf8f6] transition-colors ${range === opt.value ? 'font-bold text-primary' : 'text-[#1c1410]'}`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
       {/* KPI row — 5 cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
@@ -538,14 +540,17 @@ export default function DashboardPage() {
   const roleLabel = isPrivileged ? 'Management' : isManager ? 'Sales Manager' : 'My Dashboard';
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
-      <div>
-        <p className="section-label mb-1">{roleLabel}</p>
-        <h2 className="font-headline text-[29px] font-extrabold tracking-tight text-[#1c1410]">Dashboard</h2>
-        <p className="text-[#7a6b5c] mt-1 text-[13px]">
-          {isPrivileged ? 'Business health at a glance.' : isManager ? 'Team activity and pipeline health.' : "Here's what needs your attention today."}
-        </p>
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <p className="section-label mb-1">{roleLabel}</p>
+          <h2 className="font-headline text-[29px] font-extrabold tracking-tight text-[#1c1410]">Dashboard</h2>
+          <p className="text-[#7a6b5c] mt-1 text-[13px]">
+            {isPrivileged ? 'Business health at a glance.' : isManager ? 'Team activity and pipeline health.' : "Here's what needs your attention today."}
+          </p>
+        </div>
+        {isPrivileged && <RangePicker range={range} setRange={setRange} />}
       </div>
 
       {loading && (
@@ -558,7 +563,7 @@ export default function DashboardPage() {
 
       {!loading && analytics && (
         <>
-          {isPrivileged && <ManagementDashboard analytics={analytics} lineData={lineData} range={range} setRange={setRange} />}
+          {isPrivileged && <ManagementDashboard analytics={analytics} lineData={lineData} range={range} />}
           {!isPrivileged && isManager && <ManagerDashboard analytics={analytics} lineData={lineData} />}
           {!isPrivileged && !isManager && <StaffDashboard analytics={analytics} />}
         </>
