@@ -1541,7 +1541,7 @@ export async function executeNodes(
         await query(
           `INSERT INTO lead_activities (lead_id, tenant_id, type, title, detail, created_by)
            VALUES ($1,$2,$3,$4,$5,$6)`,
-          [lead.id, tenantId, actType, actTitle, actDetail, safeUserId]
+          [lead.id, tenantId, actType, actTitle, actDetail, null]
         ).catch(() => null);
       }
     }
