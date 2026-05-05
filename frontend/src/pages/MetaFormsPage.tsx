@@ -719,7 +719,7 @@ function PageProfilePic({
 
 export default function MetaFormsPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [status, setStatus] = useState<MetaStatus | null>(null);
   const [forms, setForms] = useState<MetaFormRow[]>([]);
