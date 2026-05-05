@@ -727,6 +727,9 @@ export default function MetaFormsPage() {
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [fetchingLeads, setFetchingLeads] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFormId, setExportFormId] = useState<string>('all');
+  const [exporting, setExporting] = useState(false);
   const [showManual, setShowManual] = useState(false);
   const [manualToken, setManualToken] = useState('');
   const [savingToken, setSavingToken] = useState(false);
@@ -1036,6 +1039,25 @@ export default function MetaFormsPage() {
     finally { setFetchingLeads(false); }
   };
 
+  const handleExport = async (pageForms: MetaFormRow[], formId: string) => {
+    setExporting(true);
+    try {
+      const formIds = formId === 'all' ? pageForms.map((f) => f.id) : [formId];
+      const result = await api.post<{ rows: Record<string, string>[] }>(
+        '/api/integrations/meta/export-leads', { form_ids: formIds }
+      );
+      if (!result.rows.length) { toast.error('No leads found for the selected form(s)'); return; }
+      const ws = XLSX.utils.json_to_sheet(result.rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Meta Leads');
+      const label = formId === 'all' ? 'all_forms' : (pageForms.find((f) => f.id === formId)?.form_name ?? 'leads');
+      XLSX.writeFile(wb, `meta_leads_${label.replace(/\s+/g, '_')}_${Date.now()}.xlsx`);
+      setExportOpen(false);
+      toast.success(`Downloaded ${result.rows.length} lead${result.rows.length !== 1 ? 's' : ''}`);
+    } catch (err: any) { toast.error(err?.message ?? 'Export failed'); }
+    finally { setExporting(false); }
+  };
+
   const toggleForm = async (form: MetaFormRow) => {
     if (!form.is_active) {
       const mappedCount = (form.field_mapping as any[] | null)?.length ?? 0;
@@ -1251,13 +1273,11 @@ export default function MetaFormsPage() {
           <div className="flex gap-2 shrink-0">
             <Button
               size="sm"
-              onClick={handleFetchAllLeads}
-              disabled={fetchingLeads || syncing}
+              onClick={() => { setExportFormId('all'); setExportOpen(true); }}
+              disabled={syncing}
               className="bg-primary hover:bg-primary/90 text-white"
             >
-              {fetchingLeads
-                ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" />Importing…</>
-                : <><Download className="w-3.5 h-3.5" />Fetch All Leads</>}
+              <Download className="w-3.5 h-3.5" />Fetch All Leads
             </Button>
             <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing || fetchingLeads}>
               <RefreshCw className={cn('w-3.5 h-3.5', syncing && 'animate-spin')} />
@@ -1547,6 +1567,54 @@ export default function MetaFormsPage() {
             api.get<MetaFormRow[]>('/api/integrations/meta/connected-forms').then(setForms).catch(() => {});
             setMapForm(null);
           }} />
+        )}
+
+        {/* Export Leads modal */}
+        {exportOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }}>
+            <div className="bg-white rounded-2xl w-full max-w-md" style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
+              <div className="flex items-center justify-between px-6 py-4 border-b border-black/5">
+                <div>
+                  <h3 className="font-headline font-bold text-[#1c1410] text-[15px]">Export Meta Leads</h3>
+                  <p className="text-[11px] text-[#7a6b5c] mt-0.5">Download raw form submissions as Excel</p>
+                </div>
+                <button onClick={() => setExportOpen(false)} className="p-1.5 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="px-6 py-5 space-y-4">
+                <div>
+                  <label className="text-[12px] font-semibold text-[#1c1410] mb-2 block">Select Form</label>
+                  <select
+                    value={exportFormId}
+                    onChange={(e) => setExportFormId(e.target.value)}
+                    className="w-full border border-black/10 rounded-xl px-3 py-2.5 text-[13px] text-[#1c1410] outline-none focus:border-primary/40 bg-white cursor-pointer"
+                  >
+                    <option value="all">All Forms ({pageForms.length})</option>
+                    {pageForms.map((f) => (
+                      <option key={f.id} value={f.id}>{f.form_name} ({f.leads_count ?? 0} leads)</option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-[11px] text-[#7a6b5c]">
+                  Exports all raw fields captured in the Meta form exactly as submitted by leads.
+                </p>
+              </div>
+              <div className="px-6 py-4 border-t border-black/5 flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setExportOpen(false)}>Cancel</Button>
+                <Button
+                  size="sm"
+                  onClick={() => handleExport(pageForms, exportFormId)}
+                  disabled={exporting}
+                  className="bg-primary hover:bg-primary/90 text-white"
+                >
+                  {exporting
+                    ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" />Exporting…</>
+                    : <><Download className="w-3.5 h-3.5" />Download Excel</>}
+                </Button>
+              </div>
+            </div>
+          </div>
         )}
 
       </div>

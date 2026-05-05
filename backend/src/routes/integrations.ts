@@ -1167,6 +1167,60 @@ router.post('/meta/fetch-all-leads', checkPermission('meta_forms:read'), async (
   }
 });
 
+// POST /api/integrations/meta/export-leads — fetch raw Meta leads and return as JSON for Excel download
+router.post('/meta/export-leads', checkPermission('meta_forms:read'), async (req: AuthRequest, res: Response) => {
+  const tenantId = req.user!.tenantId;
+  const { form_ids } = req.body as { form_ids?: string[] };
+
+  try {
+    const miRes = await query('SELECT access_token FROM meta_integrations WHERE tenant_id=$1', [tenantId]);
+    if (!miRes.rows[0]) { res.status(400).json({ error: 'Meta not connected' }); return; }
+    let token: string;
+    try { token = decrypt(miRes.rows[0].access_token); }
+    catch { res.status(500).json({ error: 'Failed to decrypt Meta token' }); return; }
+
+    let formsRes;
+    if (Array.isArray(form_ids) && form_ids.length > 0) {
+      formsRes = await query(
+        `SELECT id, form_id, form_name FROM meta_forms WHERE tenant_id=$1 AND id = ANY($2::uuid[])`,
+        [tenantId, form_ids]
+      );
+    } else {
+      formsRes = await query(
+        `SELECT id, form_id, form_name FROM meta_forms WHERE tenant_id=$1 ORDER BY created_at DESC`,
+        [tenantId]
+      );
+    }
+
+    const rows: Record<string, string>[] = [];
+    for (const mf of formsRes.rows) {
+      const leads = await graphGetAll(
+        `/${mf.form_id}/leads?fields=id,created_time,field_data`, token
+      ).catch(() => [] as any[]);
+
+      for (const lead of leads) {
+        const row: Record<string, string> = {
+          'Form Name': mf.form_name ?? '',
+          'Lead ID': String(lead.id ?? ''),
+          'Submitted At': String(lead.created_time ?? ''),
+        };
+        for (const fd of (lead.field_data ?? [])) {
+          const col = String(fd.name ?? '')
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, (c: string) => c.toUpperCase());
+          row[col] = (fd.values ?? []).join(', ');
+        }
+        rows.push(row);
+      }
+    }
+
+    res.json({ rows });
+  } catch (err: any) {
+    console.error('[export-leads]', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // POST /api/integrations/meta/forms/:formId/import?type=old|new
 router.post('/meta/forms/:formId/import', checkPermission('meta_forms:create'), async (req: AuthRequest, res: Response) => {
   const tenantId = req.user!.tenantId as string;
