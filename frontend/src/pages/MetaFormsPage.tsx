@@ -720,7 +720,7 @@ function PageProfilePic({
 
 export default function MetaFormsPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [status, setStatus] = useState<MetaStatus | null>(null);
   const [forms, setForms] = useState<MetaFormRow[]>([]);
@@ -732,8 +732,17 @@ export default function MetaFormsPage() {
   const [manualToken, setManualToken] = useState('');
   const [savingToken, setSavingToken] = useState(false);
 
-  // Detail view — which page is open
+  // Detail view — which page is open (persisted in URL so refresh stays on same page)
   const [detailPage, setDetailPage] = useState<{ id: string; name: string } | null>(null);
+
+  const openDetailPage = (page: { id: string; name: string }) => {
+    setDetailPage(page);
+    setSearchParams((p) => { p.set('page', page.id); return p; }, { replace: true });
+  };
+  const closeDetailPage = () => {
+    setDetailPage(null);
+    setSearchParams((p) => { p.delete('page'); return p; }, { replace: true });
+  };
 
 
   // Blocked pages — visible via Business Manager but no page token
@@ -793,6 +802,14 @@ export default function MetaFormsPage() {
       .then((f) => {
         const rows = f ?? [];
         setForms(rows);
+
+        // Restore detail page from URL on refresh
+        const pageIdFromUrl = searchParams.get('page');
+        if (pageIdFromUrl && !detailPage) {
+          const uniquePages = Array.from(new Map(rows.map((r) => [r.page_id, { id: r.page_id, name: r.page_name }])).values());
+          const match = uniquePages.find((p) => p.id === pageIdFromUrl);
+          if (match) setDetailPage(match);
+        }
 
         // If no leads yet, poll every 5s up to 6 times while background fetch runs
         const totalLeads = rows.reduce((sum, r) => sum + (r.leads_count ?? 0), 0);
@@ -869,7 +886,7 @@ export default function MetaFormsPage() {
       await api.delete('/api/integrations/meta/disconnect');
       setStatus({ connected: false });
       setForms([]);
-      setDetailPage(null);
+      closeDetailPage();
       setShowDisconnectConfirm(false);
       toast.success('Meta disconnected');
     } catch { toast.error('Failed to disconnect'); }
@@ -883,7 +900,7 @@ export default function MetaFormsPage() {
       if (res.fullyDisconnected) {
         setStatus({ connected: false });
         setForms([]);
-        setDetailPage(null);
+        closeDetailPage();
         toast.success('Meta disconnected — no pages remaining');
       } else {
         setStatus((prev) => ({
@@ -891,7 +908,7 @@ export default function MetaFormsPage() {
           connectedPages: (prev?.connectedPages ?? []).filter((p) => p.id !== disconnectPageTarget.id),
         }));
         setForms((prev) => prev.filter((f) => f.page_id !== disconnectPageTarget.id));
-        if (detailPage?.id === disconnectPageTarget.id) setDetailPage(null);
+        if (detailPage?.id === disconnectPageTarget.id) closeDetailPage();
         toast.success(`"${disconnectPageTarget.name}" disconnected`);
       }
       setDisconnectPageTarget(null);
@@ -1214,7 +1231,7 @@ export default function MetaFormsPage() {
 
         {/* Back button */}
         <button
-          onClick={() => { setDetailPage(null); setOpenForm(null); }}
+          onClick={() => { closeDetailPage(); setOpenForm(null); }}
           className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[#7a6b5c] hover:text-[#1c1410] transition-colors"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
@@ -1268,7 +1285,7 @@ export default function MetaFormsPage() {
               <p className="text-[11px] text-red-700 mt-0.5">Reconnect your Facebook account to resume automatic lead capture.</p>
             </div>
             <button
-              onClick={() => setDetailPage(null)}
+              onClick={() => closeDetailPage()}
               className="text-[11px] font-semibold text-red-700 underline shrink-0"
             >Reconnect</button>
           </div>
@@ -1281,7 +1298,7 @@ export default function MetaFormsPage() {
               <p className="text-[11px] text-amber-700 mt-0.5">Reconnect now to avoid disruption to lead capture.</p>
             </div>
             <button
-              onClick={() => setDetailPage(null)}
+              onClick={() => closeDetailPage()}
               className="text-[11px] font-semibold text-amber-700 underline shrink-0"
             >Reconnect</button>
           </div>
@@ -1601,7 +1618,7 @@ export default function MetaFormsPage() {
           return (
             <div
               key={page.id}
-              onClick={() => setDetailPage(page)}
+              onClick={() => openDetailPage(page)}
               className="bg-white rounded-2xl border border-black/5 card-shadow p-5 flex flex-col gap-4 text-left cursor-pointer hover:border-blue-200 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 w-full relative"
             >
               {/* Top row: profile pic + Connected badge + disconnect icon */}
