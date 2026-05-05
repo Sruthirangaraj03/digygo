@@ -384,9 +384,9 @@ export const useCrmStore = create<CrmState>((set) => ({
         } else {
           // Existing stage — patch if changed
           const old = oldStages.find((o) => o.id === s.id);
-          if (old && (old.name !== s.name || old.color !== s.color)) {
+          if (old && (old.name !== s.name || old.color !== s.color || old.is_won !== s.is_won)) {
             await api.patch(`/api/pipelines/${id}/stages/${s.id}`, {
-              name: s.name, stage_order: i, color: s.color ?? null,
+              name: s.name, stage_order: i, color: s.color ?? null, is_won: s.is_won ?? false,
             }).catch(() => null);
           }
           finalStages.push(s);

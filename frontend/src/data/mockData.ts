@@ -106,6 +106,7 @@ export interface PipelineStage {
   id: string;
   name: string;
   color: string;
+  is_won?: boolean;
 }
 
 export interface Pipeline {

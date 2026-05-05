@@ -18,10 +18,11 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 // ─── Sortable Stage Row (inside modal) ────────────────────────────────────────
-function SortableStageRow({ stage, idx, onUpdate, onRemove }: {
+function SortableStageRow({ stage, idx, onUpdate, onRemove, onToggleWon }: {
   stage: PipelineStage; idx: number;
   onUpdate: (id: string, field: keyof PipelineStage, value: string) => void;
   onRemove: (id: string) => void;
+  onToggleWon: (id: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: stage.id });
   return (
@@ -44,6 +45,18 @@ function SortableStageRow({ stage, idx, onUpdate, onRemove }: {
           value={stage.name}
           onChange={(e) => onUpdate(stage.id, 'name', e.target.value)}
         />
+        <button
+          onClick={() => onToggleWon(stage.id)}
+          title={stage.is_won ? 'Won stage (click to unset)' : 'Mark as Won stage'}
+          className={cn(
+            'text-[10px] font-bold px-2 py-0.5 rounded-full border transition-colors shrink-0',
+            stage.is_won
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+              : 'bg-gray-50 border-gray-200 text-[#b09e8d] hover:border-emerald-300 hover:text-emerald-600'
+          )}
+        >
+          Won
+        </button>
       </div>
       <button
         onClick={() => onRemove(stage.id)}
@@ -82,6 +95,11 @@ function PipelineModal({ pipeline, onClose }: { pipeline?: Pipeline; onClose: ()
 
   const updateStage = (id: string, field: keyof PipelineStage, value: string) =>
     setStages((prev) => prev.map((s) => (s.id === id ? { ...s, [field]: value } : s)));
+
+  const toggleWon = (id: string) =>
+    setStages((prev) => prev.map((s) =>
+      s.id === id ? { ...s, is_won: !s.is_won } : { ...s, is_won: false }
+    ));
 
   const removeStage = (id: string) =>
     setStages((prev) => prev.filter((s) => s.id !== id));
@@ -133,7 +151,7 @@ function PipelineModal({ pipeline, onClose }: { pipeline?: Pipeline; onClose: ()
               <SortableContext items={stages.map((s) => s.id)} strategy={verticalListSortingStrategy}>
                 <div className="space-y-2">
                   {stages.map((stage, idx) => (
-                    <SortableStageRow key={stage.id} stage={stage} idx={idx} onUpdate={updateStage} onRemove={removeStage} />
+                    <SortableStageRow key={stage.id} stage={stage} idx={idx} onUpdate={updateStage} onRemove={removeStage} onToggleWon={toggleWon} />
                   ))}
                 </div>
               </SortableContext>

@@ -114,4 +114,103 @@ router.get('/stats', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// GET /api/dashboard/analytics — role-based analytics for the new dashboard
+router.get('/analytics', async (req: AuthRequest, res: Response) => {
+  const { tenantId, userId, role } = req.user!;
+  if (!tenantId) { res.json({}); return; }
+
+  const isPrivileged = role === 'super_admin' || role === 'owner';
+  let onlyAssigned = false;
+  let isManager = false;
+
+  if (!isPrivileged) {
+    const [oa, sm] = await Promise.all([
+      hasPermission(userId, 'leads:only_assigned', tenantId),
+      hasPermission(userId, 'staff:manage', tenantId),
+    ]);
+    onlyAssigned = oa;
+    isManager    = sm;
+  }
+
+  try {
+    const now        = new Date();
+    const thisMonth  = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonth  = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const leadFilter = onlyAssigned
+      ? `AND l.assigned_to = '${userId}'`
+      : '';
+
+    const [
+      totalLeads,
+      leadsThisMonth,
+      leadsLastMonth,
+      convertedLeads,
+      staleLeads,
+      overdueFollowups,
+      sourceBreakdown,
+      pipelineFunnel,
+      staffLeaderboard,
+      todayFollowups,
+    ] = await Promise.all([
+      // Total leads
+      query(`SELECT COUNT(*)::int AS n FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE ${leadFilter}`, [tenantId]),
+
+      // Leads this month
+      query(`SELECT COUNT(*)::int AS n FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND l.created_at >= $2 ${leadFilter}`, [tenantId, thisMonth]),
+
+      // Leads last month
+      query(`SELECT COUNT(*)::int AS n FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND l.created_at >= $2 AND l.created_at <= $3 ${leadFilter}`, [tenantId, lastMonth, lastMonthEnd]),
+
+      // Converted leads (in a won stage)
+      query(`SELECT COUNT(*)::int AS n FROM leads l JOIN pipeline_stages ps ON ps.id = l.stage_id WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND ps.is_won=TRUE ${leadFilter}`, [tenantId]),
+
+      // Stale leads — no activity in 7+ days
+      query(`SELECT COUNT(*)::int AS n FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND l.updated_at < $2 ${leadFilter}`, [tenantId, sevenDaysAgo]),
+
+      // Overdue follow-ups
+      query(`SELECT COUNT(*)::int AS n FROM lead_followups f JOIN leads l ON l.id = f.lead_id WHERE f.tenant_id=$1 AND f.completed=FALSE AND f.due_at < NOW() ${onlyAssigned ? `AND l.assigned_to='${userId}'` : ''}`, [tenantId]),
+
+      // Source breakdown
+      query(`SELECT l.source, COUNT(*)::int AS count FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE ${leadFilter} GROUP BY l.source ORDER BY count DESC`, [tenantId]),
+
+      // Pipeline funnel
+      query(`SELECT ps.name AS stage, ps.is_won, COUNT(l.id)::int AS count FROM pipeline_stages ps LEFT JOIN leads l ON l.stage_id = ps.id AND l.is_deleted=FALSE AND l.tenant_id=$1 WHERE ps.tenant_id=$1 GROUP BY ps.id, ps.name, ps.is_won, ps.stage_order ORDER BY ps.stage_order`, [tenantId]),
+
+      // Staff leaderboard — leads in won stages per staff member
+      query(`SELECT u.name, u.id, COUNT(l.id)::int AS converted, COUNT(CASE WHEN l.created_at >= $2 THEN 1 END)::int AS new_this_month FROM users u LEFT JOIN leads l ON l.assigned_to = u.id AND l.is_deleted=FALSE AND l.tenant_id=$1 LEFT JOIN pipeline_stages ps ON ps.id = l.stage_id AND ps.is_won=TRUE WHERE u.tenant_id=$1 AND u.is_active=TRUE AND (u.is_owner IS NULL OR u.is_owner=FALSE) GROUP BY u.id, u.name ORDER BY converted DESC`, [tenantId, thisMonth]),
+
+      // Today's follow-ups for this user
+      query(`SELECT f.id, f.note, f.due_at, f.type, l.name AS lead_name, l.id AS lead_id FROM lead_followups f JOIN leads l ON l.id = f.lead_id WHERE f.tenant_id=$1 AND f.completed=FALSE AND DATE(f.due_at) = CURRENT_DATE ${onlyAssigned ? `AND l.assigned_to='${userId}'` : ''} ORDER BY f.due_at ASC LIMIT 10`, [tenantId]),
+    ]);
+
+    const total     = totalLeads.rows[0].n;
+    const converted = convertedLeads.rows[0].n;
+    const thisM     = leadsThisMonth.rows[0].n;
+    const lastM     = leadsLastMonth.rows[0].n;
+    const growth    = lastM === 0 ? (thisM > 0 ? 100 : 0) : Math.round(((thisM - lastM) / lastM) * 100);
+
+    res.json({
+      total_leads:       total,
+      leads_this_month:  thisM,
+      leads_last_month:  lastM,
+      growth_pct:        growth,
+      converted_leads:   converted,
+      conversion_rate:   total === 0 ? 0 : Math.round((converted / total) * 100),
+      stale_leads:       staleLeads.rows[0].n,
+      overdue_followups: overdueFollowups.rows[0].n,
+      source_breakdown:  sourceBreakdown.rows,
+      pipeline_funnel:   pipelineFunnel.rows,
+      staff_leaderboard: staffLeaderboard.rows,
+      today_followups:   todayFollowups.rows,
+      role:              isPrivileged ? role : (isManager ? 'manager' : 'staff'),
+    });
+  } catch (err) {
+    console.error('[dashboard:analytics]', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router;

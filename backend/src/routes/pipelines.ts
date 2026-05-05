@@ -164,15 +164,23 @@ router.post('/:id/stages', checkPermission('pipeline:manage'), async (req: AuthR
 
 // PATCH /api/pipelines/:id/stages/:stageId
 router.patch('/:id/stages/:stageId', checkPermission('pipeline:manage'), async (req: AuthRequest, res: Response) => {
-  const { name, stage_order, color } = req.body;
+  const { name, stage_order, color, is_won } = req.body;
   const fields: string[] = [];
   const params: any[] = [];
   if (name !== undefined)        { params.push(name);        fields.push(`name=$${params.length}`); }
   if (stage_order !== undefined) { params.push(stage_order); fields.push(`stage_order=$${params.length}`); }
   if (color !== undefined)       { params.push(color);       fields.push(`color=$${params.length}`); }
+  if (is_won !== undefined)      { params.push(is_won);      fields.push(`is_won=$${params.length}`); }
   if (!fields.length) { res.status(400).json({ error: 'Nothing to update' }); return; }
   params.push(req.params.stageId, req.params.id, req.user!.tenantId);
   try {
+    // Only one stage per pipeline can be the won stage — clear others first
+    if (is_won === true) {
+      await query(
+        'UPDATE pipeline_stages SET is_won=FALSE WHERE pipeline_id=$1 AND tenant_id=$2 AND id<>$3',
+        [req.params.id, req.user!.tenantId, req.params.stageId]
+      );
+    }
     const result = await query(
       `UPDATE pipeline_stages SET ${fields.join(',')} WHERE id=$${params.length-2} AND pipeline_id=$${params.length-1} AND tenant_id=$${params.length} RETURNING *`,
       params
