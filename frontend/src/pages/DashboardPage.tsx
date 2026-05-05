@@ -97,7 +97,7 @@ function StatCard({ label, value, sub, icon: Icon, accent = false, warn = false,
   );
 }
 
-const PIE_COLORS = ['#ea580c', '#f97316', '#c2410c', '#fed7aa', '#7c3aed', '#0ea5e9'];
+const PIE_COLORS = ['#ea580c', '#3b82f6', '#10b981', '#7c3aed', '#f59e0b', '#ec4899', '#0ea5e9', '#14b8a6'];
 
 // ── Range Picker ──────────────────────────────────────────────────────────────
 function RangePicker({ range, setRange }: { range: string; setRange: (r: string) => void }) {
