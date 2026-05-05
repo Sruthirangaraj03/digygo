@@ -3404,6 +3404,13 @@ export default function WorkflowEditorPage() {
     api.get<any[]>('/api/field-routing/sets').then((rows) => {
       setEditorRoutingSets((rows ?? []).map((r) => ({ id: r.id, name: r.name, match_field: r.match_field, match_type: r.match_type })));
     }).catch(() => {});
+    api.get<any[]>('/api/fields/custom').then((rows) => {
+      useCrmStore.getState().reorderCustomFields((rows ?? []).map((cf: any) => ({
+        id: cf.id, name: cf.name, slug: cf.slug, type: cf.type,
+        required: cf.required ?? false, visible: cf.visible ?? true,
+        options: cf.options ?? undefined, orderIndex: cf.order_index ?? 0,
+      })));
+    }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(workflow.nodes[0]?.id ?? null);
