@@ -1413,14 +1413,6 @@ export default function MetaFormsPage() {
                     </div>
                   )}
 
-                  {/* Delete — always available */}
-                  <button
-                    onClick={() => deleteForm(form)}
-                    className="p-1.5 rounded-lg hover:bg-red-50 text-[#c4b09e] hover:text-red-500 transition-colors shrink-0"
-                    title="Remove form"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
 
                 </div>
               );
