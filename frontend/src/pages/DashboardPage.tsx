@@ -37,6 +37,16 @@ interface Analytics {
   role:              string;
 }
 
+function sourceLabel(raw: string | null | undefined): string {
+  if (!raw) return 'Unknown';
+  if (raw === 'meta_form')                       return 'Meta Forms';
+  if (raw === 'whatsapp' || raw === 'WhatsApp')  return 'WhatsApp';
+  if (raw === 'calendar_booking')                return 'Calendar Booking';
+  if (raw.startsWith('calendar:'))               return raw.slice(9);
+  if (raw.startsWith('form:'))                   return raw.slice(5);
+  return raw;
+}
+
 const RANGE_OPTIONS = [
   { value: '30d',        label: 'Last 30 Days' },
   { value: '90d',        label: 'Last 90 Days' },
@@ -100,7 +110,7 @@ function ManagementDashboard({ analytics, lineData, range, setRange }: {
   const growthLabel = growth > 0 ? `+${growth}% vs last month` : growth < 0 ? `${growth}% vs last month` : 'Same as last month';
 
   const pieData = analytics.source_breakdown.map((s, i) => ({
-    name: s.source || 'Unknown', value: s.count, color: PIE_COLORS[i % PIE_COLORS.length],
+    name: sourceLabel(s.source), value: s.count, color: PIE_COLORS[i % PIE_COLORS.length],
   }));
 
   return (
@@ -148,7 +158,10 @@ function ManagementDashboard({ analytics, lineData, range, setRange }: {
         />
         <StatCard
           label="Converted" value={analytics.converted_leads}
-          sub={`${analytics.conversion_rate}% conversion rate`} icon={Target}
+          sub={analytics.pipeline_funnel.some((s) => s.is_won)
+            ? `${analytics.conversion_rate}% conversion rate`
+            : 'Mark a stage as Won to track'}
+          icon={Target}
           onClick={() => navigate('/leads?filter=converted')}
         />
         <StatCard
@@ -159,7 +172,7 @@ function ManagementDashboard({ analytics, lineData, range, setRange }: {
         />
         <StatCard
           label="Best Source"
-          value={analytics.best_source?.source || 'N/A'}
+          value={analytics.best_source ? sourceLabel(analytics.best_source.source) : 'N/A'}
           sub={analytics.best_source ? `${analytics.best_source.count} leads` : 'No data yet'}
           icon={Star}
         />
@@ -237,14 +250,19 @@ function ManagementDashboard({ analytics, lineData, range, setRange }: {
             )}
         </div>
         <div className="bg-white rounded-2xl border border-black/5 card-shadow p-6">
-          <h3 className="font-headline font-bold text-[#1c1410] mb-5">Pipeline Funnel</h3>
+          <h3 className="font-headline font-bold text-[#1c1410] mb-1">Pipeline Funnel</h3>
+          {!analytics.pipeline_funnel.some((s) => s.is_won) && analytics.pipeline_funnel.length > 0 && (
+            <p className="text-[11px] text-amber-600 bg-amber-50 rounded-lg px-3 py-1.5 mb-3 mt-1">
+              No "Won" stage set — go to <a href="/lead-management/overview" className="font-semibold underline">Pipeline Settings</a> and mark one stage as Won to track conversions.
+            </p>
+          )}
           {analytics.pipeline_funnel.length === 0
-            ? <p className="text-[13px] text-[#b09e8d]">No pipeline data yet.</p>
+            ? <p className="text-[13px] text-[#b09e8d] mt-4">No pipeline data yet.</p>
             : (
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={analytics.pipeline_funnel} layout="vertical">
                   <XAxis type="number" tick={{ fontSize: 11, fill: '#8a7c6e' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <YAxis type="category" dataKey="stage" tick={{ fontSize: 11, fill: '#8a7c6e' }} axisLine={false} tickLine={false} width={80} />
+                  <YAxis type="category" dataKey="stage" tick={{ fontSize: 11, fill: '#8a7c6e' }} axisLine={false} tickLine={false} width={85} />
                   <Tooltip contentStyle={{ borderRadius: 12, border: 'none', background: '#1c1410', color: '#fff', fontSize: 12 }} />
                   <Bar dataKey="count" radius={[0, 6, 6, 0]}>
                     {analytics.pipeline_funnel.map((e, i) => (

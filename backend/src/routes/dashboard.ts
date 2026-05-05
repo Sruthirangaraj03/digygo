@@ -200,8 +200,8 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
       // Source breakdown — filtered by range
       query(`SELECT l.source, COUNT(*)::int AS count FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND l.created_at >= $2 ${leadFilter} GROUP BY l.source ORDER BY count DESC`, [tenantId, rangeStart]),
 
-      // Pipeline funnel — current state (not range-filtered)
-      query(`SELECT ps.name AS stage, ps.is_won, COUNT(l.id)::int AS count FROM pipeline_stages ps LEFT JOIN leads l ON l.stage_id = ps.id AND l.is_deleted=FALSE AND l.tenant_id=$1 WHERE ps.tenant_id=$1 GROUP BY ps.id, ps.name, ps.is_won, ps.stage_order ORDER BY ps.stage_order`, [tenantId]),
+      // Pipeline funnel — aggregate stages with the same name across all pipelines
+      query(`SELECT ps.name AS stage, BOOL_OR(ps.is_won) AS is_won, COUNT(l.id)::int AS count FROM pipeline_stages ps LEFT JOIN leads l ON l.stage_id = ps.id AND l.is_deleted=FALSE AND l.tenant_id=$1 WHERE ps.tenant_id=$1 GROUP BY ps.name ORDER BY MIN(ps.stage_order), ps.name`, [tenantId]),
 
       // Staff leaderboard — assigned_count (all time), converted (all time), new_in_range (range-filtered)
       query(`
