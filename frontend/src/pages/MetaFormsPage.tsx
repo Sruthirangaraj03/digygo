@@ -1277,7 +1277,7 @@ export default function MetaFormsPage() {
               disabled={syncing}
               className="bg-primary hover:bg-primary/90 text-white"
             >
-              <Download className="w-3.5 h-3.5" />Fetch All Leads
+              <Download className="w-3.5 h-3.5" />Download
             </Button>
             <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing || fetchingLeads}>
               <RefreshCw className={cn('w-3.5 h-3.5', syncing && 'animate-spin')} />
