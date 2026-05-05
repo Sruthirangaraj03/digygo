@@ -200,8 +200,18 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
       // Source breakdown — filtered by range
       query(`SELECT l.source, COUNT(*)::int AS count FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE AND l.created_at >= $2 ${leadFilter} GROUP BY l.source ORDER BY count DESC`, [tenantId, rangeStart]),
 
-      // Pipeline funnel — aggregate stages with the same name across all pipelines
-      query(`SELECT ps.name AS stage, BOOL_OR(ps.is_won) AS is_won, COUNT(l.id)::int AS count FROM pipeline_stages ps LEFT JOIN leads l ON l.stage_id = ps.id AND l.is_deleted=FALSE AND l.tenant_id=$1 WHERE ps.tenant_id=$1 GROUP BY ps.name ORDER BY MIN(ps.stage_order), ps.name`, [tenantId]),
+      // Per-pipeline funnel — each pipeline with its own stages
+      query(`
+        SELECT p.id AS pipeline_id, p.name AS pipeline_name,
+          ps.name AS stage, ps.is_won, ps.stage_order,
+          COUNT(l.id)::int AS count
+        FROM pipelines p
+        JOIN pipeline_stages ps ON ps.pipeline_id = p.id
+        LEFT JOIN leads l ON l.stage_id = ps.id AND l.is_deleted = FALSE AND l.tenant_id = $1
+        WHERE p.tenant_id = $1
+        GROUP BY p.id, p.name, ps.id, ps.name, ps.is_won, ps.stage_order
+        ORDER BY p.name, ps.stage_order
+      `, [tenantId]),
 
       // Staff leaderboard — assigned_count (all time), converted (all time), new_in_range (range-filtered)
       query(`
@@ -237,6 +247,16 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
     const bestSourceRow = sourceBreakdown.rows.find((s: any) => s.source) ?? null;
     const bestSource = bestSourceRow ? { source: bestSourceRow.source as string, count: bestSourceRow.count as number } : null;
 
+    // Build per-pipeline funnel structure
+    const funnelMap: Record<string, { id: string; name: string; stages: any[] }> = {};
+    for (const row of pipelineFunnel.rows) {
+      if (!funnelMap[row.pipeline_id]) {
+        funnelMap[row.pipeline_id] = { id: row.pipeline_id, name: row.pipeline_name, stages: [] };
+      }
+      funnelMap[row.pipeline_id].stages.push({ stage: row.stage, is_won: row.is_won, count: row.count });
+    }
+    const pipeline_funnels = Object.values(funnelMap);
+
     res.json({
       total_leads:       total,
       leads_this_month:  thisM,
@@ -251,7 +271,7 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
       overdue_followups: overdueFollowups.rows[0].n,
       best_source:       bestSource,
       source_breakdown:  sourceBreakdown.rows,
-      pipeline_funnel:   pipelineFunnel.rows,
+      pipeline_funnels,
       staff_leaderboard: leaderboardWithRate,
       today_followups:   todayFollowups.rows,
       role:              isPrivileged ? role : (isManager ? 'manager' : 'staff'),

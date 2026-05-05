@@ -31,7 +31,7 @@ interface Analytics {
   overdue_followups: number;
   best_source:       { source: string; count: number } | null;
   source_breakdown:  Array<{ source: string; count: number }>;
-  pipeline_funnel:   Array<{ stage: string; count: number; is_won: boolean }>;
+  pipeline_funnels:  Array<{ id: string; name: string; stages: Array<{ stage: string; count: number; is_won: boolean }> }>;
   staff_leaderboard: Array<{ id: string; name: string; assigned_count: number; converted: number; new_in_range: number; conversion_rate_pct: number }>;
   today_followups:   Array<{ id: string; lead_name: string; due_at: string; title: string; description: string; lead_id: string }>;
   role:              string;
@@ -99,12 +99,65 @@ function StatCard({ label, value, sub, icon: Icon, accent = false, warn = false,
 
 const PIE_COLORS = ['#ea580c', '#f97316', '#c2410c', '#fed7aa', '#7c3aed', '#0ea5e9'];
 
+// ── Pipeline Funnel Card (pipeline-specific) ──────────────────────────────────
+function FunnelCard({ funnels, selectedId, setSelectedId }: {
+  funnels: Array<{ id: string; name: string; stages: Array<{ stage: string; count: number; is_won: boolean }> }>;
+  selectedId: string;
+  setSelectedId: (id: string) => void;
+}) {
+  const activeFunnel = funnels.find((f) => f.id === selectedId) ?? funnels[0] ?? null;
+  const hasWon = activeFunnel?.stages.some((s) => s.is_won) ?? false;
+
+  return (
+    <div className="bg-white rounded-2xl border border-black/5 card-shadow p-6">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-headline font-bold text-[#1c1410]">Pipeline Funnel</h3>
+        {funnels.length > 1 && (
+          <div className="flex items-center gap-1 bg-[#faf8f6] rounded-xl p-1">
+            {funnels.map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setSelectedId(f.id)}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${(activeFunnel?.id === f.id) ? 'bg-white shadow-sm text-[#1c1410]' : 'text-[#8a7c6e] hover:text-[#1c1410]'}`}
+              >
+                {f.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {!hasWon && activeFunnel && (
+        <p className="text-[11px] text-amber-600 bg-amber-50 rounded-lg px-3 py-1.5 mb-3">
+          No "Won" stage set — <a href="/lead-management/overview" className="font-semibold underline">Pipeline Settings</a> → mark one stage as Won to track conversions.
+        </p>
+      )}
+      {!activeFunnel
+        ? <p className="text-[13px] text-[#b09e8d] mt-4">No pipeline data yet.</p>
+        : (
+          <ResponsiveContainer width="100%" height={Math.max(120, activeFunnel.stages.length * 36)}>
+            <BarChart data={activeFunnel.stages} layout="vertical">
+              <XAxis type="number" tick={{ fontSize: 11, fill: '#8a7c6e' }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <YAxis type="category" dataKey="stage" tick={{ fontSize: 11, fill: '#8a7c6e' }} axisLine={false} tickLine={false} width={90} />
+              <Tooltip contentStyle={{ borderRadius: 12, border: 'none', background: '#1c1410', color: '#fff', fontSize: 12 }} />
+              <Bar dataKey="count" radius={[0, 6, 6, 0]}>
+                {activeFunnel.stages.map((e, i) => (
+                  <Cell key={i} fill={e.is_won ? '#10b981' : '#ea580c'} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+    </div>
+  );
+}
+
 // ── Management Dashboard ──────────────────────────────────────────────────────
 function ManagementDashboard({ analytics, lineData, range, setRange }: {
   analytics: Analytics; lineData: any[]; range: string; setRange: (r: string) => void;
 }) {
   const navigate = useNavigate();
   const [rangeOpen, setRangeOpen] = useState(false);
+  const [selectedFunnelId, setSelectedFunnelId] = useState<string>('');
 
   const growth = analytics.growth_pct;
   const growthLabel = growth > 0 ? `+${growth}% vs last month` : growth < 0 ? `${growth}% vs last month` : 'Same as last month';
@@ -249,31 +302,44 @@ function ManagementDashboard({ analytics, lineData, range, setRange }: {
               </>
             )}
         </div>
-        <div className="bg-white rounded-2xl border border-black/5 card-shadow p-6">
-          <h3 className="font-headline font-bold text-[#1c1410] mb-1">Pipeline Funnel</h3>
-          {!analytics.pipeline_funnel.some((s) => s.is_won) && analytics.pipeline_funnel.length > 0 && (
-            <p className="text-[11px] text-amber-600 bg-amber-50 rounded-lg px-3 py-1.5 mb-3 mt-1">
-              No "Won" stage set — go to <a href="/lead-management/overview" className="font-semibold underline">Pipeline Settings</a> and mark one stage as Won to track conversions.
-            </p>
-          )}
-          {analytics.pipeline_funnel.length === 0
-            ? <p className="text-[13px] text-[#b09e8d] mt-4">No pipeline data yet.</p>
-            : (
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={analytics.pipeline_funnel} layout="vertical">
-                  <XAxis type="number" tick={{ fontSize: 11, fill: '#8a7c6e' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <YAxis type="category" dataKey="stage" tick={{ fontSize: 11, fill: '#8a7c6e' }} axisLine={false} tickLine={false} width={85} />
-                  <Tooltip contentStyle={{ borderRadius: 12, border: 'none', background: '#1c1410', color: '#fff', fontSize: 12 }} />
-                  <Bar dataKey="count" radius={[0, 6, 6, 0]}>
-                    {analytics.pipeline_funnel.map((e, i) => (
-                      <Cell key={i} fill={e.is_won ? '#10b981' : '#ea580c'} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-        </div>
+        <FunnelCard funnels={analytics.pipeline_funnels} selectedId={selectedFunnelId} setSelectedId={setSelectedFunnelId} />
       </div>
+    </div>
+  );
+}
+
+// ── Manager pipeline health (cards view) ─────────────────────────────────────
+function ManagerPipelineHealth({ funnels }: { funnels: Analytics['pipeline_funnels'] }) {
+  const [selectedId, setSelectedId] = useState('');
+  const active = funnels.find((f) => f.id === selectedId) ?? funnels[0] ?? null;
+  return (
+    <div className="bg-white rounded-2xl border border-black/5 card-shadow p-6">
+      <div className="flex items-center justify-between mb-5">
+        <h3 className="font-headline font-bold text-[#1c1410]">Pipeline Stage Health</h3>
+        {funnels.length > 1 && (
+          <div className="flex items-center gap-1 bg-[#faf8f6] rounded-xl p-1">
+            {funnels.map((f) => (
+              <button key={f.id} onClick={() => setSelectedId(f.id)}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${active?.id === f.id ? 'bg-white shadow-sm text-[#1c1410]' : 'text-[#8a7c6e] hover:text-[#1c1410]'}`}>
+                {f.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {!active
+        ? <p className="text-[13px] text-[#b09e8d]">No pipeline data yet.</p>
+        : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {active.stages.map((s, i) => (
+              <div key={i} className={`rounded-xl px-4 py-3 border ${s.is_won ? 'border-emerald-200 bg-emerald-50' : 'border-black/5 bg-[#faf8f6]'}`}>
+                <p className="text-[11px] text-[#7a6b5c] mb-1 truncate">{s.stage}</p>
+                <p className={`font-headline text-[22px] font-bold ${s.is_won ? 'text-emerald-600' : 'text-[#1c1410]'}`}>{s.count}</p>
+                {s.is_won && <p className="text-[10px] text-emerald-500 font-semibold mt-0.5">Won ✓</p>}
+              </div>
+            ))}
+          </div>
+        )}
     </div>
   );
 }
@@ -332,23 +398,8 @@ function ManagerDashboard({ analytics, lineData }: { analytics: Analytics; lineD
         </div>
       </div>
 
-      {/* Pipeline funnel */}
-      <div className="bg-white rounded-2xl border border-black/5 card-shadow p-6">
-        <h3 className="font-headline font-bold text-[#1c1410] mb-5">Pipeline Stage Health</h3>
-        {analytics.pipeline_funnel.length === 0
-          ? <p className="text-[13px] text-[#b09e8d]">No pipeline data yet.</p>
-          : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {analytics.pipeline_funnel.map((s, i) => (
-                <div key={i} className={`rounded-xl px-4 py-3 border ${s.is_won ? 'border-emerald-200 bg-emerald-50' : 'border-black/5 bg-[#faf8f6]'}`}>
-                  <p className="text-[11px] text-[#7a6b5c] mb-1 truncate">{s.stage}</p>
-                  <p className={`font-headline text-[22px] font-bold ${s.is_won ? 'text-emerald-600' : 'text-[#1c1410]'}`}>{s.count}</p>
-                  {s.is_won && <p className="text-[10px] text-emerald-500 font-semibold mt-0.5">Won ✓</p>}
-                </div>
-              ))}
-            </div>
-          )}
-      </div>
+      {/* Pipeline stage health — show all pipelines as tabs */}
+      <ManagerPipelineHealth funnels={analytics.pipeline_funnels} />
     </div>
   );
 }
