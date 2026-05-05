@@ -175,6 +175,13 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
         rangeEnd   = new Date();
         rangeLabel = 'This Month';
         break;
+      case 'this_quarter': {
+        const quarter = Math.floor(now.getMonth() / 3);
+        rangeStart = new Date(now.getFullYear(), quarter * 3, 1);
+        rangeEnd   = new Date();
+        rangeLabel = 'This Quarter';
+        break;
+      }
       case '90d':
         rangeStart = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
         rangeEnd   = new Date();
@@ -210,6 +217,11 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
       pipelineFunnel,
       staffLeaderboard,
       todayFollowups,
+      leadsNotContacted,
+      sourceConversionData,
+      staffAccountabilityData,
+      staleLeadsList,
+      untouchedLeadsList,
     ] = await Promise.all([
       // Total leads — all time
       query(`SELECT COUNT(*)::int AS n FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE ${leadFilter}`, [tenantId]),
@@ -264,6 +276,79 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
 
       // Today's follow-ups for this user
       query(`SELECT f.id, f.title, f.description, f.due_at, l.name AS lead_name, l.id AS lead_id FROM lead_followups f JOIN leads l ON l.id = f.lead_id WHERE f.tenant_id=$1 AND f.completed=FALSE AND DATE(f.due_at) = CURRENT_DATE ${onlyAssigned ? `AND l.assigned_to='${userId}'` : ''} ORDER BY f.due_at ASC LIMIT 10`, [tenantId]),
+
+      // Leads not contacted in range (no followup exists at all)
+      query(`
+        SELECT COUNT(*)::int AS n
+        FROM leads l
+        WHERE l.tenant_id = $1 AND l.is_deleted = FALSE
+          AND l.created_at >= $2 AND l.created_at <= $3
+          ${leadFilter}
+          AND NOT EXISTS (SELECT 1 FROM lead_followups f WHERE f.lead_id = l.id)
+      `, [tenantId, rangeStart, rangeEnd]),
+
+      // Source with conversion rate (period-filtered)
+      query(`
+        SELECT COALESCE(l.source, 'Unknown') AS source,
+          COUNT(*)::int AS total,
+          COUNT(CASE WHEN ps.is_won = TRUE THEN 1 END)::int AS won
+        FROM leads l
+        LEFT JOIN pipeline_stages ps ON ps.id = l.stage_id
+        WHERE l.tenant_id = $1 AND l.is_deleted = FALSE
+          AND l.created_at >= $2 AND l.created_at <= $3
+          ${leadFilter}
+        GROUP BY l.source
+        ORDER BY total DESC
+      `, [tenantId, rangeStart, rangeEnd]),
+
+      // Staff accountability — assigned (all time), contacted (has any followup), won
+      query(`
+        SELECT u.id, u.name,
+          COUNT(DISTINCT l.id)::int AS assigned,
+          COUNT(DISTINCT lf_c.lead_id)::int AS contacted,
+          COUNT(DISTINCT CASE WHEN ps.is_won = TRUE THEN l.id END)::int AS won
+        FROM users u
+        LEFT JOIN leads l ON l.assigned_to = u.id AND l.is_deleted = FALSE AND l.tenant_id = $1
+        LEFT JOIN pipeline_stages ps ON ps.id = l.stage_id
+        LEFT JOIN (SELECT DISTINCT lead_id FROM lead_followups) lf_c ON lf_c.lead_id = l.id
+        WHERE u.tenant_id = $1 AND u.is_active = TRUE AND (u.is_owner IS NULL OR u.is_owner = FALSE)
+        GROUP BY u.id, u.name
+        ORDER BY assigned DESC
+      `, [tenantId]),
+
+      // Stale leads list — no activity 7+ days, top 10
+      query(`
+        SELECT l.id, l.name, l.source,
+          ps.name AS stage, u.name AS assigned_name,
+          l.updated_at,
+          EXTRACT(DAY FROM NOW() - l.updated_at)::int AS days_stale
+        FROM leads l
+        LEFT JOIN pipeline_stages ps ON ps.id = l.stage_id
+        LEFT JOIN users u ON u.id = l.assigned_to
+        WHERE l.tenant_id = $1 AND l.is_deleted = FALSE
+          AND l.updated_at < NOW() - INTERVAL '7 days'
+          ${leadFilter}
+        ORDER BY l.updated_at ASC
+        LIMIT 10
+      `, [tenantId]),
+
+      // Untouched leads — assigned but no followup, older than 24 hours
+      query(`
+        SELECT l.id, l.name, l.source,
+          ps.name AS stage, u.name AS assigned_name,
+          l.created_at,
+          (EXTRACT(EPOCH FROM NOW() - l.created_at) / 3600)::int AS hours_waiting
+        FROM leads l
+        LEFT JOIN pipeline_stages ps ON ps.id = l.stage_id
+        LEFT JOIN users u ON u.id = l.assigned_to
+        WHERE l.tenant_id = $1 AND l.is_deleted = FALSE
+          AND l.assigned_to IS NOT NULL
+          AND l.created_at < NOW() - INTERVAL '24 hours'
+          AND NOT EXISTS (SELECT 1 FROM lead_followups f WHERE f.lead_id = l.id)
+          ${leadFilter}
+        ORDER BY l.created_at ASC
+        LIMIT 10
+      `, [tenantId]),
     ]);
 
     const total     = totalLeads.rows[0].n;
@@ -281,6 +366,27 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
     // Best source from range-filtered breakdown (first non-null source)
     const bestSourceRow = sourceBreakdown.rows.find((s: any) => s.source) ?? null;
     const bestSource = bestSourceRow ? { source: bestSourceRow.source as string, count: bestSourceRow.count as number } : null;
+
+    // Source conversion with % of total
+    const srcGrandTotal = sourceConversionData.rows.reduce((s: number, r: any) => s + r.total, 0);
+    const sourceConversion = sourceConversionData.rows.map((r: any) => ({
+      source:        r.source,
+      total:         r.total,
+      won:           r.won,
+      pct_of_total:  srcGrandTotal === 0 ? 0 : Math.round((r.total / srcGrandTotal) * 100),
+      conv_pct:      r.total === 0 ? 0 : Math.round((r.won / r.total) * 100),
+    }));
+
+    // Staff accountability with percentages
+    const staffAccountability = staffAccountabilityData.rows.map((s: any) => ({
+      id:            s.id,
+      name:          s.name,
+      assigned:      s.assigned,
+      contacted:     s.contacted,
+      won:           s.won,
+      contacted_pct: s.assigned === 0 ? 0 : Math.round((s.contacted / s.assigned) * 100),
+      conv_pct:      s.assigned === 0 ? 0 : Math.round((s.won / s.assigned) * 100),
+    }));
 
     // Build per-pipeline funnel structure
     const funnelMap: Record<string, { id: string; name: string; stages: any[] }> = {};
@@ -308,8 +414,13 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
       source_breakdown:  sourceBreakdown.rows,
       pipeline_funnels,
       staff_leaderboard: leaderboardWithRate,
-      today_followups:   todayFollowups.rows,
-      role:              isPrivileged ? role : (isManager ? 'manager' : 'staff'),
+      today_followups:      todayFollowups.rows,
+      leads_not_contacted:  leadsNotContacted.rows[0].n,
+      source_conversion:    sourceConversion,
+      staff_accountability: staffAccountability,
+      stale_leads_list:     staleLeadsList.rows,
+      untouched_leads:      untouchedLeadsList.rows,
+      role:                 isPrivileged ? role : (isManager ? 'manager' : 'staff'),
     });
   } catch (err) {
     console.error('[dashboard:analytics]', err);
