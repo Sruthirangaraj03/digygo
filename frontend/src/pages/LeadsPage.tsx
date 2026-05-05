@@ -2679,7 +2679,7 @@ function StageColumn({ stage, leads: stageLeads, onLeadClick, onFollowUp, onNote
 
   return (
     <div
-      className="min-w-[280px] w-[280px] flex-shrink-0 flex flex-col rounded-2xl overflow-hidden border"
+      className="min-w-[280px] w-[280px] flex-shrink-0 flex flex-col self-stretch rounded-2xl overflow-hidden border"
       style={{ background: isEmpty ? '#f8f6f3' : '#f2efeb', borderColor: 'rgba(0,0,0,0.07)' }}
     >
       {/* Colored top accent strip */}
@@ -2700,8 +2700,8 @@ function StageColumn({ stage, leads: stageLeads, onLeadClick, onFollowUp, onNote
       <div
         ref={setNodeRef}
         className={cn(
-          'px-3 py-3',
-          isEmpty ? 'flex flex-col items-center justify-center min-h-[200px]' : 'space-y-2.5'
+          'flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 py-3 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-black/20 [&::-webkit-scrollbar-track]:bg-transparent',
+          isEmpty ? 'flex flex-col items-center justify-center' : 'space-y-2.5'
         )}
       >
         <SortableContext items={stageLeads.map((l) => l.id)} strategy={verticalListSortingStrategy}>
@@ -3642,10 +3642,10 @@ export default function LeadsPage() {
       </div>
 
       {/* ── Board ── */}
-      <div className="flex flex-col">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {kanbanView ? (
         <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-          <div className="flex gap-4 overflow-x-auto pb-8 scrollbar-hide items-start">
+          <div className="flex gap-4 overflow-x-auto overflow-y-hidden flex-1 min-h-0 pb-4 items-stretch scrollbar-hide">
             {activeStages.map((stage, stageIndex) => {
               const now = new Date();
               const stageLeadsSorted = filteredLeads
