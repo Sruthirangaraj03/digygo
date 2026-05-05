@@ -750,6 +750,8 @@ export default function MetaFormsPage() {
   const [mapForm, setMapForm] = useState<MetaFormRow | null>(null);
   const [exportingId, setExportingId] = useState<string | null>(null);
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
+  const [disconnectPageTarget, setDisconnectPageTarget] = useState<{ id: string; name: string } | null>(null);
+  const [disconnectingPage, setDisconnectingPage] = useState(false);
   const [deleteFormTarget, setDeleteFormTarget] = useState<MetaFormRow | null>(null);
   const [pushResult, setPushResult] = useState<{ formId: string; type: 'old'|'new'; pushed: number; created: number; existing: number; workflows: Array<{id:string;name:string}> } | null>(null);
   const [formLeads, setFormLeads] = useState<Lead[]>([]);
@@ -870,6 +872,30 @@ export default function MetaFormsPage() {
       setShowDisconnectConfirm(false);
       toast.success('Meta disconnected');
     } catch { toast.error('Failed to disconnect'); }
+  };
+
+  const handleDisconnectPage = async () => {
+    if (!disconnectPageTarget) return;
+    setDisconnectingPage(true);
+    try {
+      const res = await api.delete<{ fullyDisconnected: boolean }>(`/api/integrations/meta/pages/${disconnectPageTarget.id}`);
+      if (res.fullyDisconnected) {
+        setStatus({ connected: false });
+        setForms([]);
+        setDetailPage(null);
+        toast.success('Meta disconnected — no pages remaining');
+      } else {
+        setStatus((prev) => ({
+          ...prev,
+          connectedPages: (prev?.connectedPages ?? []).filter((p) => p.id !== disconnectPageTarget.id),
+        }));
+        setForms((prev) => prev.filter((f) => f.page_id !== disconnectPageTarget.id));
+        if (detailPage?.id === disconnectPageTarget.id) setDetailPage(null);
+        toast.success(`"${disconnectPageTarget.name}" disconnected`);
+      }
+      setDisconnectPageTarget(null);
+    } catch { toast.error('Failed to disconnect page'); }
+    finally { setDisconnectingPage(false); }
   };
 
   const handleConnectBlockedPage = async () => {
@@ -1570,17 +1596,27 @@ export default function MetaFormsPage() {
           const pageForms = forms.filter((f) => f.page_id === page.id);
           const pageLeads = pageForms.reduce((s, f) => s + (f.leads_count ?? 0), 0);
           return (
-            <button
+            <div
               key={page.id}
               onClick={() => setDetailPage(page)}
-              className="bg-white rounded-2xl border border-black/5 card-shadow p-5 flex flex-col gap-4 text-left cursor-pointer hover:border-blue-200 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 w-full"
+              className="bg-white rounded-2xl border border-black/5 card-shadow p-5 flex flex-col gap-4 text-left cursor-pointer hover:border-blue-200 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 w-full relative"
             >
-              {/* Top row: profile pic + Connected badge */}
+              {/* Top row: profile pic + Connected badge + disconnect icon */}
               <div className="flex items-start justify-between">
                 <PageProfilePic pageId={page.id} pageName={page.name} />
-                <span className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  <Check className="w-2.5 h-2.5" /> Connected
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <Check className="w-2.5 h-2.5" /> Connected
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setDisconnectPageTarget({ id: page.id, name: page.name }); }}
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-[#7a6b5c] hover:bg-red-50 hover:text-red-500 transition-colors"
+                    title="Disconnect page"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
               {/* Page name + subtitle */}
@@ -1593,7 +1629,7 @@ export default function MetaFormsPage() {
               <p className="text-[12px] text-[#9a8a7c]">
                 {pageForms.length} form{pageForms.length !== 1 ? 's' : ''} · {pageLeads.toLocaleString()} leads captured
               </p>
-            </button>
+            </div>
           );
         })}
 
@@ -1814,6 +1850,26 @@ export default function MetaFormsPage() {
               </button>
               <button onClick={handleDisconnect} className="flex-1 py-2.5 rounded-xl text-[13px] font-bold bg-red-500 text-white hover:bg-red-600 transition-colors">
                 Yes, Disconnect
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Disconnect single page confirmation modal */}
+      {disconnectPageTarget && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <h3 className="text-[16px] font-bold text-[#1c1410] mb-2">Disconnect Page?</h3>
+            <p className="text-[13px] text-[#7a6b5c] mb-5">
+              Are you sure you want to disconnect <span className="font-semibold text-[#1c1410]">"{disconnectPageTarget.name}"</span>? All forms linked to this page will be removed and lead capture will stop. Your existing leads will remain in the CRM.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setDisconnectPageTarget(null)} disabled={disconnectingPage} className="flex-1 py-2.5 rounded-xl text-[13px] font-bold bg-gray-100 text-[#1c1410] hover:bg-gray-200 transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleDisconnectPage} disabled={disconnectingPage} className="flex-1 py-2.5 rounded-xl text-[13px] font-bold bg-red-500 text-white hover:bg-red-600 disabled:opacity-60 transition-colors">
+                {disconnectingPage ? 'Disconnecting…' : 'Yes, Disconnect'}
               </button>
             </div>
           </div>

@@ -1549,6 +1549,35 @@ router.delete('/meta/connected-forms/:id', checkPermission('meta_forms:delete'),
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 
+// DELETE /api/integrations/meta/pages/:pageId — disconnect a single page
+router.delete('/meta/pages/:pageId', checkPermission('meta_forms:delete'), async (req: AuthRequest, res: Response) => {
+  const tenantId = req.user!.tenantId;
+  const { pageId } = req.params;
+  try {
+    const row = (await query('SELECT page_ids, page_names FROM meta_integrations WHERE tenant_id=$1', [tenantId])).rows[0];
+    if (!row) { res.status(404).json({ error: 'Not connected' }); return; }
+
+    const pageIds: string[] = (row.page_ids ?? []).filter((id: string) => id !== pageId);
+    const pageNames: Record<string, string> = { ...(row.page_names ?? {}) };
+    delete pageNames[pageId];
+
+    // Remove forms for this page
+    await query('DELETE FROM meta_forms WHERE tenant_id=$1 AND page_id=$2', [tenantId, pageId]);
+
+    if (pageIds.length === 0) {
+      // Last page removed — full disconnect
+      await query('DELETE FROM meta_integrations WHERE tenant_id=$1', [tenantId]);
+      res.json({ success: true, fullyDisconnected: true });
+    } else {
+      await query(
+        'UPDATE meta_integrations SET page_ids=$1::jsonb, page_names=$2::jsonb WHERE tenant_id=$3',
+        [JSON.stringify(pageIds), JSON.stringify(pageNames), tenantId]
+      );
+      res.json({ success: true, fullyDisconnected: false });
+    }
+  } catch { res.status(500).json({ error: 'Server error' }); }
+});
+
 // DELETE /api/integrations/meta/disconnect
 router.delete('/meta/disconnect', checkPermission('meta_forms:delete'), async (req: AuthRequest, res: Response) => {
   try {
