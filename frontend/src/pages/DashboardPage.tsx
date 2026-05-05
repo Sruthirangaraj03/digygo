@@ -51,6 +51,7 @@ const FILTER_PRESETS = [
   { value: 'yesterday',  label: 'Yesterday'  },
   { value: 'this_week',  label: 'This Week'  },
   { value: 'this_month', label: 'This Month' },
+  { value: 'all',        label: 'All Time'   },
   { value: 'custom',     label: 'Custom'     },
 ];
 
