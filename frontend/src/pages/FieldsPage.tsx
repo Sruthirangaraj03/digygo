@@ -614,6 +614,35 @@ export default function FieldsPage() {
   const [values, setValues] = useState<ValueToken[]>([]);
   const [valueModal, setValueModal] = useState<{ open: boolean; editing?: ValueToken }>({ open: false });
 
+  // Delete confirmation modal
+  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'custom' | 'question' | 'value'; id: string; name: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeleteConfirmed = async () => {
+    if (!deleteConfirm) return;
+    setDeleting(true);
+    try {
+      if (deleteConfirm.type === 'custom') {
+        await api.delete(`/api/fields/custom/${deleteConfirm.id}`);
+        setCustomStandard((p) => p.filter((x) => x.id !== deleteConfirm.id));
+        storeDeleteCustomField(deleteConfirm.id);
+      } else if (deleteConfirm.type === 'question') {
+        await api.delete(`/api/fields/questions/${deleteConfirm.id}`);
+        setAdditional((p) => p.filter((x) => x.id !== deleteConfirm.id));
+        storeDeleteAdditionalField(deleteConfirm.id);
+      } else {
+        await api.delete(`/api/fields/values/${deleteConfirm.id}`);
+        setValues((p) => p.filter((x) => x.id !== deleteConfirm.id));
+      }
+      toast.success('Deleted');
+      setDeleteConfirm(null);
+    } catch {
+      toast.error('Failed to delete');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   // Load from API
   useEffect(() => {
     api.get<any[]>('/api/fields/custom').then((rows) => {
@@ -835,7 +864,7 @@ export default function FieldsPage() {
                         <button onClick={() => copyToken(f.slug)} title="Copy unique key" className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center text-[#7a6b5c] hover:text-primary transition-colors">
                           <Copy className="w-3.5 h-3.5" />
                         </button>
-                        <button onClick={async () => { if (window.confirm(`Delete "${f.name}"?`)) { try { await api.delete(`/api/fields/custom/${f.id}`); setCustomStandard((p) => p.filter((x) => x.id !== f.id)); storeDeleteCustomField(f.id); toast.success('Deleted'); } catch { toast.error('Failed to delete'); } } }} title="Delete" className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-[#7a6b5c] hover:text-red-500 transition-colors">
+                        <button onClick={() => setDeleteConfirm({ type: 'custom', id: f.id, name: f.name })} title="Delete" className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-[#7a6b5c] hover:text-red-500 transition-colors">
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -889,7 +918,7 @@ export default function FieldsPage() {
                       <button onClick={() => setAddModal({ open: true, editing: f })} title="Edit" className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center text-[#7a6b5c] hover:text-primary transition-colors">
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
-                      <button onClick={async () => { if (window.confirm('Delete this question?')) { try { await api.delete(`/api/fields/questions/${f.id}`); setAdditional((p) => p.filter((x) => x.id !== f.id)); storeDeleteAdditionalField(f.id); toast.success('Question removed'); } catch { toast.error('Failed to delete'); } } }} title="Delete" className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-[#7a6b5c] hover:text-red-500 transition-colors">
+                      <button onClick={() => setDeleteConfirm({ type: 'question', id: f.id, name: f.question })} title="Delete" className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-[#7a6b5c] hover:text-red-500 transition-colors">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -963,7 +992,7 @@ export default function FieldsPage() {
                     <button onClick={() => setValueModal({ open: true, editing: v })} title="Edit" className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center text-[#7a6b5c] hover:text-primary transition-colors">
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
-                    <button onClick={async () => { if (window.confirm(`Delete "${v.name}"?`)) { try { await api.delete(`/api/fields/values/${v.id}`); setValues((p) => p.filter((x) => x.id !== v.id)); toast.success('Deleted'); } catch { toast.error('Failed to delete'); } } }} title="Delete" className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-[#7a6b5c] hover:text-red-500 transition-colors">
+                    <button onClick={() => setDeleteConfirm({ type: 'value', id: v.id, name: v.name })} title="Delete" className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-[#7a6b5c] hover:text-red-500 transition-colors">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -1099,6 +1128,36 @@ export default function FieldsPage() {
             }
           }}
         />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 overflow-hidden">
+            <div className="px-6 pt-6 pb-4">
+              <h3 className="text-[15px] font-bold text-[#1c1410] mb-2">Delete Field</h3>
+              <p className="text-[13px] text-[#7a6b5c]">
+                Are you sure you want to delete <span className="font-semibold text-[#1c1410]">"{deleteConfirm.name}"</span>? This cannot be undone.
+              </p>
+            </div>
+            <div className="flex gap-2 px-6 py-4">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                disabled={deleting}
+                className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] bg-[#f0ebe5] hover:bg-[#e8ddd4] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirmed}
+                disabled={deleting}
+                className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white bg-red-500 hover:bg-red-600 disabled:opacity-60 transition-colors"
+              >
+                {deleting ? 'Deleting…' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
