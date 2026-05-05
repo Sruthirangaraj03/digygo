@@ -272,7 +272,7 @@ function PipelineCard({ pipeline, onEdit, onClone, onDelete, onView, canManage }
   return (
     <>
       <div
-        onClick={() => setShowAllStages(true)}
+        onClick={onView}
         className="bg-white rounded-2xl border border-black/[0.06] card-shadow hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden flex flex-col cursor-pointer"
       >
         {/* Header */}
