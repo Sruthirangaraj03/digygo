@@ -2679,7 +2679,7 @@ function StageColumn({ stage, leads: stageLeads, onLeadClick, onFollowUp, onNote
 
   return (
     <div
-      className="min-w-[280px] w-[280px] flex-shrink-0 flex flex-col min-h-0 rounded-2xl overflow-hidden border"
+      className="min-w-[280px] w-[280px] flex-shrink-0 flex flex-col self-stretch rounded-2xl overflow-hidden border"
       style={{ background: isEmpty ? '#f8f6f3' : '#f2efeb', borderColor: 'rgba(0,0,0,0.07)' }}
     >
       {/* Colored top accent strip */}
@@ -3645,7 +3645,7 @@ export default function LeadsPage() {
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {kanbanView ? (
         <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-          <div className="flex gap-4 overflow-x-auto overflow-y-hidden flex-1 min-h-0 pb-4 items-stretch scrollbar-hide">
+          <div className="flex gap-4 overflow-x-auto overflow-y-hidden flex-1 min-h-0 pb-4 items-stretch scrollbar-hide h-full">
             {activeStages.map((stage, stageIndex) => {
               const now = new Date();
               const stageLeadsSorted = filteredLeads
