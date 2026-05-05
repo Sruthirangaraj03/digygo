@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Facebook, FileText, Users, Zap, AlertTriangle, ChevronDown, ChevronUp,
+  Facebook, FileText, Users, Zap, ChevronDown, ChevronUp,
   Search, ArrowRight, Clock, Copy, Check, ExternalLink, RefreshCw,
   TrendingUp, Star,
 } from 'lucide-react';
@@ -340,7 +340,7 @@ export default function LeadGenerationPage() {
     });
   }, [overview, tab, search, sortBy, sortDir]);
 
-  const { summary, dead_forms } = overview ?? { summary: null, dead_forms: [] };
+  const { summary } = overview ?? { summary: null };
 
   const tabCounts = useMemo(() => ({
     all:    overview?.forms.length ?? 0,
@@ -392,20 +392,6 @@ export default function LeadGenerationPage() {
         </div>
       )}
 
-      {/* ── Dead forms alert ── */}
-      {!loading && dead_forms.length > 0 && (
-        <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-          <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <p className="text-[13px] font-semibold text-amber-800">
-              {dead_forms.length} form{dead_forms.length > 1 ? 's have' : ' has'} received no leads in the last 7 days
-            </p>
-            <p className="text-[11px] text-amber-600 mt-0.5 truncate">
-              {dead_forms.map(f => f.name).join(' · ')}
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* ── Table ── */}
       <div className="bg-white rounded-2xl border border-black/5 card-shadow overflow-hidden">
@@ -479,7 +465,6 @@ export default function LeadGenerationPage() {
             {filteredForms.map(form => {
               const badge    = statusBadge(form.channel, form.status);
               const expanded = expandedId === form.id;
-              const isDead   = (form.leads_total ?? 0) > 0 && (form.leads_week ?? 0) === 0;
 
               return (
                 <div key={form.id}>
@@ -496,9 +481,8 @@ export default function LeadGenerationPage() {
                         }
                       </div>
                       <div className="min-w-0">
-                        <p className="text-[13px] font-semibold text-[#1c1410] truncate flex items-center gap-1.5">
+                        <p className="text-[13px] font-semibold text-[#1c1410] truncate">
                           {form.name}
-                          {isDead && <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />}
                         </p>
                         {form.page_name && (
                           <p className="text-[10px] text-[#9a8a7a] truncate">{form.page_name}</p>
@@ -517,7 +501,7 @@ export default function LeadGenerationPage() {
                     <span className="text-[13px] font-bold text-primary text-right">{form.leads_month}</span>
 
                     {/* Last lead */}
-                    <span className={`text-[11px] truncate flex items-center gap-1 ${isDead && form.last_lead_at ? 'text-amber-500' : 'text-[#9a8a7a]'}`}>
+                    <span className="text-[11px] truncate flex items-center gap-1 text-[#9a8a7a]">
                       {form.last_lead_at && <Clock className="w-3 h-3 shrink-0" />}
                       {lastLeadLabel(form.last_lead_at)}
                     </span>
