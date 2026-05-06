@@ -968,7 +968,7 @@ function AssignModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
       await api.patch(`/api/leads/${lead.id}`, { assigned_to: selected || null });
       const name = staff.find((s) => s.id === selected)?.name ?? '';
       updateLead(lead.id, { assignedTo: selected, assignedName: name });
-      toast.success(`Lead assigned to ${displayName}`);
+      toast.success(name ? `Lead assigned to ${name}` : 'Lead unassigned');
       onClose();
     } catch (err: any) {
       toast.error(err.message ?? 'Failed to assign lead');
