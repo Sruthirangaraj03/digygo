@@ -759,6 +759,10 @@ export default function MetaFormsPage() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [mapForm, setMapForm] = useState<MetaFormRow | null>(null);
   const [exportingId, setExportingId] = useState<string | null>(null);
+  const [triggerModal, setTriggerModal] = useState<MetaFormRow | null>(null);
+  const [triggerWorkflows, setTriggerWorkflows] = useState<Array<{ id: string; name: string }>>([]);
+  const [triggerWorkflowId, setTriggerWorkflowId] = useState('');
+  const [loadingTriggerWFs, setLoadingTriggerWFs] = useState(false);
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
   const [disconnectPageTarget, setDisconnectPageTarget] = useState<{ id: string; name: string } | null>(null);
   const [disconnectingPage, setDisconnectingPage] = useState(false);
@@ -958,15 +962,30 @@ export default function MetaFormsPage() {
     XLSX.writeFile(wb, filename);
   };
 
-  const handlePushToAutomation = async (form: MetaFormRow, type: 'old' | 'new') => {
+  const openTriggerModal = async (form: MetaFormRow) => {
+    setTriggerWorkflowId('');
+    setTriggerModal(form);
+    setLoadingTriggerWFs(true);
+    try {
+      const wfs = await api.get<Array<{ id: string; name: string }>>(`/api/integrations/meta/forms/${form.form_id}/workflows`);
+      setTriggerWorkflows(wfs);
+    } catch {
+      setTriggerWorkflows([]);
+    } finally {
+      setLoadingTriggerWFs(false);
+    }
+  };
+
+  const handlePushToAutomation = async (form: MetaFormRow, type: 'old' | 'new', workflowId?: string) => {
     const key = `push-${form.form_id}-${type}`;
     setExportingId(`${form.form_id}-${type}`);
     setPushResult(null);
+    setTriggerModal(null);
     toast.loading(`Fetching ${type === 'old' ? 'historical' : 'new'} leads from Meta…`, { id: key });
     try {
       const result = await api.post<{ pushed: number; created: number; existing: number; workflows: Array<{id:string;name:string}>; done?: number; skipped?: number; failed?: number }>(
         `/api/integrations/meta/forms/${form.form_id}/push-automation?type=${type}`,
-        {}
+        workflowId ? { workflow_id: workflowId } : {}
       );
       toast.dismiss(key);
       const { pushed, created, existing, workflows, done = 0, skipped = 0, failed = 0 } = result;
@@ -1413,7 +1432,7 @@ export default function MetaFormsPage() {
                   {isMapped && (
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
-                        onClick={() => handlePushToAutomation(form, 'old')}
+                        onClick={() => openTriggerModal(form)}
                         disabled={!!exportingId}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-[#f5ede3] text-primary hover:bg-primary hover:text-white disabled:opacity-50 transition-colors whitespace-nowrap"
                       >
@@ -1890,6 +1909,70 @@ export default function MetaFormsPage() {
               </button>
               <button onClick={handleDisconnectPage} disabled={disconnectingPage} className="flex-1 py-2.5 rounded-xl text-[13px] font-bold bg-red-500 text-white hover:bg-red-600 disabled:opacity-60 transition-colors">
                 {disconnectingPage ? 'Disconnecting…' : 'Yes, Disconnect'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trigger Workflow modal — pick one workflow before importing */}
+      {triggerModal && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-[16px] font-bold text-[#1c1410]">Trigger Workflow</h3>
+                <p className="text-[11px] text-[#7a6b5c] mt-0.5 truncate max-w-[240px]">{triggerModal.form_name}</p>
+              </div>
+              <button onClick={() => setTriggerModal(null)} className="p-1.5 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-[12px] text-[#7a6b5c] mb-3">Select the workflow to run for all imported leads. Only the selected workflow will execute.</p>
+
+            <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-[#5c5245] mb-1.5">Select Active Workflow</label>
+
+            {loadingTriggerWFs ? (
+              <div className="flex items-center justify-center h-10 text-[#9e8e7e] text-[12px] gap-1.5">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Loading workflows…
+              </div>
+            ) : triggerWorkflows.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-black/10 px-4 py-5 text-center">
+                <Zap className="w-6 h-6 text-[#d4c9bc] mx-auto mb-2" />
+                <p className="text-[12px] font-semibold text-[#1c1410]">No active workflows</p>
+                <p className="text-[11px] text-[#9e8e7e] mt-0.5">Create a workflow with a Meta Form trigger in Automation first.</p>
+              </div>
+            ) : (
+              <div className="relative">
+                <select
+                  value={triggerWorkflowId}
+                  onChange={(e) => setTriggerWorkflowId(e.target.value)}
+                  className="w-full appearance-none bg-[#f5f0eb] border border-black/8 rounded-xl px-4 py-2.5 text-[13px] text-[#1c1410] outline-none focus:ring-2 focus:ring-primary/20 pr-9 cursor-pointer"
+                >
+                  <option value="">— Choose a workflow —</option>
+                  {triggerWorkflows.map((wf) => (
+                    <option key={wf.id} value={wf.id}>{wf.name}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#9e8e7e] pointer-events-none" />
+              </div>
+            )}
+
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => setTriggerModal(null)}
+                className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#faf8f6] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handlePushToAutomation(triggerModal, 'old', triggerWorkflowId || undefined)}
+                disabled={triggerWorkflows.length === 0 || !triggerWorkflowId}
+                className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white disabled:opacity-40 transition-all"
+                style={triggerWorkflowId ? { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' } : { background: '#d1cbc7' }}
+              >
+                Run Workflow
               </button>
             </div>
           </div>

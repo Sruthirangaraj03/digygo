@@ -1390,14 +1390,41 @@ router.post('/meta/forms/:formId/import', checkPermission('meta_forms:create'), 
   }
 });
 
+// GET /api/integrations/meta/forms/:formId/workflows
+// Returns active workflows whose trigger matches this meta form — used by the "Trigger Workflow" picker
+router.get('/meta/forms/:formId/workflows', checkPermission('meta_forms:edit'), async (req: AuthRequest, res: Response) => {
+  const { tenantId } = req.user!;
+  const { formId } = req.params;
+  try {
+    const mfRes = await query('SELECT form_name FROM meta_forms WHERE tenant_id=$1 AND form_id=$2', [tenantId, formId]);
+    const formName = mfRes.rows[0]?.form_name ?? '';
+    const wfRes = await query(`SELECT id, name, nodes FROM workflows WHERE tenant_id=$1 AND status='active'`, [tenantId]);
+    const matching: Array<{ id: string; name: string }> = [];
+    for (const wf of wfRes.rows) {
+      const nodes: any[] = Array.isArray(wf.nodes) ? wf.nodes : JSON.parse(wf.nodes ?? '[]');
+      const trigger = nodes.find((n: any) => n.type === 'trigger');
+      if (!trigger) continue;
+      if (!['meta_form', 'form_submitted', 'lead_created'].includes(trigger.actionType ?? '')) continue;
+      const cfgForms = trigger.config?.forms as string[] | undefined;
+      if (cfgForms && cfgForms.length > 0) {
+        if (!cfgForms.includes(formId) && !cfgForms.includes(formName)) continue;
+      }
+      matching.push({ id: wf.id, name: wf.name });
+    }
+    res.json(matching);
+  } catch { res.status(500).json({ error: 'Server error' }); }
+});
+
 // POST /api/integrations/meta/forms/:formId/push-automation?type=old|new
 // Fetches leads from Meta, upserts them (no pipeline/stage needed — automation handles that),
 // fires meta_form trigger for every lead so matching live automations execute.
+// Body: { workflow_id?: string } — if provided, only that workflow runs (not all matching ones)
 router.post('/meta/forms/:formId/push-automation', checkPermission('meta_forms:edit'), async (req: AuthRequest, res: Response) => {
   const tenantId = req.user!.tenantId as string;
   const userId   = req.user!.userId   as string;
   const { formId } = req.params;
   const type = (req.query.type as string) === 'new' ? 'new' : 'old';
+  const selectedWorkflowId: string | undefined = req.body?.workflow_id ?? undefined;
 
   try {
     const miRes = await query('SELECT access_token FROM meta_integrations WHERE tenant_id=$1', [tenantId]);
@@ -1515,12 +1542,16 @@ router.post('/meta/forms/:formId/push-automation', checkPermission('meta_forms:e
     }
 
     // Execute workflows synchronously — always force re-entry (push = intentional re-run).
-    // Wait for all to complete, then return Done/Skipped/Failed counts.
+    // If workflow_id was provided, only run that one; otherwise run all matching (legacy behaviour).
+    const wfsToRun = selectedWorkflowId
+      ? matchingWFs.filter((w) => w.id === selectedWorkflowId)
+      : matchingWFs;
+
     let totalDone = 0;
     let totalSkipped = 0;
     let totalFailed = 0;
 
-    for (const wf of matchingWFs) {
+    for (const wf of wfsToRun) {
       try {
         const wfRow = await query(
           `SELECT * FROM workflows WHERE id=$1 AND tenant_id=$2 AND status='active'`,
