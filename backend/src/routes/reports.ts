@@ -84,7 +84,7 @@ router.get('/pipeline-health', requireOwner, async (req: AuthRequest, res: Respo
       SELECT p.id AS pipeline_id, p.name AS pipeline_name,
         ps.name AS stage_name, ps.position, ps.is_won,
         COUNT(l.id)::int AS lead_count,
-        ROUND(AVG(EXTRACT(EPOCH FROM(NOW()-l.updated_at))/86400))::int AS avg_days
+        COALESCE(ROUND(AVG(EXTRACT(EPOCH FROM(NOW()-l.updated_at))/86400)::numeric),0)::int AS avg_days
       FROM pipelines p
       JOIN pipeline_stages ps ON ps.pipeline_id=p.id
       LEFT JOIN leads l ON l.stage_id=ps.id AND l.is_deleted=FALSE AND l.tenant_id=$1
