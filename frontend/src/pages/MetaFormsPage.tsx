@@ -763,6 +763,9 @@ export default function MetaFormsPage() {
   const [triggerWorkflows, setTriggerWorkflows] = useState<Array<{ id: string; name: string }>>([]);
   const [triggerWorkflowId, setTriggerWorkflowId] = useState('');
   const [loadingTriggerWFs, setLoadingTriggerWFs] = useState(false);
+  const [downloadModal, setDownloadModal] = useState(false);
+  const [downloadFormId, setDownloadFormId] = useState('');
+  const [downloading, setDownloading] = useState(false);
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
   const [disconnectPageTarget, setDisconnectPageTarget] = useState<{ id: string; name: string } | null>(null);
   const [disconnectingPage, setDisconnectingPage] = useState(false);
@@ -1050,11 +1053,56 @@ export default function MetaFormsPage() {
           ? `Imported ${result.totalInserted} new lead${result.totalInserted !== 1 ? 's' : ''} from Meta`
           : 'All leads already up to date'
       );
-      // Refresh forms to update leads_count
       const fresh = await api.get<MetaFormRow[]>('/api/integrations/meta/connected-forms').catch(() => forms);
       setForms(fresh);
     } catch (err: any) { toast.error(err?.message ?? 'Failed to fetch leads from Meta'); }
     finally { setFetchingLeads(false); }
+  };
+
+  const handleDownloadLeads = async () => {
+    if (!downloadFormId) return;
+    setDownloading(true);
+    try {
+      const result = await api.get<{ form_name: string; leads: any[] }>(
+        `/api/integrations/meta/forms/${downloadFormId}/download-leads`
+      );
+      const { form_name, leads } = result;
+      if (leads.length === 0) { toast.info('No leads found for this form in Meta'); return; }
+
+      // Collect all unique field names across every lead
+      const fieldNames: string[] = [];
+      const seenFields = new Set<string>();
+      for (const lead of leads) {
+        for (const f of lead.field_data ?? []) {
+          if (!seenFields.has(f.name)) { seenFields.add(f.name); fieldNames.push(f.name); }
+        }
+      }
+
+      const headers = ['Lead ID', 'Submitted At', ...fieldNames];
+      const rows = leads.map((lead) => {
+        const fieldMap: Record<string, string> = {};
+        for (const f of lead.field_data ?? []) fieldMap[f.name] = (f.values ?? []).join(', ');
+        const row: Record<string, string> = {
+          'Lead ID': lead.id ?? '',
+          'Submitted At': lead.created_time ? new Date(lead.created_time).toLocaleString('en-IN') : '',
+        };
+        for (const name of fieldNames) row[name] = fieldMap[name] ?? '';
+        return row;
+      });
+
+      const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
+      ws['!cols'] = headers.map(() => ({ wch: 24 }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, form_name.slice(0, 31));
+      XLSX.writeFile(wb, `${form_name}_leads.xlsx`);
+      toast.success(`Downloaded ${leads.length} lead${leads.length !== 1 ? 's' : ''} from "${form_name}"`);
+      setDownloadModal(false);
+      setDownloadFormId('');
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Failed to download leads');
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const toggleForm = async (form: MetaFormRow) => {
@@ -1272,13 +1320,11 @@ export default function MetaFormsPage() {
           <div className="flex gap-2 shrink-0">
             <Button
               size="sm"
-              onClick={handleFetchAllLeads}
-              disabled={fetchingLeads || syncing}
+              onClick={() => { setDownloadFormId(''); setDownloadModal(true); }}
+              disabled={syncing}
               className="bg-primary hover:bg-primary/90 text-white"
             >
-              {fetchingLeads
-                ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" />Importing…</>
-                : <><Download className="w-3.5 h-3.5" />Fetch All Leads</>}
+              <Download className="w-3.5 h-3.5" />Download Leads
             </Button>
             <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing || fetchingLeads}>
               <RefreshCw className={cn('w-3.5 h-3.5', syncing && 'animate-spin')} />
@@ -1909,6 +1955,57 @@ export default function MetaFormsPage() {
               </button>
               <button onClick={handleDisconnectPage} disabled={disconnectingPage} className="flex-1 py-2.5 rounded-xl text-[13px] font-bold bg-red-500 text-white hover:bg-red-600 disabled:opacity-60 transition-colors">
                 {disconnectingPage ? 'Disconnecting…' : 'Yes, Disconnect'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Download Leads modal — pick a form, download all raw Meta data as Excel */}
+      {downloadModal && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-[16px] font-bold text-[#1c1410]">Download Leads</h3>
+                <p className="text-[11px] text-[#7a6b5c] mt-0.5">Download all lead data from Meta as Excel</p>
+              </div>
+              <button onClick={() => setDownloadModal(false)} className="p-1.5 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-[#5c5245] mb-1.5">Select Form</label>
+            <div className="relative">
+              <select
+                value={downloadFormId}
+                onChange={(e) => setDownloadFormId(e.target.value)}
+                className="w-full appearance-none bg-[#f5f0eb] border border-black/8 rounded-xl px-4 py-2.5 text-[13px] text-[#1c1410] outline-none focus:ring-2 focus:ring-primary/20 pr-9 cursor-pointer"
+              >
+                <option value="">— Choose a form —</option>
+                {forms.map((f) => (
+                  <option key={f.form_id} value={f.form_id}>{f.form_name}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#9e8e7e] pointer-events-none" />
+            </div>
+
+            <p className="text-[11px] text-[#9e8e7e] mt-2">All fields submitted by leads will be included as columns in the Excel file.</p>
+
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => setDownloadModal(false)}
+                className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#faf8f6] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDownloadLeads}
+                disabled={!downloadFormId || downloading}
+                className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white disabled:opacity-40 flex items-center justify-center gap-1.5 transition-all"
+                style={downloadFormId && !downloading ? { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' } : { background: '#d1cbc7' }}
+              >
+                {downloading ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" />Downloading…</> : <><Download className="w-3.5 h-3.5" />Download</>}
               </button>
             </div>
           </div>

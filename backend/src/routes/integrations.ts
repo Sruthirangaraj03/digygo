@@ -1390,6 +1390,35 @@ router.post('/meta/forms/:formId/import', checkPermission('meta_forms:create'), 
   }
 });
 
+// GET /api/integrations/meta/forms/:formId/download-leads
+// Returns all raw leads from Meta for a form (no CRM mapping) — used for Excel download
+router.get('/meta/forms/:formId/download-leads', checkPermission('meta_forms:read'), async (req: AuthRequest, res: Response) => {
+  const tenantId = req.user!.tenantId as string;
+  const { formId } = req.params;
+  try {
+    const miRes = await query('SELECT access_token FROM meta_integrations WHERE tenant_id=$1', [tenantId]);
+    if (!miRes.rows[0]) { res.status(400).json({ error: 'Meta not connected' }); return; }
+    let token: string;
+    try { token = decrypt(miRes.rows[0].access_token); }
+    catch { res.status(500).json({ error: 'Failed to decrypt Meta token' }); return; }
+
+    const mfRes = await query(
+      'SELECT form_name, page_id FROM meta_forms WHERE tenant_id=$1 AND form_id=$2',
+      [tenantId, formId]
+    );
+    if (!mfRes.rows[0]) { res.status(404).json({ error: 'Form not found' }); return; }
+    const { form_name, page_id } = mfRes.rows[0];
+
+    const pageTokenMap = await buildPageTokenMap(token);
+    const leadToken = pageTokenMap.get(page_id) ?? token;
+
+    const metaLeads = await graphGetAll(`/${formId}/leads?fields=id,created_time,field_data`, leadToken);
+    res.json({ form_name, leads: metaLeads });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message ?? 'Server error' });
+  }
+});
+
 // GET /api/integrations/meta/forms/:formId/workflows
 // Returns active workflows whose trigger matches this meta form — used by the "Trigger Workflow" picker
 router.get('/meta/forms/:formId/workflows', checkPermission('meta_forms:edit'), async (req: AuthRequest, res: Response) => {
