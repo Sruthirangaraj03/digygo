@@ -1,9 +1,21 @@
-import { Router, Response } from 'express';
+import { Router, Response, NextFunction } from 'express';
 import { query } from '../db';
 import { requireAuth, AuthRequest } from '../middleware/auth';
+import { hasPermission } from '../middleware/permissions';
 
 const router = Router();
 router.use(requireAuth);
+
+async function requireManagerOrOwner(req: AuthRequest, res: Response, next: NextFunction) {
+  const { role, userId, tenantId } = req.user!;
+  if (role === 'super_admin' || role === 'owner') return next();
+  if (!tenantId) return res.status(403).json({ error: 'No tenant' });
+  const isOwnerRow = (await query('SELECT is_owner FROM users WHERE id=$1', [userId])).rows[0]?.is_owner === true;
+  if (isOwnerRow) return next();
+  const canManage = await hasPermission(userId, 'staff:manage', tenantId);
+  if (canManage) return next();
+  return res.status(403).json({ error: 'Manager or owner access required' });
+}
 
 function computeRange(rangeParam: string, fromParam?: string, toParam?: string) {
   const now = new Date();
@@ -299,7 +311,7 @@ router.get('/automation', requireOwner, async (req: AuthRequest, res: Response) 
 });
 
 // ── 9. Pipelines list (for pipeline analytics selector) ──────────────────────
-router.get('/pipelines', requireOwner, async (req: AuthRequest, res: Response) => {
+router.get('/pipelines', requireManagerOrOwner, async (req: AuthRequest, res: Response) => {
   const { tenantId } = req.user!;
   if (!tenantId) return res.status(403).json({ error: 'No tenant' });
   try {
@@ -315,7 +327,7 @@ router.get('/pipelines', requireOwner, async (req: AuthRequest, res: Response) =
 });
 
 // ── 10. Pipeline Analytics ────────────────────────────────────────────────────
-router.get('/pipeline-analytics', requireOwner, async (req: AuthRequest, res: Response) => {
+router.get('/pipeline-analytics', requireManagerOrOwner, async (req: AuthRequest, res: Response) => {
   const { tenantId } = req.user!;
   if (!tenantId) return res.status(403).json({ error: 'No tenant' });
   const { pipeline_id, range = 'this_month', from, to } = req.query as Record<string, string>;

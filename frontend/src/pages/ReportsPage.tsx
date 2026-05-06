@@ -7,8 +7,10 @@ import {
 } from 'recharts';
 import {
   ChevronDown, TrendingUp, CheckCircle2, Target, Clock,
-  Users, RefreshCw, AlertTriangle, CalendarClock,
+  Users, RefreshCw, AlertTriangle, CalendarClock, BarChart2,
 } from 'lucide-react';
+import { useAuthStore } from '@/store/authStore';
+import { usePermission } from '@/hooks/usePermission';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const STAGE_COLORS  = ['#6366f1','#3b82f6','#06b6d4','#8b5cf6','#f59e0b','#ea580c','#f43f5e','#84cc16'];
@@ -417,8 +419,29 @@ function ConversionBar({ kpi }: { kpi: any }) {
   );
 }
 
+// ── Staff No-Access Screen ─────────────────────────────────────────────────────
+function StaffNoAccess() {
+  return (
+    <div className="flex flex-col items-center justify-center py-32 text-center">
+      <div className="w-16 h-16 rounded-2xl bg-[#f5ede3] flex items-center justify-center mb-4">
+        <BarChart2 className="w-7 h-7 text-[#c2410c]" />
+      </div>
+      <h3 className="text-[17px] font-bold text-[#1c1410] mb-2">Reports are for managers &amp; owners</h3>
+      <p className="text-[13px] text-[#7a6b5c] max-w-xs">
+        Your manager or account owner can view pipeline analytics, team performance, and more here.
+      </p>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ReportsPage() {
+  const { currentUser, permAll } = useAuthStore();
+  const canManageStaff = usePermission('staff:manage');
+  const isPrivileged = permAll;
+  const isManager    = !isPrivileged && canManageStaff;
+  const hasAccess    = isPrivileged || isManager;
+
   const [pipelines, setPipelines] = useState<{ id: string; name: string }[]>([]);
   const [pipelineId, setPipelineId] = useState<string | null>(null);
   const [range, setRange]           = useState('all_time');
@@ -429,6 +452,7 @@ export default function ReportsPage() {
   const [plLoading, setPlLoading]   = useState(true);
 
   useEffect(() => {
+    if (!hasAccess) { setPlLoading(false); return; }
     api.get<{ id: string; name: string }[]>('/api/reports/pipelines')
       .then(rows => {
         setPipelines(rows);
@@ -436,7 +460,7 @@ export default function ReportsPage() {
       })
       .catch(() => toast.error('Failed to load pipelines'))
       .finally(() => setPlLoading(false));
-  }, []);
+  }, [hasAccess]);
 
   useEffect(() => {
     if (!pipelineId) return;
@@ -452,6 +476,9 @@ export default function ReportsPage() {
   }, [pipelineId, range, fromDate, toDate]);
 
   const selectedName = pipelines.find(p => p.id === pipelineId)?.name ?? '';
+  const viewLabel    = isPrivileged ? 'owner view' : 'manager view';
+
+  if (!hasAccess) return <StaffNoAccess />;
 
   return (
     <div className="space-y-4 pb-10">
@@ -461,7 +488,7 @@ export default function ReportsPage() {
         <div>
           <h2 className="font-headline font-bold text-[17px] text-[#1c1410]">Pipeline Analytics</h2>
           <p className="text-[12px] text-[#9e8e7e] mt-0.5">
-            {selectedName ? `${selectedName} · owner view` : 'Select a pipeline to view analytics'}
+            {selectedName ? `${selectedName} · ${viewLabel}` : 'Select a pipeline to view analytics'}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
