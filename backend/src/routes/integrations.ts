@@ -1736,7 +1736,49 @@ router.post('/waba/setup', checkPermission('integrations:manage'), async (req: A
   }
 });
 
-// ── Generic integration configs (Slack, Razorpay, Zapier, n8n, etc.) ──────────
+// ── SMTP Email Integration ─────────────────────────────────────────────────────
+
+// GET /api/integrations/smtp/status
+router.get('/smtp/status', checkPermission('integrations:view'), async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await query(
+      'SELECT config_json, is_active FROM integration_configs WHERE tenant_id=$1 AND integration_id=$2',
+      [req.user!.tenantId, 'smtp']
+    );
+    if (!result.rows[0] || !result.rows[0].is_active) { res.json({ connected: false }); return; }
+    const cfg = result.rows[0].config_json ?? {};
+    res.json({ connected: true, host: cfg.host, port: cfg.port, secure: cfg.secure, user: cfg.user, from_email: cfg.from_email });
+  } catch { res.status(500).json({ error: 'Server error' }); }
+});
+
+// POST /api/integrations/smtp/setup
+router.post('/smtp/setup', checkPermission('integrations:manage'), async (req: AuthRequest, res: Response) => {
+  const { host, port, secure, user, password, from_email } = req.body as {
+    host?: string; port?: number; secure?: boolean; user?: string; password?: string; from_email?: string;
+  };
+  if (!host || !user || !password) { res.status(400).json({ error: 'host, user and password are required' }); return; }
+  const encryptedPassword = encrypt(password);
+  const config = { host, port: port ?? 587, secure: secure ?? false, user, password: encryptedPassword, from_email: from_email || user };
+  try {
+    await query(
+      `INSERT INTO integration_configs (tenant_id, integration_id, config_json, is_active)
+       VALUES ($1,'smtp',$2,TRUE)
+       ON CONFLICT (tenant_id, integration_id) DO UPDATE SET config_json=$2, is_active=TRUE, updated_at=NOW()`,
+      [req.user!.tenantId, JSON.stringify(config)]
+    );
+    res.json({ success: true });
+  } catch { res.status(500).json({ error: 'Server error' }); }
+});
+
+// DELETE /api/integrations/smtp/disconnect
+router.delete('/smtp/disconnect', checkPermission('integrations:manage'), async (req: AuthRequest, res: Response) => {
+  try {
+    await query('UPDATE integration_configs SET is_active=FALSE WHERE tenant_id=$1 AND integration_id=$2', [req.user!.tenantId, 'smtp']);
+    res.json({ success: true });
+  } catch { res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── Generic integration configs (Razorpay, n8n, etc.) ─────────────────────────
 
 // GET /api/integrations/configs
 router.get('/configs', checkPermission('integrations:view'), async (req: AuthRequest, res: Response) => {

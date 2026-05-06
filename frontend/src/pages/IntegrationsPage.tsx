@@ -1,217 +1,557 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Check, X, RefreshCw, Plug } from 'lucide-react';
+import { ArrowLeft, X, RefreshCw, Check, Mail, ExternalLink, Unplug, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
+import { cn } from '@/lib/utils';
 
-type IntegStatus = 'connected' | 'available' | 'coming_soon';
+// ── Brand icons ────────────────────────────────────────────────────────────────
 
-interface Integration {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  status: IntegStatus;
-  iconBg: string;
-  iconText: string;
-  apiKeyField?: string;
+function FacebookIcon() {
+  return (
+    <div className="w-12 h-12 rounded-2xl bg-[#1877F2] flex items-center justify-center shrink-0">
+      <svg viewBox="0 0 24 24" className="w-7 h-7 fill-white">
+        <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+      </svg>
+    </div>
+  );
 }
 
-const integrations: Integration[] = [
-  { id: 'meta', name: 'Meta (Facebook & Instagram)', description: 'Lead ads, form sync, and audience management', category: 'Lead Capture', status: 'connected', iconBg: 'bg-blue-100 text-blue-600', iconText: 'f' },
-  { id: 'whatsapp', name: 'WhatsApp Business API', description: 'Two-way messaging, lead capture, and templates', category: 'Lead Capture', status: 'connected', iconBg: 'bg-green-100 text-green-600', iconText: 'W' },
-  { id: 'gmail', name: 'Gmail', description: 'Sync email threads with leads in CRM', category: 'Email', status: 'available', iconBg: 'bg-red-100 text-red-600', iconText: 'G', apiKeyField: 'OAuth' },
-  { id: 'outlook', name: 'Outlook / Office 365', description: 'Connect your Microsoft email account', category: 'Email', status: 'coming_soon', iconBg: 'bg-blue-100 text-blue-700', iconText: 'O' },
-  { id: 'slack', name: 'Slack', description: 'Get CRM notifications in Slack channels', category: 'Notifications', status: 'available', iconBg: 'bg-purple-100 text-purple-600', iconText: 'S', apiKeyField: 'Webhook URL' },
-  { id: 'razorpay', name: 'Razorpay', description: 'Track payments and link to lead deals', category: 'Payments', status: 'available', iconBg: 'bg-indigo-100 text-indigo-600', iconText: 'R', apiKeyField: 'API Key' },
-  { id: 'stripe', name: 'Stripe', description: 'Connect Stripe to track deal payments', category: 'Payments', status: 'coming_soon', iconBg: 'bg-violet-100 text-violet-600', iconText: 'S' },
-  { id: 'zapier', name: 'Zapier', description: 'Connect NexCRM to 5000+ apps via Zapier', category: 'Automation', status: 'available', iconBg: 'bg-orange-100 text-orange-600', iconText: 'Z', apiKeyField: 'API Key' },
-  { id: 'n8n', name: 'n8n', description: 'Open-source workflow automation platform', category: 'Automation', status: 'available', iconBg: 'bg-pink-100 text-pink-600', iconText: 'n', apiKeyField: 'Webhook URL' },
-];
+function InstagramIcon() {
+  return (
+    <div className="w-12 h-12 rounded-2xl shrink-0 flex items-center justify-center"
+      style={{ background: 'linear-gradient(135deg, #f58529 0%, #dd2a7b 50%, #8134af 100%)' }}>
+      <svg viewBox="0 0 24 24" className="w-7 h-7 fill-white">
+        <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z" />
+      </svg>
+    </div>
+  );
+}
 
-const categories = ['All', ...Array.from(new Set(integrations.map((i) => i.category)))];
+function WhatsAppIcon() {
+  return (
+    <div className="w-12 h-12 rounded-2xl bg-[#25D366] flex items-center justify-center shrink-0">
+      <svg viewBox="0 0 24 24" className="w-7 h-7 fill-white">
+        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+      </svg>
+    </div>
+  );
+}
 
-function ConnectModal({ integ, onClose }: { integ: Integration; onClose: () => void }) {
-  const [apiKey, setApiKey] = useState('');
-  const [connecting, setConnecting] = useState(false);
+function RazorpayIcon() {
+  return (
+    <div className="w-12 h-12 rounded-2xl bg-[#3395FF] flex items-center justify-center shrink-0">
+      <span className="text-white font-extrabold text-[13px] tracking-tight">RZP</span>
+    </div>
+  );
+}
 
-  const handleConnect = async () => {
-    if (!apiKey.trim()) { toast.error(`${integ.apiKeyField ?? 'API Key'} is required`); return; }
-    setConnecting(true);
-    try {
-      const payload = integ.apiKeyField === 'Webhook URL'
-        ? { webhook_url: apiKey.trim() }
-        : { api_key: apiKey.trim() };
-      await api.post(`/api/integrations/configs/${integ.id}`, payload);
-      toast.success(`${integ.name} connected!`);
-      onClose();
-    } catch {
-      toast.error(`Failed to connect ${integ.name}`);
-    } finally {
-      setConnecting(false);
-    }
-  };
+function N8nIcon() {
+  return (
+    <div className="w-12 h-12 rounded-2xl bg-[#EA4B71] flex items-center justify-center shrink-0">
+      <span className="text-white font-extrabold text-[13px] tracking-tight">n8n</span>
+    </div>
+  );
+}
 
+function EmailIcon() {
+  return (
+    <div className="w-12 h-12 rounded-2xl bg-[#6366f1] flex items-center justify-center shrink-0">
+      <Mail className="w-6 h-6 text-white" />
+    </div>
+  );
+}
+
+// ── Status badge ───────────────────────────────────────────────────────────────
+
+function StatusBadge({ connected }: { connected: boolean }) {
+  return (
+    <span className={cn(
+      'inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full',
+      connected
+        ? 'bg-emerald-50 text-emerald-600'
+        : 'bg-[#f5f0eb] text-[#9e8e7e]'
+    )}>
+      {connected ? <><Check className="w-2.5 h-2.5" />Connected</> : 'Not connected'}
+    </span>
+  );
+}
+
+// ── Modal shell ────────────────────────────────────────────────────────────────
+
+function Modal({ title, onClose, children, footer }: {
+  title: string; onClose: () => void;
+  children: React.ReactNode; footer: React.ReactNode;
+}) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }}>
-      <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden" style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
+      <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
         <div className="px-5 py-4 border-b border-black/5 flex items-center justify-between">
-          <p className="text-[15px] font-bold text-[#1c1410]">Connect {integ.name}</p>
+          <p className="text-[15px] font-bold text-[#1c1410]">{title}</p>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors"><X size={15} /></button>
         </div>
-        <div className="p-5 space-y-4">
-          <div className="flex items-center gap-3 p-3 rounded-xl bg-[#faf8f6]">
-            <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg shrink-0', integ.iconBg)}>{integ.iconText}</div>
-            <div>
-              <p className="text-[13px] font-semibold text-[#1c1410]">{integ.name}</p>
-              <p className="text-[11px] text-[#7a6b5c]">{integ.description}</p>
-            </div>
-          </div>
-          <div>
-            <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-[#5c5245] mb-1.5 ml-1">{integ.apiKeyField ?? 'API Key'} *</label>
-            <Input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={`Enter your ${integ.apiKeyField ?? 'API Key'}`} type={integ.apiKeyField === 'Webhook URL' ? 'url' : 'text'} />
-          </div>
-          <p className="text-[11px] text-[#7a6b5c]">Your credentials are encrypted and stored securely. They are never shared with third parties.</p>
-        </div>
-        <div className="flex justify-end gap-2 px-5 py-4 border-t border-black/5 bg-[#faf8f6]">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleConnect} disabled={connecting}>
-            {connecting ? <><RefreshCw className="w-4 h-4 mr-1 animate-spin" /> Connecting…</> : <><Check className="w-4 h-4 mr-1" /> Connect</>}
-          </Button>
-        </div>
+        <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">{children}</div>
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-black/5 bg-[#faf8f6]">{footer}</div>
       </div>
     </div>
   );
 }
 
-export default function IntegrationsPage() {
-  const navigate = useNavigate();
-  const [filter, setFilter] = useState('All');
-  const [connectInteg, setConnectInteg] = useState<Integration | null>(null);
-  const [connected, setConnected] = useState<Set<string>>(new Set());
+const labelCls = 'block text-[11px] font-bold uppercase tracking-[0.08em] text-[#5c5245] mb-1';
 
-  useEffect(() => {
-    // Load real connection status for Meta
-    api.get<{ connected: boolean }>('/api/integrations/meta/status')
-      .then((r) => {
-        setConnected((prev) => {
-          const next = new Set(prev);
-          if (r.connected) next.add('meta'); else next.delete('meta');
-          return next;
-        });
-      }).catch(() => {});
+// ── WABA modal ─────────────────────────────────────────────────────────────────
 
-    // Load generic integration configs
-    api.get<Record<string, { is_active: boolean }>>('/api/integrations/configs')
-      .then((configs) => {
-        setConnected((prev) => {
-          const next = new Set(prev);
-          Object.entries(configs).forEach(([id, cfg]) => {
-            if (cfg.is_active) next.add(id); else next.delete(id);
-          });
-          return next;
-        });
-      }).catch(() => {});
-  }, []);
+function WabaModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState({ phone_number_id: '', waba_id: '', access_token: '', phone_number: '' });
+  const [saving, setSaving] = useState(false);
+  const [showToken, setShowToken] = useState(false);
+  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
-  const filtered = integrations.filter((i) => filter === 'All' || i.category === filter);
-  const isConnected = (id: string) => connected.has(id);
+  const handleSave = async () => {
+    if (!form.phone_number_id.trim() || !form.waba_id.trim() || !form.access_token.trim()) {
+      toast.error('Phone Number ID, WABA ID and Access Token are required');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.post('/api/integrations/waba/setup', {
+        phone_number_id: form.phone_number_id.trim(),
+        waba_id: form.waba_id.trim(),
+        access_token: form.access_token.trim(),
+        phone_number: form.phone_number.trim() || undefined,
+      });
+      toast.success('WhatsApp Business connected!');
+      onSaved();
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to connect WhatsApp Business');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center gap-3">
+    <Modal title="Connect WhatsApp Business API" onClose={onClose} footer={
+      <>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />Connecting…</> : <><Check className="w-3.5 h-3.5 mr-1.5" />Connect</>}
+        </Button>
+      </>
+    }>
+      <p className="text-[12px] text-[#7a6b5c]">Get these values from your Meta Business Manager → WhatsApp → API Setup.</p>
+      <div>
+        <label className={labelCls}>Phone Number ID *</label>
+        <Input value={form.phone_number_id} onChange={(e) => set('phone_number_id', e.target.value)} placeholder="123456789012345" />
+      </div>
+      <div>
+        <label className={labelCls}>WABA ID (Business Account ID) *</label>
+        <Input value={form.waba_id} onChange={(e) => set('waba_id', e.target.value)} placeholder="987654321098765" />
+      </div>
+      <div>
+        <label className={labelCls}>Permanent Access Token *</label>
+        <div className="relative">
+          <Input
+            value={form.access_token}
+            onChange={(e) => set('access_token', e.target.value)}
+            type={showToken ? 'text' : 'password'}
+            placeholder="EAAxxxxxxxxxxxxxxx"
+            className="pr-9"
+          />
+          <button type="button" onClick={() => setShowToken((s) => !s)}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9e8e7e] hover:text-[#1c1410]">
+            {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+      <div>
+        <label className={labelCls}>Phone Number (optional)</label>
+        <Input value={form.phone_number} onChange={(e) => set('phone_number', e.target.value)} placeholder="+91 98765 43210" />
+        <p className="text-[10px] text-[#b09e8d] mt-1">Leave blank to auto-resolve from Meta</p>
+      </div>
+    </Modal>
+  );
+}
+
+// ── SMTP modal ─────────────────────────────────────────────────────────────────
+
+function SmtpModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState({ host: '', port: '587', user: '', password: '', from_email: '', secure: false });
+  const [saving, setSaving] = useState(false);
+  const [showPass, setShowPass] = useState(false);
+  const set = (k: string, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    if (!form.host.trim() || !form.user.trim() || !form.password.trim()) {
+      toast.error('Host, Username and Password are required');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.post('/api/integrations/smtp/setup', {
+        host: form.host.trim(),
+        port: parseInt(form.port) || 587,
+        secure: form.secure,
+        user: form.user.trim(),
+        password: form.password,
+        from_email: form.from_email.trim() || form.user.trim(),
+      });
+      toast.success('Email (SMTP) connected!');
+      onSaved();
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to save SMTP settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Configure Email (SMTP)" onClose={onClose} footer={
+      <>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />Saving…</> : <><Check className="w-3.5 h-3.5 mr-1.5" />Save</>}
+        </Button>
+      </>
+    }>
+      <p className="text-[12px] text-[#7a6b5c]">Used for sending automated emails from workflows. For Gmail, use an App Password with 2FA enabled.</p>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="col-span-2 sm:col-span-1">
+          <label className={labelCls}>SMTP Host *</label>
+          <Input value={form.host} onChange={(e) => set('host', e.target.value)} placeholder="smtp.gmail.com" />
+        </div>
+        <div>
+          <label className={labelCls}>Port</label>
+          <Input value={form.port} onChange={(e) => set('port', e.target.value)} placeholder="587" type="number" />
+        </div>
+      </div>
+      <div>
+        <label className={labelCls}>Username / Email *</label>
+        <Input value={form.user} onChange={(e) => set('user', e.target.value)} placeholder="you@gmail.com" type="email" />
+      </div>
+      <div>
+        <label className={labelCls}>Password / App Password *</label>
+        <div className="relative">
+          <Input
+            value={form.password}
+            onChange={(e) => set('password', e.target.value)}
+            type={showPass ? 'text' : 'password'}
+            placeholder="••••••••••••••••"
+            className="pr-9"
+          />
+          <button type="button" onClick={() => setShowPass((s) => !s)}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9e8e7e] hover:text-[#1c1410]">
+            {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+      <div>
+        <label className={labelCls}>From Email (optional)</label>
+        <Input value={form.from_email} onChange={(e) => set('from_email', e.target.value)} placeholder="noreply@yourcompany.com" type="email" />
+        <p className="text-[10px] text-[#b09e8d] mt-1">Defaults to username if left blank</p>
+      </div>
+      <label className="flex items-center gap-2 cursor-pointer select-none">
+        <div
+          onClick={() => set('secure', !form.secure)}
+          className={cn('w-9 h-5 rounded-full transition-colors relative shrink-0', form.secure ? 'bg-primary' : 'bg-[#d4c9bc]')}
+        >
+          <div className={cn('absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform', form.secure ? 'translate-x-4' : 'translate-x-0.5')} />
+        </div>
+        <span className="text-[12px] text-[#5c5245] font-medium">Use TLS/SSL (port 465)</span>
+      </label>
+    </Modal>
+  );
+}
+
+// ── Razorpay modal ─────────────────────────────────────────────────────────────
+
+function RazorpayModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [keyId, setKeyId] = useState('');
+  const [keySecret, setKeySecret] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
+
+  const handleSave = async () => {
+    if (!keyId.trim() || !keySecret.trim()) { toast.error('Key ID and Key Secret are required'); return; }
+    setSaving(true);
+    try {
+      await api.post('/api/integrations/configs/razorpay', { api_key: keyId.trim(), webhook_url: keySecret.trim() });
+      toast.success('Razorpay connected!');
+      onSaved();
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to connect Razorpay');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Connect Razorpay" onClose={onClose} footer={
+      <>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />Connecting…</> : <><Check className="w-3.5 h-3.5 mr-1.5" />Connect</>}
+        </Button>
+      </>
+    }>
+      <p className="text-[12px] text-[#7a6b5c]">Find your API keys in Razorpay Dashboard → Settings → API Keys.</p>
+      <div>
+        <label className={labelCls}>Key ID *</label>
+        <Input value={keyId} onChange={(e) => setKeyId(e.target.value)} placeholder="rzp_live_xxxxxxxxxx" />
+      </div>
+      <div>
+        <label className={labelCls}>Key Secret *</label>
+        <div className="relative">
+          <Input value={keySecret} onChange={(e) => setKeySecret(e.target.value)}
+            type={showSecret ? 'text' : 'password'} placeholder="••••••••••••••••" className="pr-9" />
+          <button type="button" onClick={() => setShowSecret((s) => !s)}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9e8e7e] hover:text-[#1c1410]">
+            {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ── n8n modal ──────────────────────────────────────────────────────────────────
+
+function N8nModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!webhookUrl.trim()) { toast.error('Webhook URL is required'); return; }
+    setSaving(true);
+    try {
+      await api.post('/api/integrations/configs/n8n', { webhook_url: webhookUrl.trim() });
+      toast.success('n8n connected!');
+      onSaved();
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to connect n8n');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Connect n8n" onClose={onClose} footer={
+      <>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />Connecting…</> : <><Check className="w-3.5 h-3.5 mr-1.5" />Connect</>}
+        </Button>
+      </>
+    }>
+      <p className="text-[12px] text-[#7a6b5c]">Create a Webhook node in n8n, copy the Test/Production URL, and paste it here.</p>
+      <div>
+        <label className={labelCls}>n8n Webhook URL *</label>
+        <Input value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)}
+          placeholder="https://your-n8n.app/webhook/xxx" type="url" />
+      </div>
+    </Modal>
+  );
+}
+
+// ── Integration card ───────────────────────────────────────────────────────────
+
+type ModalType = 'waba' | 'smtp' | 'razorpay' | 'n8n';
+
+interface IntegCardProps {
+  icon: React.ReactNode;
+  name: string;
+  tagline: string;
+  connected: boolean;
+  onConnect: () => void;
+  onConfigure?: () => void;
+  onDisconnect: () => Promise<void>;
+  configureLabel?: string;
+}
+
+function IntegCard({ icon, name, tagline, connected, onConnect, onConfigure, onDisconnect, configureLabel = 'Configure' }: IntegCardProps) {
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  const handleDisconnect = async () => {
+    setDisconnecting(true);
+    try { await onDisconnect(); } finally { setDisconnecting(false); }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-black/5 p-5 flex flex-col gap-4 hover:shadow-sm transition-all duration-200">
+      <div className="flex items-start justify-between gap-2">
+        {icon}
+        <StatusBadge connected={connected} />
+      </div>
+      <div className="flex-1">
+        <p className="text-[14px] font-bold text-[#1c1410]">{name}</p>
+        <p className="text-[12px] text-[#9e8e7e] mt-0.5 leading-relaxed">{tagline}</p>
+      </div>
+      <div className="flex gap-2">
+        {connected ? (
+          <>
+            {onConfigure && (
+              <Button variant="outline" size="sm" className="flex-1" onClick={onConfigure}>
+                <ExternalLink className="w-3 h-3 mr-1.5" />{configureLabel}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn('text-destructive hover:bg-red-50 border-red-100', !onConfigure && 'flex-1')}
+              onClick={handleDisconnect}
+              disabled={disconnecting}
+            >
+              {disconnecting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <><Unplug className="w-3.5 h-3.5 mr-1" />Disconnect</>}
+            </Button>
+          </>
+        ) : (
+          <Button size="sm" className="flex-1" onClick={onConnect}>
+            Connect
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Page ───────────────────────────────────────────────────────────────────────
+
+export default function IntegrationsPage() {
+  const navigate = useNavigate();
+  const [modal, setModal] = useState<ModalType | null>(null);
+  const [status, setStatus] = useState({
+    meta: false,
+    waba: false,
+    smtp: false,
+    razorpay: false,
+    n8n: false,
+  });
+
+  const loadStatus = async () => {
+    const [meta, waba, smtp, configs] = await Promise.allSettled([
+      api.get<{ connected: boolean }>('/api/integrations/meta/status'),
+      api.get<{ connected: boolean }>('/api/integrations/waba/status'),
+      api.get<{ connected: boolean }>('/api/integrations/smtp/status'),
+      api.get<Record<string, { is_active: boolean }>>('/api/integrations/configs'),
+    ]);
+
+    setStatus({
+      meta:     meta.status     === 'fulfilled' && !!meta.value?.connected,
+      waba:     waba.status     === 'fulfilled' && !!waba.value?.connected,
+      smtp:     smtp.status     === 'fulfilled' && !!smtp.value?.connected,
+      razorpay: configs.status  === 'fulfilled' && !!configs.value?.razorpay?.is_active,
+      n8n:      configs.status  === 'fulfilled' && !!configs.value?.n8n?.is_active,
+    });
+  };
+
+  useEffect(() => { loadStatus(); }, []);
+
+  const disconnect = async (key: keyof typeof status, endpoint: string) => {
+    try {
+      await api.delete(endpoint);
+      setStatus((s) => ({ ...s, [key]: false }));
+      toast.success('Disconnected');
+    } catch {
+      toast.error('Failed to disconnect');
+    }
+  };
+
+  const onSaved = (key: keyof typeof status) => {
+    setStatus((s) => ({ ...s, [key]: true }));
+    setModal(null);
+  };
+
+  return (
+    <div className="space-y-6 pb-10">
+
+      {/* Header */}
+      <div className="flex items-center gap-2.5">
         <button
           onClick={() => navigate('/settings')}
-          className="p-2 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-[#1c1410] transition-colors"
+          className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-[#1c1410] transition-colors"
         >
-          <ArrowLeft className="w-5 h-5" />
+          <ArrowLeft className="w-4 h-4" />
         </button>
+        <div>
+          <h2 className="font-headline font-bold text-[17px] text-[#1c1410]">Integrations</h2>
+          <p className="text-[12px] text-[#9e8e7e]">Connect your tools to DigyGo CRM</p>
+        </div>
       </div>
 
-      {/* Category filter tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {categories.map((cat) => (
-          <button
-            key={cat}
-            onClick={() => setFilter(cat)}
-            className={cn(
-              'px-3 py-1.5 text-sm font-medium rounded-xl whitespace-nowrap transition-all duration-200',
-              filter === cat
-                ? 'bg-[#fde8d5] text-primary font-semibold'
-                : 'text-[#7a6b5c] hover:bg-[#f5ede3] hover:text-primary'
-            )}
-          >
-            {cat}
-          </button>
-        ))}
+      {/* Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+        <IntegCard
+          icon={<FacebookIcon />}
+          name="Facebook"
+          tagline="Capture leads from Facebook Lead Ads and sync them automatically into CRM."
+          connected={status.meta}
+          onConnect={() => navigate('/lead-generation/meta-forms')}
+          onConfigure={() => navigate('/lead-generation/meta-forms')}
+          onDisconnect={() => disconnect('meta', '/api/integrations/meta/disconnect')}
+          configureLabel="Manage Forms"
+        />
+
+        <IntegCard
+          icon={<InstagramIcon />}
+          name="Instagram"
+          tagline="Capture leads from Instagram Lead Ads via Meta Business Manager."
+          connected={status.meta}
+          onConnect={() => navigate('/lead-generation/meta-forms')}
+          onConfigure={() => navigate('/lead-generation/meta-forms')}
+          onDisconnect={async () => toast.info('Facebook and Instagram share the same Meta connection')}
+          configureLabel="Manage Forms"
+        />
+
+        <IntegCard
+          icon={<WhatsAppIcon />}
+          name="WhatsApp Business"
+          tagline="Send and receive WhatsApp messages. Connect your WABA number for two-way conversations."
+          connected={status.waba}
+          onConnect={() => setModal('waba')}
+          onConfigure={() => setModal('waba')}
+          onDisconnect={() => disconnect('waba', '/api/integrations/waba/disconnect')}
+        />
+
+        <IntegCard
+          icon={<EmailIcon />}
+          name="Email (SMTP)"
+          tagline="Configure your SMTP server to send automated emails from workflows and sequences."
+          connected={status.smtp}
+          onConnect={() => setModal('smtp')}
+          onConfigure={() => setModal('smtp')}
+          onDisconnect={() => disconnect('smtp', '/api/integrations/smtp/disconnect')}
+        />
+
+        <IntegCard
+          icon={<RazorpayIcon />}
+          name="Razorpay"
+          tagline="Track payments and link transactions to lead deals inside your CRM pipeline."
+          connected={status.razorpay}
+          onConnect={() => setModal('razorpay')}
+          onConfigure={() => setModal('razorpay')}
+          onDisconnect={() => disconnect('razorpay', '/api/integrations/configs/razorpay')}
+        />
+
+        <IntegCard
+          icon={<N8nIcon />}
+          name="n8n"
+          tagline="Trigger n8n workflows from CRM automation. Connect your n8n webhook to get started."
+          connected={status.n8n}
+          onConnect={() => setModal('n8n')}
+          onConfigure={() => setModal('n8n')}
+          onDisconnect={() => disconnect('n8n', '/api/integrations/configs/n8n')}
+        />
+
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map((integ) => {
-          const conn = isConnected(integ.id);
-          const isComingSoon = integ.status === 'coming_soon';
-          return (
-            <div key={integ.id} className="bg-white rounded-2xl border border-black/5 card-shadow p-5 flex flex-col gap-4 hover:-translate-y-0.5 transition-all duration-200">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg shrink-0', integ.iconBg)}>{integ.iconText}</div>
-                  <div>
-                    <p className="text-[13px] font-bold text-[#1c1410]">{integ.name}</p>
-                    <p className="text-[11px] text-[#7a6b5c]">{integ.category}</p>
-                  </div>
-                </div>
-                <span className={cn('text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0',
-                  conn && !isComingSoon ? 'bg-emerald-500/10 text-emerald-600' :
-                  isComingSoon ? 'bg-yellow-100 text-yellow-700' :
-                  'bg-muted text-[#7a6b5c]'
-                )}>
-                  {conn && !isComingSoon ? <><Check className="w-2.5 h-2.5 inline mr-0.5" />Connected</> :
-                   isComingSoon ? 'Soon' : 'Available'}
-                </span>
-              </div>
-              <p className="text-[12px] text-[#7a6b5c] flex-1">{integ.description}</p>
-              <div className="flex gap-2">
-                {isComingSoon ? (
-                  <Button variant="outline" size="sm" disabled className="flex-1">Coming Soon</Button>
-                ) : conn ? (
-                  <>
-                    <Button variant="outline" size="sm" className="flex-1" onClick={() => {
-                      if (integ.id === 'meta') navigate('/lead-generation/meta-forms');
-                      else toast.info(`Configure ${integ.name}`);
-                    }}>Configure</Button>
-                    <Button variant="outline" size="sm" className="text-destructive hover:bg-red-50" onClick={async () => {
-                      try {
-                        if (integ.id === 'meta') await api.delete('/api/integrations/meta/disconnect');
-                        else await api.delete(`/api/integrations/configs/${integ.id}`);
-                        setConnected((prev) => { const next = new Set(prev); next.delete(integ.id); return next; });
-                        toast.success(`${integ.name} disconnected`);
-                      } catch { toast.error('Failed to disconnect'); }
-                    }}>Disconnect</Button>
-                  </>
-                ) : (
-                  <Button size="sm" className="flex-1" onClick={() => {
-                    if (integ.id === 'meta') navigate('/lead-generation/meta-forms');
-                    else setConnectInteg(integ);
-                  }}>
-                    <Plug className="w-3.5 h-3.5 mr-1" /> Connect
-                  </Button>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      {/* Modals */}
+      {modal === 'waba'     && <WabaModal     onClose={() => setModal(null)} onSaved={() => onSaved('waba')}     />}
+      {modal === 'smtp'     && <SmtpModal     onClose={() => setModal(null)} onSaved={() => onSaved('smtp')}     />}
+      {modal === 'razorpay' && <RazorpayModal onClose={() => setModal(null)} onSaved={() => onSaved('razorpay')} />}
+      {modal === 'n8n'      && <N8nModal      onClose={() => setModal(null)} onSaved={() => onSaved('n8n')}      />}
 
-      {connectInteg && (
-        <ConnectModal integ={connectInteg} onClose={() => {
-          setConnected((prev) => { const next = new Set(prev); next.add(connectInteg.id); return next; });
-          setConnectInteg(null);
-        }} />
-      )}
     </div>
   );
 }
