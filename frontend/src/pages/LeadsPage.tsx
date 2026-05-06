@@ -893,13 +893,33 @@ function NoteModal({ leadId, onClose, onCreated }: { leadId: string; onClose: ()
 function FollowUpModal({ leadId, onClose, onCreated }: { leadId: string; onClose: () => void; onCreated?: (fu: any) => void }) {
   const { addFollowUp } = useCrmStore();
   const currentUser = useAuthStore((s) => s.currentUser);
+  const [isNote, setIsNote] = useState(false);
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
   const [dueAt, setDueAt] = useState('');
   const [saving, setSaving] = useState(false);
   const inputCls = 'w-full border border-gray-200 rounded-xl px-4 py-2.5 text-[13px] text-[#1c1410] outline-none focus:border-primary/40 placeholder:text-gray-300';
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isNote) {
+      const content = notes.trim() || title.trim();
+      if (!content) { toast.error('Note content is required'); return; }
+      setSaving(true);
+      try {
+        await api.post(`/api/leads/${leadId}/notes`, {
+          title: title.trim() || undefined,
+          content,
+        });
+        toast.success('Note added');
+        onClose();
+      } catch (err: any) {
+        toast.error(err.message ?? 'Failed to add note');
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
     if (!title.trim()) { toast.error('Title is required'); return; }
     setSaving(true);
     try {
@@ -927,29 +947,49 @@ function FollowUpModal({ leadId, onClose, onCreated }: { leadId: string; onClose
       setSaving(false);
     }
   };
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-black/5">
-          <h3 className="font-headline font-bold text-[#1c1410] text-[17px]">Set Follow-Up</h3>
+          <h3 className="font-headline font-bold text-[#1c1410] text-[17px]">{isNote ? 'Add Note' : 'Set Follow-Up'}</h3>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-[#7a6b5c]"><X className="w-4 h-4" /></button>
         </div>
         <form onSubmit={submit} className="px-6 py-5 space-y-4">
+          {/* Note toggle */}
+          <label className="flex items-center gap-2.5 cursor-pointer select-none w-fit">
+            <input
+              type="checkbox"
+              checked={isNote}
+              onChange={(e) => setIsNote(e.target.checked)}
+              className="w-4 h-4 rounded accent-primary cursor-pointer"
+            />
+            <span className="text-[13px] font-medium text-[#6b4f30]">Save as note instead of follow-up</span>
+          </label>
+
           <div>
-            <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Title <span className="text-red-400">*</span></label>
+            <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">
+              Title {!isNote && <span className="text-red-400">*</span>}
+            </label>
             <input className={inputCls} placeholder="e.g. Call back for pre-sales pitch" value={title} onChange={(e) => setTitle(e.target.value)} />
           </div>
           <div>
-            <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Notes</label>
-            <textarea className={inputCls + ' resize-none h-20'} placeholder="Add any notes..." value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">
+              {isNote ? <>Note Content <span className="text-red-400">*</span></> : 'Notes'}
+            </label>
+            <textarea className={inputCls + ' resize-none h-20'} placeholder={isNote ? 'Write your note...' : 'Add any notes...'} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
-          <div>
-            <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Due Date & Time</label>
-            <input type="datetime-local" className={inputCls} value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
-          </div>
+          {!isNote && (
+            <div>
+              <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Due Date & Time</label>
+              <input type="datetime-local" className={inputCls} value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
+            </div>
+          )}
           <div className="flex items-center justify-end gap-3 pt-1">
             <button type="button" onClick={onClose} className="px-5 py-2 rounded-xl text-[13px] font-semibold text-[#7a6b5c] hover:bg-gray-100 transition-colors">Cancel</button>
-            <button type="submit" disabled={saving} className="px-6 py-2 rounded-xl text-[13px] font-bold text-white hover:-translate-y-0.5 transition-all disabled:opacity-60" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}>{saving ? 'Saving…' : 'Schedule'}</button>
+            <button type="submit" disabled={saving} className="px-6 py-2 rounded-xl text-[13px] font-bold text-white hover:-translate-y-0.5 transition-all disabled:opacity-60" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}>
+              {saving ? 'Saving…' : isNote ? 'Save Note' : 'Schedule'}
+            </button>
           </div>
         </form>
       </div>
