@@ -911,7 +911,7 @@ function FollowUpModal({ leadId, onClose, onCreated, onNoteCreated }: { leadId: 
           title: title.trim() || undefined,
           content,
         });
-        onNoteCreated?.(created);
+        onNoteCreated?.({ ...created, created_by_name: currentUser?.name ?? '' });
         toast.success('Note added');
         onClose();
       } catch (err: any) {
