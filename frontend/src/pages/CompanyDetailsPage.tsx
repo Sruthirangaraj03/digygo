@@ -152,7 +152,7 @@ export default function CompanyDetailsPage() {
   }
 
   return (
-    <div className="max-w-2xl space-y-5 pb-10">
+    <div className="space-y-5 pb-10">
 
       {/* Page header */}
       <div className="flex items-center justify-between">
