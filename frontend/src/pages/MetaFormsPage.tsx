@@ -1470,16 +1470,6 @@ export default function MetaFormsPage() {
                         Import All Leads
                       </button>
                       <button
-                        onClick={() => handlePushToAutomation(form, 'new')}
-                        disabled={!!exportingId}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white disabled:opacity-50 transition-colors whitespace-nowrap"
-                      >
-                        {exportingId === `${form.form_id}-new`
-                          ? <RefreshCw className="w-3 h-3 animate-spin" />
-                          : <CalendarDays className="w-3 h-3" />}
-                        Import New Leads
-                      </button>
-                      <button
                         onClick={() => { setOpenForm(form); setContactSearch(''); }}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#f5ede3] text-primary hover:bg-[#fde8d5] text-[12px] font-semibold transition-colors whitespace-nowrap"
                       >
