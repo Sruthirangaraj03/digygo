@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation } from 'react-router-dom';
 import { useCrmStore, LeadActivity } from '@/store/crmStore';
 import { useAuthStore } from '@/store/authStore';
 import { usePermission } from '@/hooks/usePermission';
@@ -3113,8 +3113,40 @@ export default function LeadsPage() {
   }, [pipelines]);
   const [kanbanView, setKanbanView] = useState(!dashFilter);
   const [showPhone, setShowPhone] = useState(true);
+  const location = useLocation();
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
-  const selectedLead = leads.find((l) => l.id === selectedLeadId) ?? null;
+  const [stateOpenLead, setStateOpenLead] = useState<Lead | null>(null);
+  const selectedLead = leads.find((l) => l.id === selectedLeadId) ?? stateOpenLead;
+
+  // Auto-open lead panel when navigated from FollowUpsPage with state.openLeadId
+  useEffect(() => {
+    const openId = (location.state as any)?.openLeadId;
+    if (!openId) return;
+    window.history.replaceState({}, ''); // clear state so back/forward don't re-trigger
+    const fromStore = leads.find((l) => l.id === openId);
+    if (fromStore) { setSelectedLeadId(fromStore.id); return; }
+    api.get<any>(`/api/leads/${openId}`).then((l) => {
+      const parts = (l.name ?? '').split(' ');
+      setStateOpenLead({
+        id: l.id,
+        firstName: l.first_name ?? parts[0] ?? '',
+        lastName: l.last_name ?? parts.slice(1).join(' ') ?? '',
+        email: l.email ?? '',
+        phone: l.phone ?? '',
+        stage: l.stage_name ?? 'New Lead',
+        stageId: l.stage_id ?? '',
+        pipelineId: l.pipeline_id ?? '',
+        source: l.source ?? 'Manual',
+        tags: l.tags ?? [],
+        assignedTo: l.assigned_to ?? '',
+        assignedName: l.assigned_name ?? '',
+        createdAt: l.created_at ?? new Date().toISOString(),
+        lastActivity: l.updated_at ?? l.created_at ?? new Date().toISOString(),
+        businessName: '', city: '', notes: l.notes ?? '',
+        dealValue: Number(l.deal_value ?? 0), value: 0, probability: 0, nextFollowUp: null, customFields: {},
+      } as Lead);
+    }).catch(() => null);
+  }, [location.state]);
   const [showAddLead, setShowAddLead] = useState(false);
   const [showNewPipeline, setShowNewPipeline] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
@@ -3823,7 +3855,7 @@ export default function LeadsPage() {
       )}
       </div>{/* end flex-1 board wrapper */}
 
-      {selectedLead && <LeadDetailPanel lead={selectedLead} onClose={() => setSelectedLeadId(null)} onLeadUpdated={(id, updates) => {
+      {selectedLead && <LeadDetailPanel lead={selectedLead} onClose={() => { setSelectedLeadId(null); setStateOpenLead(null); }} onLeadUpdated={(id, updates) => {
         if (apiLeads) {
           setApiLeads((prev) => prev?.map((l) => l.id === id ? { ...l, ...updates } : l) ?? null);
         }
