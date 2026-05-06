@@ -1881,8 +1881,8 @@ function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
   type TimelineEntry = { id: string; type: LeadActivity['type']; title: string; detail?: string; timestamp: string; createdBy?: string };
   const timeline: TimelineEntry[] = [
     { id: 'created', type: 'created', title: `Joined · ${pipelineName}`, detail: getSourceLabel(lead), timestamp: lead.createdAt },
-    ...leadActivities.map((a) => ({ id: a.id, type: a.type, title: cleanActivityTitle(a.title), detail: a.detail, timestamp: a.timestamp, createdBy: a.createdBy })),
-    ...leadNotes.map((n) => ({ id: `note-${n.id}`, type: 'note' as const, title: 'Note', detail: n.content, timestamp: n.created_at, createdBy: n.created_by_name ?? n.created_by })),
+    ...leadActivities.filter((a) => a.type !== 'note').map((a) => ({ id: a.id, type: a.type, title: cleanActivityTitle(a.title), detail: a.detail, timestamp: a.timestamp, createdBy: a.createdBy })),
+    ...leadNotes.map((n) => ({ id: `note-${n.id}`, type: 'note' as const, title: n.title || 'Note', detail: n.content, timestamp: n.created_at, createdBy: n.created_by_name ?? n.created_by })),
     ...leadAppointments.map((a) => ({
       id: `appt-${a.id}`, type: 'appointment' as const,
       title: a.title.split(' - ')[0],
