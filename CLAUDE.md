@@ -42,6 +42,12 @@ ngrok http 5173
 ## Vite Proxy
 `/api` and `/socket.io` → `http://127.0.0.1:4000`. Update `allowedHosts` in `vite.config.ts` when ngrok URL changes.
 
+## Deployment
+- Production server: SSH deploy via `python deploy_ssh.py` from project root
+- Two git remotes: `origin` (broken/old), `digygo` (working production) — always push to `digygo`
+- PM2 process name: `digygocrm`
+- Migrations run automatically on every deploy
+
 ---
 
 ## Role Hierarchy — UNDERSTAND THIS FIRST
@@ -86,6 +92,13 @@ const permFn  = usePermissions()                    // returns checker fn
 permFn('leads:view_all')                            // use when calling in loops/callbacks
 ```
 `permAll=true` for owner and super_admin — all UI permission gates auto-open.
+
+### Manager Detection on Frontend
+There is NO `'manager'` JWT role. Manager is detected as:
+```typescript
+const isManager = !isPrivileged && usePermission('staff:manage');
+```
+Never check `role === 'manager'` — it will never be true.
 
 ### Full Permission Key List
 ```
@@ -278,6 +291,29 @@ const displayName = assignedStaff?.name || lead.assignedName || '';
 
 ---
 
+## AppLayout — Height Chain (Critical)
+
+```tsx
+// AppLayout.tsx — correct structure
+<div className="h-[100dvh] flex w-full overflow-hidden">        // root: full viewport, no overflow
+  <AppSidebar />
+  <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+    <AppHeader />
+    <main className="flex-1 overflow-hidden flex flex-col min-h-0">  // overflow-hidden NOT overflow-y-auto
+      <div className="px-6 py-5 flex flex-col flex-1 min-h-0 pb-10 overflow-y-auto">  // scroll lives HERE
+        <Outlet />                                                   // pages render here
+      </div>
+    </main>
+  </div>
+</div>
+```
+
+**Why this matters:** If `overflow-y-auto` is on `<main>`, flex children's `flex-1` becomes unbounded — the board never gets a proper height cap and leaves empty space at the bottom. The scroll container must be the content `div` (inside a height-bounded `<main>`), not `<main>` itself.
+
+**Pages that fill the viewport** (like the kanban board) use `flex-1 min-h-0` on their root div and the board wrapper. This works correctly only when the height chain above is intact.
+
+---
+
 ## Authentication Patterns
 
 ### Token Storage
@@ -317,7 +353,7 @@ decrementUsage():        Call after resource deletion
 
 ---
 
-## Key Backend Routes
+## Key Backend Routes (24 route files)
 | File | Prefix | Notes |
 |---|---|---|
 | `routes/auth.ts` | `/api/auth` | Login, refresh, super admin tenant management |
@@ -330,26 +366,152 @@ decrementUsage():        Call after resource deletion
 | `routes/calendar.ts` | `/api/calendar` | Events + public booking |
 | `routes/conversations.ts` | `/api/conversations` | Inbox/WhatsApp threads |
 | `routes/fields.ts` | `/api/fields` | Custom lead fields |
-| `routes/integrations.ts` | `/api/integrations` | Meta/WhatsApp/Stripe |
+| `routes/integrations.ts` | `/api/integrations` | Meta/WhatsApp/Razorpay |
 | `routes/webhooks.ts` | `/api/webhooks` | Inbound Meta webhooks |
+| `routes/tags.ts` | `/api/tags` | Tag CRUD and assignment |
+| `routes/templates.ts` | `/api/templates` | Message templates (WhatsApp/email/SMS) |
+| `routes/landing_pages.ts` | `/api/landing-pages` | Page builder, publishing |
+| `routes/opportunities.ts` | `/api/opportunities` | Deal/opportunity management |
+| `routes/assignment_rules.ts` | `/api/assignment-rules` | Rule CRUD and evaluation |
+| `routes/notifications.ts` | `/api/notifications` | Notification feed and preferences |
+| `routes/whatsapp_flows.ts` | `/api/whatsapp-flows` | WhatsApp flow builder |
+| `routes/pincode_routing.ts` | `/api/pincode-routing` | Pincode-based lead routing |
+| `routes/field_routing.ts` | `/api/field-routing` | Custom field-based routing |
+| `routes/leadGeneration.ts` | `/api/lead-generation` | Lead generation analytics |
+| `routes/dashboard.ts` | `/api/dashboard` | Stats + analytics (role-scoped) |
+| `routes/public.ts` | `/api/public` | Public form/booking (no auth) |
 
 ---
 
-## Key Frontend Pages
+## Key Frontend Pages (40 pages)
 | Page | Path | Key Permissions |
 |---|---|---|
+| `DashboardPage.tsx` | `/dashboard` | Role-split: owner/super_admin → ManagementDashboard; staff:manage → ManagerDashboard; else → StaffDashboard |
 | `LeadsPage.tsx` | `/leads` | leads:view_all/own, leads:only_assigned |
-| `ContactsPage.tsx` | `/lead-management/contacts` | contacts:read/create/edit/delete |
+| `LeadManagementOverviewPage.tsx` | `/lead-management` | Pipeline overview; clicking a card navigates to `/leads?pipeline=<id>` |
+| `ContactsPage.tsx` | `/lead-management/contacts` | contacts:read/create (edit + export are UI stubs) |
+| `ContactGroupPage.tsx` | `/lead-management/contact-groups` | contact_groups:read/manage |
 | `FollowUpsPage.tsx` | `/lead-management/followups` | respects leads:only_assigned |
+| `LeadGenerationPage.tsx` | `/lead-generation` | Overview with sparkline bar charts (LabelList for visible count labels) |
+| `MetaFormsPage.tsx` | `/lead-generation/meta-forms` | meta_forms:* |
+| `CustomFormsPage.tsx` | `/lead-generation/custom-forms` | custom_forms:* |
+| `LandingPagesPage.tsx` | `/lead-generation/landing-pages` | landing_pages:* |
 | `AutomationPage.tsx` | `/automation/workflows` | automation:view/manage |
 | `WorkflowEditorPage.tsx` | `/automation/editor/:id` | automation:manage |
+| `AutomationTemplatesPage.tsx` | `/automation/templates` | automation_templates:* |
 | `CalendarPage.tsx` | `/calendar` | calendar:manage |
 | `InboxPage.tsx` | `/inbox` | inbox:view_all/send |
 | `StaffPage.tsx` | `/staff` | staff:view/manage |
-| `DashboardPage.tsx` | `/dashboard` | dashboard:* per widget |
-| `MetaFormsPage.tsx` | `/lead-generation/meta-forms` | meta_forms:* |
-| `CustomFormsPage.tsx` | `/lead-generation/custom-forms` | custom_forms:* |
+| `FieldsPage.tsx` | `/fields` | fields:view/manage |
+| `SettingsPage.tsx` | `/settings` | settings:manage |
+| `IntegrationsPage.tsx` | `/integrations` | integrations:view/manage |
 | `SuperAdminPage.tsx` | `/admin` | role === 'super_admin' only |
+| `AssignmentRulesPage.tsx` | `/assignment-rules` | staff:manage |
+| `PincodeRoutingPage.tsx` | `/pincode-routing` | staff:manage |
+
+---
+
+## Dashboard Architecture — Three Role Views
+
+`DashboardPage.tsx` renders one of three sub-dashboards based on role:
+
+```typescript
+const isPrivileged = currentUser?.role === 'super_admin' || currentUser?.role === 'owner';
+const canManageStaff = usePermission('staff:manage');
+const isManager = !isPrivileged && canManageStaff;
+
+if (isPrivileged)  → <ManagementDashboard />   // owner / super_admin
+else if (isManager) → <ManagerDashboard />      // staff with staff:manage permission
+else               → <StaffDashboard />         // regular staff
+```
+
+### ManagementDashboard (owner/super_admin)
+- 4 aggregate KPIs: Total Leads, Active Staff, Conversations, Appointments
+- Business Growth Trend line chart
+- Pipeline Funnel + Source Intelligence
+- Source ROI ComposedChart
+- Team Health bars per staff member
+
+### ManagerDashboard (staff with staff:manage)
+- 4 operational KPIs + Staff Performance table
+- Untouched-by-Staff horizontal bar chart
+- Pipeline Health, Team follow-ups list, Lead inflow chart
+
+### StaffDashboard (regular staff)
+- 4 personal KPIs: My Leads, My Overdue Follow-ups, My Conversations, My Appointments
+- My Follow-ups list
+- My Numbers panel
+
+---
+
+## Kanban Board Architecture (LeadsPage.tsx)
+
+### Layout structure
+```
+Page root: flex flex-col flex-1 min-h-0
+  ├── Sticky toolbar: sticky top-0 z-20 bg-[#faf8f6]
+  │     ├── Pipeline selector (dropdown)
+  │     ├── Search input
+  │     ├── View toggle: Board | List (labeled, not icon-only)
+  │     ├── Filter button (labeled "Filter")
+  │     ├── More menu (···)
+  │     └── Add Lead button
+  └── Board wrapper: flex-1 flex flex-col min-h-0 overflow-hidden
+        └── DndContext
+              └── Kanban row: flex gap-4 overflow-x-auto overflow-y-hidden flex-1 min-h-0 items-stretch
+                    └── StageColumn × N
+```
+
+### StageColumn structure
+```
+Column outer: min-w-[280px] w-[280px] self-stretch flex flex-col rounded-2xl overflow-hidden border
+  ├── Accent strip: h-[3px] (color from STAGE_ACCENT_COLORS[stageIndex])
+  ├── Header: px-4 pt-3 pb-2.5 — stage name (left) + colored count badge pill (right)
+  │   → This header is always visible (outside the scroll area) — effectively sticky
+  └── Cards area: flex-1 min-h-0 overflow-y-auto — PER-COLUMN scroll
+        → Thin visible scrollbar via [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-black/20
+        → Empty state: dashed border icon + "No leads" + "Drag here to move"
+```
+
+### Stage accent colors
+```typescript
+const STAGE_ACCENT_COLORS = [
+  '#ea580c', '#3b82f6', '#8b5cf6', '#10b981', '#f59e0b',
+  '#f43f5e', '#06b6d4', '#84cc16', '#ec4899', '#0ea5e9',
+];
+// Used as: STAGE_ACCENT_COLORS[stageIndex % STAGE_ACCENT_COLORS.length]
+```
+
+### Key behaviors
+- Board fills viewport height — no whole-page vertical scroll
+- Each column scrolls independently (per-column `overflow-y-auto`)
+- Scrollbar is VISIBLE (thin, 4px) — never use `scrollbar-hide` on columns (it hides cards from users)
+- Stage header does NOT scroll away — it sits above the cards scroll area
+- Board scrolls horizontally for many stages (`overflow-x-auto` on kanban row)
+- Drag-and-drop via @dnd-kit between stages
+
+---
+
+## AppSidebar — Navigation Rules
+
+### Lead Management active state
+The sidebar highlights "Lead Management" for both `/leads` AND `/lead-management/*`:
+```typescript
+if (p === '/leads') {
+  return location.pathname === '/leads'
+    || location.pathname === '/lead-management'
+    || location.pathname.startsWith('/lead-management/');
+}
+```
+
+### Default navigation
+- "Lead Management" in sidebar navigates to `/leads` (Pipeline view by default)
+- Overview tab is accessible from the tab bar at the top of the page
+- Clicking a pipeline card on the Overview page navigates to `/leads?pipeline=<id>`
+
+### Tab bar (AppHeader.tsx)
+When on `/leads` or `/lead-management/*`, the header shows tabs:
+Overview | Pipeline | Follow-ups | Contacts | Contact Group
 
 ---
 
@@ -361,18 +523,66 @@ decrementUsage():        Call after resource deletion
 - Stage names: `text-[#c2410c]`
 - Buttons: orange gradient for primary actions, white/border for secondary
 - All modals/panels: `z-50` or higher, backdrop `bg-black/50`
+- Kanban columns: rounded-2xl with 3px colored accent strip at top, count badge pill in header
 
 ---
 
 ## Known Bugs Fixed — Do Not Reintroduce
 
 1. **`resolvePermission` uuid cast** — `$3::uuid IS NULL OR u.tenant_id = $3::uuid` — without `::uuid` PostgreSQL throws type mismatch and ALL staff routes return 500
+
 2. **`GET /api/settings/staff` permission guard** — removed `checkPermission('staff:view')` so all staff can load the team list for name display
+
 3. **Owner excluded from staff list** — `assigned_name` stored on Lead object as fallback for owner-assigned leads
+
 4. **Socket `lead:created/updated` missing `assigned_name`** — `RETURNING *` doesn't include JOIN fields; re-fetch with JOIN before emitting
+
 5. **AutomationPage blank** — `AlertTriangle` imported from lucide-react was missing, causing render crash
+
 6. **`GET /api/leads/followups` no user scoping** — endpoint returned all tenant follow-ups with no `only_assigned` filter
+
 7. **Form trigger blank = any form** — `opt_in_form`, `meta_form`, `product_enquired` with no form selected used to fire for every form submission. Fixed: blank form config = workflow never fires. Backend SQL no longer has `trigger_forms = '{}'` bypass. Frontend blocks activation with a toast error and shows an amber warning banner in the trigger config panel.
+
+8. **AppLayout overflow-y-auto on `<main>`** — Caused `flex-1` on board wrapper to be unbounded, leaving empty space at the bottom of the kanban board. Fix: `<main>` must be `overflow-hidden`; `overflow-y-auto` belongs on the inner content `div` so the height chain is properly bounded.
+
+9. **Kanban `scrollbar-hide` hiding leads** — Columns with many leads appeared to have only 3 cards because the scrollbar was hidden, giving no visual cue that more cards existed below. Fix: removed `scrollbar-hide`, added thin visible webkit scrollbar (`[&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-black/20`).
+
+10. **Manager detection using `role === 'manager'`** — No `'manager'` role exists in the JWT. Manager is detected via `usePermission('staff:manage')` on the frontend.
+
+11. **Lead Generation sparkline bar count labels invisible** — Bar chart labels on the Lead Generation overview page were not visible because `LabelList` was missing. Fix: add `<LabelList dataKey="count" position="top">` inside the `<Bar>` component.
+
+---
+
+## Project Completion Status (~92%)
+
+### Complete ✅
+- Authentication & permissions (JWT, roles, 35+ granular permissions)
+- Dashboard (owner / manager / staff role-split views)
+- Lead Management (kanban board, list view, bulk actions, import/export)
+- Follow-ups, contacts, contact groups
+- Lead Generation (Meta Forms, Custom Forms, Landing Pages)
+- Automation workflows (50+ triggers/actions, folders, logs, delay queue)
+- Calendar & booking (availability, public booking, appointment triggers)
+- Inbox / WhatsApp (two-way messaging, assignment, real-time)
+- Staff management (CRUD, permissions matrix)
+- Custom fields (field groups, routing)
+- Settings (SMTP, webhooks, branding)
+- Super Admin panel (tenant management, plans, impersonation)
+- Meta + WhatsApp integrations
+- Notifications (in-app, real-time WebSocket)
+- Permission-scoped data filtering (only_assigned, view_all)
+
+### Partial 🟡
+- Contacts page — edit and export are UI stubs (backend fully supports it)
+- Integrations page — Gmail, Slack, Zapier, n8n listed but OAuth not wired
+- Automation — SMS / Instagram DM / Facebook post actions throw "not implemented"
+
+### Not Built ❌
+- Stripe integration (marked "coming soon")
+- Outlook integration (marked "coming soon")
+- SMS sending in workflows (needs Twilio/MSG91)
+- Instagram DM action (needs Meta Messenger API)
+- Facebook post/comment action (needs Meta Graph API)
 
 ---
 
