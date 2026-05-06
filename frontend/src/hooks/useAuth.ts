@@ -15,6 +15,7 @@ export function useAuth() {
   const isOwner       = role === 'owner';
   const isSuperAdmin  = role === 'super_admin';
   const isPrivileged  = isOwner || isSuperAdmin;
+  const isManager     = !isPrivileged && permissions['staff:manage'] === true;
 
-  return { currentUser, permAll, permissions, isImpersonating, role, isOwner, isSuperAdmin, isPrivileged };
+  return { currentUser, permAll, permissions, isImpersonating, role, isOwner, isSuperAdmin, isPrivileged, isManager };
 }

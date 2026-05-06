@@ -3,8 +3,7 @@ import {
   Users, AlertTriangle, Clock, Target, CheckCircle, Star, PhoneOff,
 } from 'lucide-react';
 import { useCrmStore } from '@/store/crmStore';
-import { useAuth } from '@/hooks/useAuth';
-import { usePermission } from '@/hooks/usePermission';
+import { useUserLevel } from '@/hooks/useUserLevel';
 import { api } from '@/lib/api';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -713,8 +712,7 @@ function StaffDashboard({ analytics }: { analytics: Analytics }) {
 // ── Main Dashboard Page ───────────────────────────────────────────────────────
 export default function DashboardPage() {
   const { leads }     = useCrmStore();
-  const { isPrivileged } = useAuth();
-  const canManageStaff = usePermission('staff:manage');
+  const level          = useUserLevel();
 
   const [analytics,  setAnalytics]  = useState<Analytics | null>(null);
   const [loading,    setLoading]    = useState(true);
@@ -843,8 +841,7 @@ export default function DashboardPage() {
     });
   }, [leads, range, customFrom, customTo]);
 
-  // Owner/super_admin → strategic view; staff:manage → operational manager view; else → personal staff view
-  const isManager = !isPrivileged && canManageStaff;
+  // owner → strategic view; manager (staff:manage) → operational view; staff → personal view
 
   return (
     <div className="space-y-4">
@@ -867,9 +864,9 @@ export default function DashboardPage() {
 
       {!loading && analytics && (
         <>
-          {isPrivileged  && <ManagementDashboard analytics={analytics} lineData={lineData} />}
-          {isManager     && <ManagerDashboard    analytics={analytics} lineData={lineData} />}
-          {!isPrivileged && !isManager && <StaffDashboard analytics={analytics} />}
+          {level === 'owner'   && <ManagementDashboard analytics={analytics} lineData={lineData} />}
+          {level === 'manager' && <ManagerDashboard    analytics={analytics} lineData={lineData} />}
+          {level === 'staff'   && <StaffDashboard      analytics={analytics} />}
         </>
       )}
 

@@ -9,8 +9,7 @@ import {
   ChevronDown, TrendingUp, CheckCircle2, Target, Clock,
   Users, RefreshCw, AlertTriangle, CalendarClock, BarChart2,
 } from 'lucide-react';
-import { useAuthStore } from '@/store/authStore';
-import { usePermission } from '@/hooks/usePermission';
+import { useUserLevel } from '@/hooks/useUserLevel';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const STAGE_COLORS  = ['#6366f1','#3b82f6','#06b6d4','#8b5cf6','#f59e0b','#ea580c','#f43f5e','#84cc16'];
@@ -436,11 +435,8 @@ function StaffNoAccess() {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ReportsPage() {
-  const { currentUser, permAll } = useAuthStore();
-  const canManageStaff = usePermission('staff:manage');
-  const isPrivileged = permAll;
-  const isManager    = !isPrivileged && canManageStaff;
-  const hasAccess    = isPrivileged || isManager;
+  const level     = useUserLevel();
+  const hasAccess = level !== 'staff';
 
   const [pipelines, setPipelines] = useState<{ id: string; name: string }[]>([]);
   const [pipelineId, setPipelineId] = useState<string | null>(null);
@@ -476,7 +472,7 @@ export default function ReportsPage() {
   }, [pipelineId, range, fromDate, toDate]);
 
   const selectedName = pipelines.find(p => p.id === pipelineId)?.name ?? '';
-  const viewLabel    = isPrivileged ? 'owner view' : 'manager view';
+  const viewLabel    = level === 'owner' ? 'owner view' : 'manager view';
 
   if (!hasAccess) return <StaffNoAccess />;
 

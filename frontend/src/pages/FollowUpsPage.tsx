@@ -13,6 +13,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useCrmStore } from '@/store/crmStore';
 import { Lead } from '@/data/mockData';
 import { LeadDetailPanel } from './LeadsPage';
+import { useUserLevel } from '@/hooks/useUserLevel';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -525,8 +526,9 @@ function SectionHeader({ label, count, color }: { label: string; count: number; 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
 export default function FollowUpsPage() {
-  const { currentUser, permAll } = useAuthStore();
+  const { currentUser } = useAuthStore();
   const { staff, pipelines } = useCrmStore();
+  const level = useUserLevel();
 
   const [items, setItems]           = useState<FUItem[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -539,7 +541,7 @@ export default function FollowUpsPage() {
   const [openLead, setOpenLead]     = useState<Lead | null>(null);
   const [loadingLead, setLoadingLead] = useState(false);
 
-  const isAdminOrOwner = permAll;
+  const isAdminOrOwner = level !== 'staff';
 
   const load = useCallback(async () => {
     try {
