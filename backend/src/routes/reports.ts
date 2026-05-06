@@ -396,13 +396,13 @@ router.get('/pipeline-analytics', requireOwner, async (req: AuthRequest, res: Re
         GROUP BY month_ts,month ORDER BY month_ts ASC
       `, p),
 
-      // 6. Lead quality
+      // 6. Lead quality (stored in custom_fields JSONB)
       query(`
-        SELECT COALESCE(l.quality,'unknown') AS quality, COUNT(*)::int AS count
+        SELECT COALESCE(l.custom_fields->>'lead_quality','unknown') AS quality, COUNT(*)::int AS count
         FROM leads l
         WHERE l.tenant_id=$1 AND l.pipeline_id=$2::uuid AND l.is_deleted=FALSE
           AND l.created_at>=$3 AND l.created_at<=$4
-        GROUP BY l.quality ORDER BY count DESC
+        GROUP BY l.custom_fields->>'lead_quality' ORDER BY count DESC
       `, p),
 
       // 7. Staff performance (pipeline-scoped)
