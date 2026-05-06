@@ -1369,24 +1369,6 @@ export default function MetaFormsPage() {
           </div>
         )}
 
-        {/* Push-to-automation result banner */}
-        {pushResult && (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-start gap-3">
-            <Zap className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-bold text-emerald-800">
-                {pushResult.pushed} {pushResult.type === 'old' ? 'historical' : 'recent'} lead{pushResult.pushed !== 1 ? 's' : ''} pushed to automation
-              </p>
-              <p className="text-[11px] text-emerald-700 mt-0.5">
-                {pushResult.created > 0 ? `${pushResult.created} new · ` : ''}{pushResult.existing} already in CRM · running through: <span className="font-semibold">{pushResult.workflows.map(w => w.name).join(', ')}</span>
-              </p>
-              <p className="text-[11px] text-emerald-600 mt-1">Once automation executes, {pushResult.pushed} lead{pushResult.pushed !== 1 ? 's' : ''} will be completed.</p>
-            </div>
-            <button onClick={() => setPushResult(null)} className="text-emerald-400 hover:text-emerald-700 transition-colors shrink-0 mt-0.5">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
 
         {pageForms.length === 0 ? (
           <div className="bg-white rounded-2xl border border-black/5 card-shadow px-8 py-14 text-center">
