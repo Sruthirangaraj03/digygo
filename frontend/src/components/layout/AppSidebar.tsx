@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, MessageSquare, Zap, Inbox, Settings,
-  UserCog, SlidersHorizontal, ChevronDown, ChevronRight, X, Database, ShieldCheck, CalendarDays,
+  UserCog, SlidersHorizontal, ChevronDown, ChevronRight, X, Database, ShieldCheck, CalendarDays, BarChart2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/authStore';
@@ -16,10 +16,13 @@ interface NavItem {
   permKey?: string;
   /** Any-of keys — item visible if at least one of these is true */
   anyOf?: string[];
+  /** Only owner/super_admin can see this */
+  ownerOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
   { label: 'Dashboard',       icon: LayoutDashboard,   path: '/dashboard' },
+  { label: 'Reports',         icon: BarChart2,          path: '/reports',  ownerOnly: true },
   {
     label: 'Lead Generation', icon: Database,           path: '/lead-generation',
     anyOf: ['meta_forms:read', 'custom_forms:read', 'landing_pages:read', 'whatsapp_setup:read'],
@@ -45,6 +48,7 @@ export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => vo
   const isSuperAdmin = currentUser?.role === 'super_admin';
 
   const visibleNavItems = navItems.filter((item) => {
+    if (item.ownerOnly) return isSuperAdmin || permAll;
     if (isSuperAdmin || permAll) return true;
     if (item.anyOf) return item.anyOf.some((k) => permissions[k] === true);
     if (item.permKey) return permissions[item.permKey] === true;

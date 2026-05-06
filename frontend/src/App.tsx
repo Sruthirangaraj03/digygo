@@ -39,6 +39,7 @@ import CalendarEditPage from "./pages/CalendarEditPage";
 import PublicBookingPage from "./pages/PublicBookingPage";
 import NotFound from "./pages/NotFound";
 import PincodeRoutingPage from "./pages/PincodeRoutingPage";
+import ReportsPage from "./pages/ReportsPage";
 
 const queryClient = new QueryClient();
 
@@ -60,6 +61,7 @@ const App = () => (
           <Route element={<AuthGuard />}>
           <Route element={<AppLayout />}>
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/reports"   element={<ReportsPage />} />
 
             {/* Lead Generation */}
             <Route path="/lead-generation" element={<LeadGenerationPage />} />
