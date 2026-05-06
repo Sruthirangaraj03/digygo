@@ -1823,6 +1823,18 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
               .map((f) => ({ name: f.name, variable: `{%${f.slug}%}` })),
           })),
           {
+            id: 'CRM',
+            label: 'CRM',
+            fields: [
+              { name: 'Pipeline',       variable: '{pipeline}' },
+              { name: 'Stage',          variable: '{stage}' },
+              { name: 'Assigned Staff', variable: '{assigned_staff}' },
+              { name: 'Source',         variable: '{source}' },
+              { name: 'Created At',     variable: '{created_at}' },
+              { name: 'Form Name',      variable: '{form_name}' },
+            ],
+          },
+          {
             id: 'Custom',
             label: 'Custom',
             fields: customFields.map((f) => ({ name: f.name, variable: `{%${f.slug}%}` })),

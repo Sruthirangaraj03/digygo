@@ -247,6 +247,7 @@ export interface LeadContext {
   custom_fields?: Record<string, any>;
   form_id?: string;
   form_name?: string;
+  created_at?: string;
   event_type_id?: string;
   calendar_name?: string;
 }
@@ -270,6 +271,8 @@ export function interpolate(template: string, lead: LeadContext): string {
     assigned_staff:        lead.assigned_staff_name ?? '',
     source:                lead.source ?? '',
     status:                lead.status ?? '',
+    created_at:            lead.created_at ? new Date(lead.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '',
+    form_name:             lead.form_name ?? '',
     today:                 new Date().toLocaleDateString(),
     date:                  new Date().toLocaleDateString(),
     time:                  new Date().toLocaleTimeString(),
@@ -1556,7 +1559,7 @@ export async function enrichLead(lead: LeadContext): Promise<LeadContext> {
   // Fetch full lead row when only id is available (e.g., notes_added / follow_up triggers)
   if (lead.id && !lead.name) {
     const r = await query(
-      `SELECT name, email, phone, stage_id, pipeline_id, assigned_to, tags, source, meta_form_id
+      `SELECT name, email, phone, stage_id, pipeline_id, assigned_to, tags, source, meta_form_id, created_at
        FROM leads WHERE id=$1 AND is_deleted=FALSE LIMIT 1`,
       [lead.id]
     ).catch(() => ({ rows: [] }));
@@ -1568,6 +1571,19 @@ export async function enrichLead(lead: LeadContext): Promise<LeadContext> {
   // Always back-fill form_id from meta_form_id if still missing
   if (!enriched.form_id && (enriched as any).meta_form_id) {
     enriched.form_id = (enriched as any).meta_form_id;
+  }
+  // Fetch created_at if missing
+  if (lead.id && !enriched.created_at) {
+    const r = await query('SELECT created_at FROM leads WHERE id=$1 LIMIT 1', [lead.id]).catch(() => ({ rows: [] }));
+    if (r.rows[0]?.created_at) enriched.created_at = r.rows[0].created_at;
+  }
+  // Fetch form_name from meta_forms if form_id is known but name is missing
+  if (!enriched.form_name && enriched.form_id) {
+    const r = await query(
+      `SELECT form_name FROM meta_forms WHERE form_id=$1 LIMIT 1`,
+      [enriched.form_id]
+    ).catch(() => ({ rows: [] }));
+    enriched.form_name = r.rows[0]?.form_name ?? '';
   }
   if (lead.assigned_to && !lead.assigned_staff_name) {
     const r = await query('SELECT name FROM users WHERE id=$1', [lead.assigned_to]);
