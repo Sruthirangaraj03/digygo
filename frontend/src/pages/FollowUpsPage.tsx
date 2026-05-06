@@ -11,7 +11,8 @@ import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/store/authStore';
 import { useCrmStore } from '@/store/crmStore';
-import { useNavigate } from 'react-router-dom';
+import { Lead } from '@/data/mockData';
+import { LeadDetailPanel } from './LeadsPage';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -525,8 +526,7 @@ function SectionHeader({ label, count, color }: { label: string; count: number; 
 
 export default function FollowUpsPage() {
   const { currentUser, permAll } = useAuthStore();
-  const { staff } = useCrmStore();
-  const navigate = useNavigate();
+  const { staff, pipelines } = useCrmStore();
 
   const [items, setItems]           = useState<FUItem[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -536,6 +536,8 @@ export default function FollowUpsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [scheduleFor, setScheduleFor] = useState<{ id: string; name: string; phone: string } | null>(null);
   const [pendingComplete, setPendingComplete] = useState<FUItem | null>(null);
+  const [openLead, setOpenLead]     = useState<Lead | null>(null);
+  const [loadingLead, setLoadingLead] = useState(false);
 
   const isAdminOrOwner = permAll;
 
@@ -629,8 +631,44 @@ export default function FollowUpsPage() {
     };
   }, [visible, filter]);
 
-  const navigateToLead = (leadId: string) => {
-    navigate('/leads', { state: { openLeadId: leadId } });
+  const handleLeadClick = async (leadId: string) => {
+    if (loadingLead) return;
+    setLoadingLead(true);
+    try {
+      const l = await api.get<any>(`/api/leads/${leadId}`);
+      const stageMap: Record<string, string> = {};
+      pipelines.forEach((p) => p.stages.forEach((s) => { stageMap[s.id] = s.name; }));
+      const parts = (l.name ?? '').split(' ');
+      const lead: Lead = {
+        id: l.id,
+        firstName: l.first_name ?? parts[0] ?? '',
+        lastName: l.last_name ?? parts.slice(1).join(' ') ?? '',
+        email: l.email ?? '',
+        phone: l.phone ?? '',
+        stage: stageMap[l.stage_id] ?? l.stage_name ?? 'New Lead',
+        stageId: l.stage_id ?? '',
+        pipelineId: l.pipeline_id ?? '',
+        source: l.source ?? 'Manual',
+        tags: l.tags ?? [],
+        assignedTo: l.assigned_to ?? '',
+        assignedName: l.assigned_name ?? '',
+        createdAt: l.created_at ?? new Date().toISOString(),
+        lastActivity: l.updated_at ?? l.created_at ?? new Date().toISOString(),
+        businessName: '',
+        city: '',
+        notes: l.notes ?? '',
+        dealValue: Number(l.deal_value ?? 0),
+        value: 0,
+        probability: 0,
+        nextFollowUp: null,
+        customFields: {},
+      };
+      setOpenLead(lead);
+    } catch {
+      toast.error('Failed to load lead details');
+    } finally {
+      setLoadingLead(false);
+    }
   };
 
   const TABS: { key: FUFilter; label: string; count: number; color: string }[] = [
@@ -750,7 +788,7 @@ export default function FollowUpsPage() {
                 <SectionHeader label="Overdue" count={grouped.overdue.length} color="text-red-500" />
                 <div className="space-y-2">
                   {grouped.overdue.map((fu) => (
-                    <FollowUpCard key={fu.id} fu={fu} showAssignee={isAdminOrOwner} onToggle={handleToggle} onNavigate={navigateToLead} />
+                    <FollowUpCard key={fu.id} fu={fu} showAssignee={isAdminOrOwner} onToggle={handleToggle} onNavigate={handleLeadClick} />
                   ))}
                 </div>
               </div>
@@ -760,7 +798,7 @@ export default function FollowUpsPage() {
                 <SectionHeader label="Today" count={grouped.today.length} color="text-[#c2410c]" />
                 <div className="space-y-2">
                   {grouped.today.map((fu) => (
-                    <FollowUpCard key={fu.id} fu={fu} showAssignee={isAdminOrOwner} onToggle={handleToggle} onNavigate={navigateToLead} />
+                    <FollowUpCard key={fu.id} fu={fu} showAssignee={isAdminOrOwner} onToggle={handleToggle} onNavigate={handleLeadClick} />
                   ))}
                 </div>
               </div>
@@ -770,7 +808,7 @@ export default function FollowUpsPage() {
                 <SectionHeader label="Upcoming" count={grouped.upcoming.length} color="text-violet-600" />
                 <div className="space-y-2">
                   {grouped.upcoming.map((fu) => (
-                    <FollowUpCard key={fu.id} fu={fu} showAssignee={isAdminOrOwner} onToggle={handleToggle} onNavigate={navigateToLead} />
+                    <FollowUpCard key={fu.id} fu={fu} showAssignee={isAdminOrOwner} onToggle={handleToggle} onNavigate={handleLeadClick} />
                   ))}
                 </div>
               </div>
@@ -780,7 +818,7 @@ export default function FollowUpsPage() {
                 <SectionHeader label="Completed" count={grouped.completed.length} color="text-gray-400" />
                 <div className="space-y-2">
                   {grouped.completed.map((fu) => (
-                    <FollowUpCard key={fu.id} fu={fu} showAssignee={isAdminOrOwner} onToggle={handleToggle} onNavigate={navigateToLead} />
+                    <FollowUpCard key={fu.id} fu={fu} showAssignee={isAdminOrOwner} onToggle={handleToggle} onNavigate={handleLeadClick} />
                   ))}
                 </div>
               </div>
@@ -790,7 +828,7 @@ export default function FollowUpsPage() {
           // Flat list for filtered tabs
           <div className="space-y-2 max-w-2xl">
             {visible.map((fu) => (
-              <FollowUpCard key={fu.id} fu={fu} showAssignee={isAdminOrOwner} onToggle={handleToggle} onNavigate={navigateToLead} />
+              <FollowUpCard key={fu.id} fu={fu} showAssignee={isAdminOrOwner} onToggle={handleToggle} onNavigate={handleLeadClick} />
             ))}
           </div>
         )}
@@ -821,6 +859,17 @@ export default function FollowUpsPage() {
           currentUserId={currentUser?.id ?? ''}
           onDone={handleCompleteDone}
           onCancel={() => setPendingComplete(null)}
+        />
+      )}
+
+      {/* ── Lead Detail Panel ── */}
+      {openLead && (
+        <LeadDetailPanel
+          lead={openLead}
+          onClose={() => setOpenLead(null)}
+          onLeadUpdated={(id, updates) =>
+            setOpenLead((prev) => prev ? { ...prev, ...updates } : prev)
+          }
         />
       )}
     </div>

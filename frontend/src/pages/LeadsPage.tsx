@@ -1744,7 +1744,7 @@ function AdditionalInfoSection({ lead, onUpdate }: { lead: Lead; onUpdate: (fiel
 }
 
 // ─── Lead Detail Panel ─────────────────────────────────────────────────────────
-function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
+export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
   lead: Lead;
   onClose: () => void;
   onLeadUpdated?: (id: string, updates: { pipelineId: string; stage: string; stageId: string | undefined; tags: string[] }) => void;
