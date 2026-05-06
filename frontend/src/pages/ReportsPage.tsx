@@ -632,7 +632,7 @@ export default function ReportsPage() {
       })
       .catch(() => toast.error('Failed to load pipelines'))
       .finally(() => setPlLoading(false));
-  }, [hasAccess]);
+  }, [level]);
 
   useEffect(() => {
     if (!pipelineId) return;
