@@ -3,15 +3,24 @@ import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line, Legend,
+  LineChart, Line, Legend, PieChart, Pie, Cell,
 } from 'recharts';
 import {
-  TrendingUp, Layers, GitMerge, Target, DollarSign, Users, BarChart2, Zap, RefreshCw,
+  TrendingUp, Layers, GitMerge, Target, DollarSign, Users, BarChart2, Zap, RefreshCw, PieChart as PieIcon,
 } from 'lucide-react';
 
-const BRAND   = '#ea580c';
-const GREEN   = '#10b981';
-const AMBER   = '#f59e0b';
+const BRAND  = '#ea580c';
+const GREEN  = '#10b981';
+const AMBER  = '#f59e0b';
+const MULTI  = ['#ea580c','#3b82f6','#8b5cf6','#10b981','#f59e0b','#f43f5e','#06b6d4','#84cc16'];
+
+const QUALITY_COLORS: Record<string, string> = {
+  hot:         '#ea580c',
+  warm:        '#f59e0b',
+  cold:        '#3b82f6',
+  unqualified: '#9e8e7e',
+  unknown:     '#e5d5c5',
+};
 
 const RANGES = [
   { id: 'this_week',    label: 'This Week' },
@@ -20,24 +29,34 @@ const RANGES = [
   { id: 'this_year',    label: 'This Year' },
 ];
 
+const PA_RANGES = [
+  { id: 'today',      label: 'Today' },
+  { id: 'yesterday',  label: 'Yesterday' },
+  { id: 'this_week',  label: 'This Week' },
+  { id: 'this_month', label: 'This Month' },
+  { id: 'custom',     label: 'Custom' },
+  { id: 'all_time',   label: 'All Time' },
+];
+
 const TABS = [
-  { id: 'acquisition', label: 'Lead Acquisition', icon: TrendingUp },
-  { id: 'pipeline',    label: 'Pipeline Health',   icon: Layers },
-  { id: 'funnel',      label: 'Conversion Funnel', icon: GitMerge },
-  { id: 'source_roi',  label: 'Source ROI',        icon: Target },
-  { id: 'revenue',     label: 'Revenue',            icon: DollarSign },
-  { id: 'team',        label: 'Team Performance',   icon: Users },
-  { id: 'growth',      label: 'Growth Trend',       icon: BarChart2 },
-  { id: 'automation',  label: 'Automation',          icon: Zap },
+  { id: 'pipeline_analytics', label: 'Pipeline Analytics', icon: PieIcon },
+  { id: 'acquisition',        label: 'Lead Acquisition',   icon: TrendingUp },
+  { id: 'pipeline',           label: 'Pipeline Health',    icon: Layers },
+  { id: 'funnel',             label: 'Conversion Funnel',  icon: GitMerge },
+  { id: 'source_roi',         label: 'Source ROI',         icon: Target },
+  { id: 'revenue',            label: 'Revenue',            icon: DollarSign },
+  { id: 'team',               label: 'Team Performance',   icon: Users },
+  { id: 'growth',             label: 'Growth Trend',       icon: BarChart2 },
+  { id: 'automation',         label: 'Automation',         icon: Zap },
 ];
 
 // ── Shared mini-components ────────────────────────────────────────────────────
 
-function KPI({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+function KPI({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color?: string }) {
   return (
     <div className="bg-white border border-black/5 rounded-2xl p-4">
       <p className="text-[11px] font-bold uppercase tracking-wide text-[#9e8e7e]">{label}</p>
-      <p className="text-[26px] font-bold text-[#1c1410] mt-1 leading-none">{value}</p>
+      <p className="text-[26px] font-bold mt-1 leading-none" style={{ color: color ?? '#1c1410' }}>{value}</p>
       {sub && <p className="text-[11px] text-[#9e8e7e] mt-1">{sub}</p>}
     </div>
   );
@@ -76,6 +95,433 @@ function Loading() {
 
 function Empty() {
   return <p className="text-center text-[13px] text-[#9e8e7e] py-12">No data for this period.</p>;
+}
+
+// ── Tab: Pipeline Analytics ───────────────────────────────────────────────────
+function PipelineAnalyticsTab() {
+  const [pipelines, setPipelines] = useState<{ id: string; name: string }[]>([]);
+  const [pipelineId, setPipelineId] = useState<string | null>(null);
+  const [paRange, setPaRange]       = useState('this_month');
+  const [fromDate, setFromDate]     = useState('');
+  const [toDate, setToDate]         = useState('');
+  const [data, setData]             = useState<any>(null);
+  const [loading, setLoading]       = useState(false);
+  const [plLoading, setPlLoading]   = useState(true);
+
+  useEffect(() => {
+    api.get<{ id: string; name: string }[]>('/api/reports/pipelines')
+      .then((rows) => {
+        setPipelines(rows);
+        if (rows.length > 0) setPipelineId(rows[0].id);
+      })
+      .catch(() => toast.error('Failed to load pipelines'))
+      .finally(() => setPlLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!pipelineId) return;
+    if (paRange === 'custom' && (!fromDate || !toDate)) return;
+    setLoading(true);
+    setData(null);
+    const params = new URLSearchParams({ pipeline_id: pipelineId, range: paRange });
+    if (paRange === 'custom') { params.set('from', fromDate); params.set('to', toDate); }
+    api.get<any>(`/api/reports/pipeline-analytics?${params}`)
+      .then(setData)
+      .catch(() => toast.error('Failed to load pipeline analytics'))
+      .finally(() => setLoading(false));
+  }, [pipelineId, paRange, fromDate, toDate]);
+
+  if (plLoading) return <Loading />;
+  if (!pipelines.length) return (
+    <div className="text-center py-16 text-[#9e8e7e] text-sm">No pipelines found. Create a pipeline first.</div>
+  );
+
+  return (
+    <div className="space-y-5">
+
+      {/* Pipeline selector */}
+      <div>
+        <p className="text-[11px] font-bold uppercase tracking-wide text-[#9e8e7e] mb-2">Select Pipeline</p>
+        <div className="flex flex-wrap gap-2">
+          {pipelines.map((pl) => (
+            <button
+              key={pl.id}
+              onClick={() => setPipelineId(pl.id)}
+              className={`px-4 py-2 rounded-xl text-[13px] font-semibold border transition-all ${
+                pipelineId === pl.id
+                  ? 'bg-primary text-white border-primary shadow-sm'
+                  : 'bg-white text-[#6b4f30] border-black/10 hover:border-primary/40 hover:bg-[#fdf8f5]'
+              }`}
+            >
+              {pl.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Date range filter */}
+      <div className="flex flex-wrap items-center gap-1 bg-white border border-black/5 rounded-xl p-1">
+        {PA_RANGES.map((r) => (
+          <button
+            key={r.id}
+            onClick={() => setPaRange(r.id)}
+            className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors whitespace-nowrap ${
+              paRange === r.id ? 'bg-primary text-white' : 'text-[#7a6b5c] hover:bg-[#f5ede3]'
+            }`}
+          >
+            {r.label}
+          </button>
+        ))}
+        {paRange === 'custom' && (
+          <div className="flex items-center gap-2 ml-2">
+            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)}
+              className="border border-black/10 rounded-lg px-2 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-primary/30" />
+            <span className="text-[12px] text-[#9e8e7e]">to</span>
+            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)}
+              className="border border-black/10 rounded-lg px-2 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-primary/30" />
+          </div>
+        )}
+      </div>
+
+      {loading && <Loading />}
+
+      {!loading && !data && pipelineId && <Empty />}
+
+      {data && (
+        <div className="space-y-5">
+
+          {/* ── KPI row ── */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <KPI label="Total Leads"       value={data.kpi.total_leads ?? 0} />
+            <KPI label="Won"               value={data.kpi.won ?? 0}         color={GREEN} />
+            <KPI label="Active"            value={data.kpi.active ?? 0}       color="#3b82f6" />
+            <KPI label="Conversion Rate"   value={`${data.kpi.conv_pct ?? 0}%`} />
+            <KPI label="Avg Days to Close" value={`${data.kpi.avg_days_to_close ?? 0}d`} />
+          </div>
+
+          {/* ── Lead Flow + Stage Funnel ── */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {data.lead_flow.length > 0 ? (
+              <Card title="Lead Flow (by Day)">
+                <ResponsiveContainer width="100%" height={190}>
+                  <BarChart data={data.lead_flow}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0ebe5" />
+                    <XAxis dataKey="day" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                    <Tooltip />
+                    <Bar dataKey="count" fill={BRAND} radius={[3,3,0,0]} name="New Leads" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </Card>
+            ) : (
+              <Card title="Lead Flow (by Day)"><Empty /></Card>
+            )}
+
+            {data.stages.length > 0 && (
+              <Card title="Stage Funnel">
+                <div className="space-y-2">
+                  {data.stages.map((s: any, i: number) => {
+                    const maxCount = Math.max(...data.stages.map((x: any) => x.lead_count), 1);
+                    const barW = Math.max(Math.round(s.lead_count / maxCount * 100), 2);
+                    const color = s.is_won ? GREEN : MULTI[i % MULTI.length];
+                    return (
+                      <div key={s.stage_name} className="flex items-center gap-2">
+                        <span className="text-[11px] text-[#7a6b5c] w-24 shrink-0 truncate">{s.stage_name}</span>
+                        <div className="flex-1 bg-[#f5ede3] rounded-full h-5 overflow-hidden">
+                          <div className="h-full rounded-full transition-all"
+                            style={{ width: `${barW}%`, background: color }} />
+                        </div>
+                        <span className="text-[12px] font-bold w-6 text-right">{s.lead_count}</span>
+                        <span className="text-[10px] text-[#9e8e7e] w-12 text-right shrink-0">{s.avg_days}d avg</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Card>
+            )}
+          </div>
+
+          {/* ── Source Intelligence + Lead Quality ── */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {data.sources.length > 0 && (
+              <Card title="Source Intelligence">
+                <div className="flex gap-4 items-center mb-3">
+                  <ResponsiveContainer width={130} height={130}>
+                    <PieChart>
+                      <Pie data={data.sources} dataKey="total" nameKey="source"
+                        cx="50%" cy="50%" innerRadius={35} outerRadius={58} paddingAngle={2}>
+                        {data.sources.map((_: any, i: number) => (
+                          <Cell key={i} fill={MULTI[i % MULTI.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v: any, n: string) => [v, n]} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="flex-1">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-black/5">
+                          <Th>Source</Th><Th right>Leads</Th><Th right>Won</Th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.sources.slice(0, 5).map((s: any, i: number) => (
+                          <tr key={s.source} className="border-b border-black/[0.04] last:border-0">
+                            <Td>
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-2 h-2 rounded-full shrink-0" style={{ background: MULTI[i % MULTI.length] }} />
+                                <span className="truncate max-w-[90px] text-[12px]">{s.source}</span>
+                              </div>
+                            </Td>
+                            <Td right>{s.total}</Td>
+                            <Td right color={GREEN}>{s.won}</Td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <table className="w-full border-t border-black/5 pt-2">
+                  <thead>
+                    <tr className="border-b border-black/5">
+                      <Th>Source</Th><Th right>Contacted</Th><Th right>Conv%</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.sources.slice(0, 5).map((s: any) => (
+                      <tr key={s.source} className="border-b border-black/[0.04] last:border-0">
+                        <Td>{s.source}</Td>
+                        <Td right>{s.contacted}</Td>
+                        <Td right bold>{s.conv_pct}%</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+            )}
+
+            {data.quality.length > 0 && (
+              <Card title="Lead Quality Breakdown">
+                <ResponsiveContainer width="100%" height={180}>
+                  <PieChart>
+                    <Pie data={data.quality} dataKey="count" nameKey="quality"
+                      cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={2}>
+                      {data.quality.map((q: any, i: number) => (
+                        <Cell key={i} fill={QUALITY_COLORS[q.quality?.toLowerCase()] ?? MULTI[i % MULTI.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend
+                      formatter={(value) => (
+                        <span className="text-[11px] capitalize">{value === 'unknown' ? 'Not Set' : value}</span>
+                      )}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex flex-wrap gap-2 justify-center mt-2">
+                  {data.quality.map((q: any, i: number) => (
+                    <div key={q.quality} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#faf8f6] border border-black/5">
+                      <div className="w-2 h-2 rounded-full" style={{ background: QUALITY_COLORS[q.quality?.toLowerCase()] ?? MULTI[i % MULTI.length] }} />
+                      <span className="text-[11px] font-semibold capitalize">{q.quality === 'unknown' ? 'Not Set' : q.quality}</span>
+                      <span className="text-[11px] text-[#9e8e7e]">{q.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+          </div>
+
+          {/* ── Win Trend ── */}
+          {data.win_loss.length > 1 && (
+            <Card title="Win Trend by Month">
+              <ResponsiveContainer width="100%" height={210}>
+                <LineChart data={data.win_loss}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0ebe5" />
+                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip />
+                  <Legend />
+                  <Line type="monotone" dataKey="new_leads" stroke={BRAND}  strokeWidth={2} dot={{ r: 3 }} name="New Leads" />
+                  <Line type="monotone" dataKey="won"        stroke={GREEN}  strokeWidth={2} dot={{ r: 3 }} name="Won" />
+                </LineChart>
+              </ResponsiveContainer>
+            </Card>
+          )}
+
+          {/* ── Staff Performance ── */}
+          {data.staff.filter((s: any) => s.assigned > 0).length > 0 && (
+            <Card title="Staff Performance">
+              <div className="mb-4">
+                <ResponsiveContainer width="100%" height={160}>
+                  <BarChart data={data.staff.filter((s: any) => s.assigned > 0).slice(0, 8).map((s: any) => ({
+                    name: s.name.split(' ')[0], assigned: s.assigned, won: s.won,
+                  }))}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0ebe5" />
+                    <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="assigned" name="Assigned" fill="#f0ebe5" stroke="#e5d5c5" strokeWidth={1} radius={[3,3,0,0]} />
+                    <Bar dataKey="won"      name="Won"      fill={GREEN}  radius={[3,3,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-black/5">
+                    <Th>Staff</Th><Th right>Assigned</Th><Th right>Contacted</Th>
+                    <Th right>Contact%</Th><Th right>Follow-ups</Th><Th right>Won</Th><Th right>Conv%</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.staff.filter((s: any) => s.assigned > 0).map((s: any) => (
+                    <tr key={s.id} className="border-b border-black/[0.04] last:border-0">
+                      <Td bold>{s.name}</Td>
+                      <Td right>{s.assigned}</Td>
+                      <Td right>{s.contacted}</Td>
+                      <Td right color={AMBER}>{s.contact_pct}%</Td>
+                      <Td right>{s.followups}</Td>
+                      <Td right color={GREEN}>{s.won}</Td>
+                      <Td right bold>{s.conv_pct}%</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          )}
+
+          {/* ── Follow-up Activity + Automation Activity ── */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card title="Follow-up Activity">
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="bg-[#f5ede3] rounded-xl p-3 text-center">
+                  <p className="text-[22px] font-bold text-[#1c1410]">{data.followups.total ?? 0}</p>
+                  <p className="text-[10px] text-[#9e8e7e] font-bold uppercase tracking-wide mt-0.5">Total</p>
+                </div>
+                <div className="bg-[#dcfce7] rounded-xl p-3 text-center">
+                  <p className="text-[22px] font-bold text-[#10b981]">{data.followups.completed ?? 0}</p>
+                  <p className="text-[10px] text-[#9e8e7e] font-bold uppercase tracking-wide mt-0.5">Completed</p>
+                </div>
+                <div className="bg-[#fef9c3] rounded-xl p-3 text-center">
+                  <p className="text-[22px] font-bold text-[#ca8a04]">{data.followups.pending ?? 0}</p>
+                  <p className="text-[10px] text-[#9e8e7e] font-bold uppercase tracking-wide mt-0.5">Pending</p>
+                </div>
+                <div className="bg-[#fee2e2] rounded-xl p-3 text-center">
+                  <p className="text-[22px] font-bold text-[#ef4444]">{data.followups.overdue ?? 0}</p>
+                  <p className="text-[10px] text-[#9e8e7e] font-bold uppercase tracking-wide mt-0.5">Overdue</p>
+                </div>
+              </div>
+              {(data.followups.overdue_list?.length ?? 0) > 0 && (
+                <>
+                  <p className="text-[11px] font-bold text-[#9e8e7e] uppercase tracking-wide mb-2">Top Overdue</p>
+                  <div className="space-y-1.5">
+                    {data.followups.overdue_list.slice(0, 5).map((o: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between text-[12px]">
+                        <span className="font-medium text-[#1c1410] truncate max-w-[160px]">{o.lead_name}</span>
+                        <span className="text-[#ef4444] font-semibold shrink-0 ml-2">{o.overdue_days}d overdue</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </Card>
+
+            <Card title="Automation Activity">
+              {data.automation.length > 0 ? (
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-black/5">
+                      <Th>Workflow</Th><Th right>Runs</Th><Th right>OK</Th><Th right>Fail</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.automation.slice(0, 8).map((w: any) => (
+                      <tr key={w.id} className="border-b border-black/[0.04] last:border-0">
+                        <Td bold>{w.name.length > 22 ? w.name.slice(0, 21) + '…' : w.name}</Td>
+                        <Td right>{w.total}</Td>
+                        <Td right color={GREEN}>{w.completed}</Td>
+                        <Td right color={w.failed > 0 ? '#ef4444' : undefined}>{w.failed}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="text-[13px] text-[#9e8e7e] text-center py-8">No workflow activity in this period.</p>
+              )}
+            </Card>
+          </div>
+
+          {/* ── Stale / At-Risk Leads ── */}
+          {(data.stale.stale_count ?? 0) > 0 && (
+            <Card title={`Stale / At-Risk Leads — ${data.stale.stale_count} leads not updated in 7+ days`}>
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-black/5">
+                    <Th>Lead</Th><Th>Stage</Th><Th>Assigned To</Th><Th right>Days Stuck</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.stale.list.map((l: any) => (
+                    <tr key={l.id} className="border-b border-black/[0.04] last:border-0">
+                      <Td bold>{l.name}</Td>
+                      <Td>{l.stage_name ?? '—'}</Td>
+                      <Td>{l.assigned_name ?? 'Unassigned'}</Td>
+                      <Td right color={l.days_stale > 14 ? '#ef4444' : AMBER}>{l.days_stale}d</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          )}
+
+          {/* ── Tag Intelligence ── */}
+          {data.tags.length > 0 && (
+            <Card title="Tag Intelligence">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={data.tags} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0ebe5" />
+                    <XAxis type="number" tick={{ fontSize: 10 }} allowDecimals={false} />
+                    <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={80} />
+                    <Tooltip />
+                    <Bar dataKey="total" name="Leads" radius={[0,3,3,0]}>
+                      {data.tags.map((_: any, i: number) => (
+                        <Cell key={i} fill={MULTI[i % MULTI.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-black/5">
+                      <Th>Tag</Th><Th right>Leads</Th><Th right>Won</Th><Th right>Conv%</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.tags.map((t: any, i: number) => (
+                      <tr key={t.name} className="border-b border-black/[0.04] last:border-0">
+                        <Td>
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-2 h-2 rounded-full shrink-0"
+                              style={{ background: t.color || MULTI[i % MULTI.length] }} />
+                            {t.name}
+                          </div>
+                        </Td>
+                        <Td right>{t.total}</Td>
+                        <Td right color={GREEN}>{t.won}</Td>
+                        <Td right bold>{t.conv_pct}%</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Tab: Lead Acquisition ─────────────────────────────────────────────────────
@@ -516,8 +962,10 @@ function AutomationTab({ range }: { range: string }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ReportsPage() {
-  const [tab, setTab]     = useState('acquisition');
+  const [tab, setTab]     = useState('pipeline_analytics');
   const [range, setRange] = useState('this_month');
+
+  const showRange = tab !== 'pipeline_analytics' && tab !== 'pipeline' && tab !== 'growth';
 
   return (
     <div className="space-y-4 pb-10">
@@ -525,21 +973,23 @@ export default function ReportsPage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="font-headline font-bold text-[17px] text-[#1c1410]">Reports</h2>
+          <h2 className="font-headline font-bold text-[17px] text-[#1c1410]">Reports & Analytics</h2>
           <p className="text-[12px] text-[#9e8e7e]">Business analytics — owner view</p>
         </div>
 
-        {/* Range selector */}
-        <div className="flex gap-1 bg-white border border-black/5 rounded-xl p-1">
-          {RANGES.map((r) => (
-            <button key={r.id} onClick={() => setRange(r.id)}
-              className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
-                range === r.id ? 'bg-primary text-white' : 'text-[#7a6b5c] hover:bg-[#f5ede3]'
-              }`}>
-              {r.label}
-            </button>
-          ))}
-        </div>
+        {/* Range selector — hidden on pipeline analytics / health / growth tabs */}
+        {showRange && (
+          <div className="flex gap-1 bg-white border border-black/5 rounded-xl p-1">
+            {RANGES.map((r) => (
+              <button key={r.id} onClick={() => setRange(r.id)}
+                className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
+                  range === r.id ? 'bg-primary text-white' : 'text-[#7a6b5c] hover:bg-[#f5ede3]'
+                }`}>
+                {r.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Tab bar */}
@@ -559,14 +1009,15 @@ export default function ReportsPage() {
       </div>
 
       {/* Tab content */}
-      {tab === 'acquisition' && <AcquisitionTab range={range} />}
-      {tab === 'pipeline'    && <PipelineTab />}
-      {tab === 'funnel'      && <FunnelTab range={range} />}
-      {tab === 'source_roi'  && <SourceROITab range={range} />}
-      {tab === 'revenue'     && <RevenueTab range={range} />}
-      {tab === 'team'        && <TeamTab range={range} />}
-      {tab === 'growth'      && <GrowthTab />}
-      {tab === 'automation'  && <AutomationTab range={range} />}
+      {tab === 'pipeline_analytics' && <PipelineAnalyticsTab />}
+      {tab === 'acquisition'        && <AcquisitionTab range={range} />}
+      {tab === 'pipeline'           && <PipelineTab />}
+      {tab === 'funnel'             && <FunnelTab range={range} />}
+      {tab === 'source_roi'         && <SourceROITab range={range} />}
+      {tab === 'revenue'            && <RevenueTab range={range} />}
+      {tab === 'team'               && <TeamTab range={range} />}
+      {tab === 'growth'             && <GrowthTab />}
+      {tab === 'automation'         && <AutomationTab range={range} />}
     </div>
   );
 }

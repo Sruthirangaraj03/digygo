@@ -11,6 +11,13 @@ function computeRange(rangeParam: string, fromParam?: string, toParam?: string) 
   let end: Date = new Date();
 
   switch (rangeParam) {
+    case 'today':
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      break;
+    case 'yesterday':
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+      end   = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59);
+      break;
     case 'this_week': {
       const dow  = now.getDay();
       const diff = dow === 0 ? -6 : 1 - dow;
@@ -24,6 +31,9 @@ function computeRange(rangeParam: string, fromParam?: string, toParam?: string) 
     }
     case 'this_year':
       start = new Date(now.getFullYear(), 0, 1);
+      break;
+    case 'all_time':
+      start = new Date('2000-01-01');
       break;
     case 'custom':
       start = fromParam ? new Date(fromParam) : new Date(now.getFullYear(), now.getMonth(), 1);
@@ -284,6 +294,242 @@ router.get('/automation', requireOwner, async (req: AuthRequest, res: Response) 
     res.json({ workflows: r.rows });
   } catch (err) {
     console.error('[reports:automation]', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── 9. Pipelines list (for pipeline analytics selector) ──────────────────────
+router.get('/pipelines', requireOwner, async (req: AuthRequest, res: Response) => {
+  const { tenantId } = req.user!;
+  if (!tenantId) return res.status(403).json({ error: 'No tenant' });
+  try {
+    const r = await query(
+      'SELECT id, name FROM pipelines WHERE tenant_id=$1 ORDER BY name ASC',
+      [tenantId]
+    );
+    res.json(r.rows);
+  } catch (err) {
+    console.error('[reports:pipelines]', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── 10. Pipeline Analytics ────────────────────────────────────────────────────
+router.get('/pipeline-analytics', requireOwner, async (req: AuthRequest, res: Response) => {
+  const { tenantId } = req.user!;
+  if (!tenantId) return res.status(403).json({ error: 'No tenant' });
+  const { pipeline_id, range = 'this_month', from, to } = req.query as Record<string, string>;
+  if (!pipeline_id) return res.status(400).json({ error: 'pipeline_id required' });
+  const { start, end } = computeRange(range, from, to);
+  const p = [tenantId, pipeline_id, start, end];
+
+  try {
+    const [
+      kpiRes, stagesRes, sourcesRes, flowRes, winLossRes,
+      qualityRes, staffRes, fuSummaryRes, overdueRes,
+      staleCountRes, staleListRes, autoRes, tagsRes,
+    ] = await Promise.all([
+
+      // 1. KPI
+      query(`
+        SELECT
+          COUNT(DISTINCT l.id)::int AS total_leads,
+          COUNT(DISTINCT CASE WHEN ps.is_won THEN l.id END)::int AS won,
+          COUNT(DISTINCT CASE WHEN COALESCE(ps.is_won,FALSE)=FALSE THEN l.id END)::int AS active,
+          COALESCE(ROUND(COUNT(DISTINCT CASE WHEN ps.is_won THEN l.id END)::numeric
+            /NULLIF(COUNT(DISTINCT l.id),0)*100),0)::int AS conv_pct,
+          COALESCE(ROUND(AVG(CASE WHEN ps.is_won
+            THEN EXTRACT(EPOCH FROM(l.updated_at-l.created_at))/86400 END)::numeric),0)::int AS avg_days_to_close
+        FROM leads l LEFT JOIN pipeline_stages ps ON ps.id=l.stage_id
+        WHERE l.tenant_id=$1 AND l.pipeline_id=$2::uuid AND l.is_deleted=FALSE
+          AND l.created_at>=$3 AND l.created_at<=$4
+      `, p),
+
+      // 2. Stage funnel
+      query(`
+        SELECT ps.name AS stage_name, ps.stage_order, ps.is_won,
+          COUNT(l.id)::int AS lead_count,
+          COALESCE(ROUND(AVG(EXTRACT(EPOCH FROM(NOW()-l.updated_at))/86400)::numeric),0)::int AS avg_days
+        FROM pipeline_stages ps
+        LEFT JOIN leads l ON l.stage_id=ps.id AND l.is_deleted=FALSE AND l.tenant_id=$1
+          AND l.created_at>=$3 AND l.created_at<=$4
+        WHERE ps.pipeline_id=$2::uuid
+        GROUP BY ps.id,ps.name,ps.stage_order,ps.is_won
+        ORDER BY ps.stage_order ASC
+      `, p),
+
+      // 3. Source intelligence
+      query(`
+        SELECT COALESCE(l.source,'Unknown') AS source,
+          COUNT(*)::int AS total,
+          COUNT(DISTINCT lf.lead_id)::int AS contacted,
+          COUNT(CASE WHEN ps.is_won THEN 1 END)::int AS won,
+          COALESCE(ROUND(COUNT(CASE WHEN ps.is_won THEN 1 END)::numeric/NULLIF(COUNT(*),0)*100),0)::int AS conv_pct
+        FROM leads l
+        LEFT JOIN pipeline_stages ps ON ps.id=l.stage_id
+        LEFT JOIN (SELECT DISTINCT lead_id FROM lead_followups) lf ON lf.lead_id=l.id
+        WHERE l.tenant_id=$1 AND l.pipeline_id=$2::uuid AND l.is_deleted=FALSE
+          AND l.created_at>=$3 AND l.created_at<=$4
+        GROUP BY l.source ORDER BY total DESC
+      `, p),
+
+      // 4. Lead flow by day
+      query(`
+        SELECT TO_CHAR(DATE_TRUNC('day',created_at),'DD Mon') AS day,
+          DATE_TRUNC('day',created_at) AS day_ts,
+          COUNT(*)::int AS count
+        FROM leads
+        WHERE tenant_id=$1 AND pipeline_id=$2::uuid AND is_deleted=FALSE
+          AND created_at>=$3 AND created_at<=$4
+        GROUP BY day_ts,day ORDER BY day_ts ASC
+      `, p),
+
+      // 5. Win/loss monthly trend
+      query(`
+        SELECT TO_CHAR(DATE_TRUNC('month',l.created_at),'Mon YY') AS month,
+          DATE_TRUNC('month',l.created_at) AS month_ts,
+          COUNT(*)::int AS new_leads,
+          COUNT(CASE WHEN ps.is_won THEN 1 END)::int AS won
+        FROM leads l LEFT JOIN pipeline_stages ps ON ps.id=l.stage_id
+        WHERE l.tenant_id=$1 AND l.pipeline_id=$2::uuid AND l.is_deleted=FALSE
+          AND l.created_at>=$3 AND l.created_at<=$4
+        GROUP BY month_ts,month ORDER BY month_ts ASC
+      `, p),
+
+      // 6. Lead quality
+      query(`
+        SELECT COALESCE(l.quality,'unknown') AS quality, COUNT(*)::int AS count
+        FROM leads l
+        WHERE l.tenant_id=$1 AND l.pipeline_id=$2::uuid AND l.is_deleted=FALSE
+          AND l.created_at>=$3 AND l.created_at<=$4
+        GROUP BY l.quality ORDER BY count DESC
+      `, p),
+
+      // 7. Staff performance (pipeline-scoped)
+      query(`
+        SELECT u.id, u.name,
+          COUNT(DISTINCT l.id)::int AS assigned,
+          COUNT(DISTINCT CASE WHEN lf_any.lead_id IS NOT NULL THEN l.id END)::int AS contacted,
+          COUNT(DISTINCT CASE WHEN ps.is_won THEN l.id END)::int AS won,
+          COUNT(DISTINCT f.id)::int AS followups,
+          COALESCE(ROUND(COUNT(DISTINCT CASE WHEN ps.is_won THEN l.id END)::numeric
+            /NULLIF(COUNT(DISTINCT l.id),0)*100),0)::int AS conv_pct,
+          COALESCE(ROUND(COUNT(DISTINCT CASE WHEN lf_any.lead_id IS NOT NULL THEN l.id END)::numeric
+            /NULLIF(COUNT(DISTINCT l.id),0)*100),0)::int AS contact_pct
+        FROM users u
+        LEFT JOIN leads l ON l.assigned_to=u.id AND l.is_deleted=FALSE AND l.tenant_id=$1
+          AND l.pipeline_id=$2::uuid AND l.created_at>=$3 AND l.created_at<=$4
+        LEFT JOIN pipeline_stages ps ON ps.id=l.stage_id
+        LEFT JOIN (SELECT DISTINCT lead_id FROM lead_followups WHERE tenant_id=$1) lf_any ON lf_any.lead_id=l.id
+        LEFT JOIN lead_followups f ON f.lead_id=l.id AND f.tenant_id=$1
+          AND f.created_at>=$3 AND f.created_at<=$4
+        WHERE u.tenant_id=$1 AND u.is_active=TRUE AND (u.is_owner IS NULL OR u.is_owner=FALSE)
+        GROUP BY u.id,u.name ORDER BY assigned DESC
+      `, p),
+
+      // 8. Follow-up summary (period-scoped)
+      query(`
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(CASE WHEN f.status='completed' THEN 1 END)::int AS completed,
+          COUNT(CASE WHEN f.status='pending' THEN 1 END)::int AS pending,
+          COUNT(CASE WHEN f.status='pending' AND f.due_date<NOW() THEN 1 END)::int AS overdue
+        FROM lead_followups f
+        JOIN leads l ON l.id=f.lead_id AND l.tenant_id=$1 AND l.pipeline_id=$2::uuid AND l.is_deleted=FALSE
+        WHERE f.tenant_id=$1 AND f.created_at>=$3 AND f.created_at<=$4
+      `, p),
+
+      // 9. Overdue follow-ups list (not period-scoped — show all current overdue)
+      query(`
+        SELECT l.name AS lead_name, l.id AS lead_id,
+          u.name AS staff_name, f.due_date,
+          ROUND(EXTRACT(EPOCH FROM(NOW()-f.due_date))/86400)::int AS overdue_days
+        FROM lead_followups f
+        JOIN leads l ON l.id=f.lead_id AND l.tenant_id=$1 AND l.pipeline_id=$2::uuid AND l.is_deleted=FALSE
+        LEFT JOIN users u ON u.id=f.assigned_to
+        WHERE f.tenant_id=$1 AND f.status='pending' AND f.due_date<NOW()
+        ORDER BY f.due_date ASC LIMIT 10
+      `, [tenantId, pipeline_id]),
+
+      // 10. Stale count (>7 days no update, not in won stage)
+      query(`
+        SELECT COUNT(*)::int AS stale_count,
+          COALESCE(MAX(EXTRACT(EPOCH FROM(NOW()-l.updated_at))/86400)::numeric::int,0) AS max_days
+        FROM leads l LEFT JOIN pipeline_stages ps ON ps.id=l.stage_id
+        WHERE l.tenant_id=$1 AND l.pipeline_id=$2::uuid AND l.is_deleted=FALSE
+          AND COALESCE(ps.is_won,FALSE)=FALSE
+          AND l.updated_at<NOW()-INTERVAL '7 days'
+      `, [tenantId, pipeline_id]),
+
+      // 11. Stale leads list
+      query(`
+        SELECT l.id, l.name, ps.name AS stage_name, u.name AS assigned_name,
+          ROUND(EXTRACT(EPOCH FROM(NOW()-l.updated_at))/86400)::int AS days_stale
+        FROM leads l
+        LEFT JOIN pipeline_stages ps ON ps.id=l.stage_id
+        LEFT JOIN users u ON u.id=l.assigned_to
+        WHERE l.tenant_id=$1 AND l.pipeline_id=$2::uuid AND l.is_deleted=FALSE
+          AND COALESCE(ps.is_won,FALSE)=FALSE
+          AND l.updated_at<NOW()-INTERVAL '7 days'
+        ORDER BY l.updated_at ASC LIMIT 10
+      `, [tenantId, pipeline_id]),
+
+      // 12. Automation activity (pipeline-scoped)
+      query(`
+        SELECT w.id, w.name,
+          COUNT(DISTINCT we.id)::int AS total,
+          COUNT(DISTINCT CASE WHEN we.status='completed' THEN we.id END)::int AS completed,
+          COUNT(DISTINCT CASE WHEN we.status='failed' THEN we.id END)::int AS failed,
+          COUNT(DISTINCT we.lead_id)::int AS leads_enrolled
+        FROM workflows w
+        LEFT JOIN workflow_executions we ON we.workflow_id=w.id AND we.tenant_id=$1
+          AND we.enrolled_at>=$3 AND we.enrolled_at<=$4
+          AND we.lead_id IN (
+            SELECT id FROM leads WHERE tenant_id=$1 AND pipeline_id=$2::uuid AND is_deleted=FALSE
+          )
+        WHERE w.tenant_id=$1 AND w.status='active'
+        GROUP BY w.id,w.name HAVING COUNT(DISTINCT we.id)>0
+        ORDER BY total DESC LIMIT 10
+      `, p),
+
+      // 13. Tag intelligence
+      query(`
+        SELECT t.name, t.color,
+          COUNT(DISTINCT lt.lead_id)::int AS total,
+          COUNT(DISTINCT CASE WHEN ps.is_won THEN lt.lead_id END)::int AS won,
+          COALESCE(ROUND(COUNT(DISTINCT CASE WHEN ps.is_won THEN lt.lead_id END)::numeric
+            /NULLIF(COUNT(DISTINCT lt.lead_id),0)*100),0)::int AS conv_pct
+        FROM tags t
+        JOIN lead_tags lt ON lt.tag_id=t.id
+        JOIN leads l ON l.id=lt.lead_id AND l.tenant_id=$1 AND l.pipeline_id=$2::uuid
+          AND l.is_deleted=FALSE AND l.created_at>=$3 AND l.created_at<=$4
+        LEFT JOIN pipeline_stages ps ON ps.id=l.stage_id
+        WHERE t.tenant_id=$1
+        GROUP BY t.id,t.name,t.color ORDER BY total DESC LIMIT 10
+      `, p),
+    ]);
+
+    res.json({
+      kpi:       kpiRes.rows[0] ?? {},
+      stages:    stagesRes.rows,
+      sources:   sourcesRes.rows,
+      lead_flow: flowRes.rows,
+      win_loss:  winLossRes.rows,
+      quality:   qualityRes.rows,
+      staff:     staffRes.rows,
+      followups: {
+        ...fuSummaryRes.rows[0],
+        overdue_list: overdueRes.rows,
+      },
+      stale: {
+        ...staleCountRes.rows[0],
+        list: staleListRes.rows,
+      },
+      automation: autoRes.rows,
+      tags:       tagsRes.rows,
+    });
+  } catch (err) {
+    console.error('[reports:pipeline-analytics]', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
