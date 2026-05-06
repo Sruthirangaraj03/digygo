@@ -1814,12 +1814,14 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
 
         // Build tabs dynamically — all data fetched from API via store (no frontend constants)
         const systemGroups = Array.from(new Set(systemFields.map((f) => f.group)));
+        // assigned_to_staff is excluded from Contact tab — CRM tab covers it via {assigned_staff}
+        const EXCLUDED_SLUGS = new Set(['assigned_to_staff']);
         const cvTabs = [
           ...systemGroups.map((group) => ({
             id: group,
             label: group,
             fields: systemFields
-              .filter((f) => f.group === group)
+              .filter((f) => f.group === group && !EXCLUDED_SLUGS.has(f.slug))
               .map((f) => ({ name: f.name, variable: `{%${f.slug}%}` })),
           })),
           {
@@ -1838,11 +1840,6 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
             id: 'Custom',
             label: 'Custom',
             fields: customFields.map((f) => ({ name: f.name, variable: `{%${f.slug}%}` })),
-          },
-          {
-            id: 'Questions',
-            label: 'Questions',
-            fields: additionalFields.map((f) => ({ name: f.question, variable: `{%${f.slug}%}` })),
           },
         ];
 
