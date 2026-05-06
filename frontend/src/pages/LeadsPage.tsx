@@ -890,7 +890,7 @@ function NoteModal({ leadId, onClose, onCreated }: { leadId: string; onClose: ()
 }
 
 // ─── Follow-Up Modal ───────────────────────────────────────────────────────────
-function FollowUpModal({ leadId, onClose, onCreated }: { leadId: string; onClose: () => void; onCreated?: (fu: any) => void }) {
+function FollowUpModal({ leadId, onClose, onCreated, onNoteCreated }: { leadId: string; onClose: () => void; onCreated?: (fu: any) => void; onNoteCreated?: (note: any) => void }) {
   const { addFollowUp } = useCrmStore();
   const currentUser = useAuthStore((s) => s.currentUser);
   const [isNote, setIsNote] = useState(false);
@@ -907,10 +907,11 @@ function FollowUpModal({ leadId, onClose, onCreated }: { leadId: string; onClose
       if (!content) { toast.error('Note content is required'); return; }
       setSaving(true);
       try {
-        await api.post(`/api/leads/${leadId}/notes`, {
+        const created = await api.post<any>(`/api/leads/${leadId}/notes`, {
           title: title.trim() || undefined,
           content,
         });
+        onNoteCreated?.(created);
         toast.success('Note added');
         onClose();
       } catch (err: any) {
@@ -2220,14 +2221,24 @@ function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
     </div>
     {showNoteModal && <NoteModal leadId={lead.id} onClose={() => setShowNoteModal(false)} onCreated={(n) => setLeadNotes((prev) => [n, ...prev])} />}
     {showPipelineModal && <QuickEditModal lead={lead} onClose={() => setShowPipelineModal(false)} onSaved={(updates) => onLeadUpdated?.(lead.id, updates)} />}
-    {showFuModal && <FollowUpModal leadId={lead.id} onClose={() => setShowFuModal(false)} onCreated={(fu) => {
-      setLeadFollowUps((prev) => [...prev, fu]);
-      setTimeout(() => {
-        api.get<any[]>(`/api/leads/${lead.id}/activities`).then((data) =>
-          setLeadActivities(data.map((a) => ({ id: a.id, leadId: lead.id, type: a.type, title: a.title, detail: a.detail, timestamp: a.timestamp ?? a.created_at, createdBy: a.created_by_name ?? a.created_by })))
-        ).catch(() => null);
-      }, 400);
-    }} />}
+    {showFuModal && <FollowUpModal leadId={lead.id} onClose={() => setShowFuModal(false)}
+      onCreated={(fu) => {
+        setLeadFollowUps((prev) => [...prev, fu]);
+        setTimeout(() => {
+          api.get<any[]>(`/api/leads/${lead.id}/activities`).then((data) =>
+            setLeadActivities(data.map((a) => ({ id: a.id, leadId: lead.id, type: a.type, title: a.title, detail: a.detail, timestamp: a.timestamp ?? a.created_at, createdBy: a.created_by_name ?? a.created_by })))
+          ).catch(() => null);
+        }, 400);
+      }}
+      onNoteCreated={(note) => {
+        setLeadNotes((prev) => [note, ...prev]);
+        setTimeout(() => {
+          api.get<any[]>(`/api/leads/${lead.id}/activities`).then((data) =>
+            setLeadActivities(data.map((a) => ({ id: a.id, leadId: lead.id, type: a.type, title: a.title, detail: a.detail, timestamp: a.timestamp ?? a.created_at, createdBy: a.created_by_name ?? a.created_by })))
+          ).catch(() => null);
+        }, 400);
+      }}
+    />}
     {showApptModal && <AppointmentModal lead={lead} onClose={() => setShowApptModal(false)} onBooked={() => {
       setTimeout(() => {
         api.get<any[]>(`/api/leads/${lead.id}/activities`).then((data) =>
