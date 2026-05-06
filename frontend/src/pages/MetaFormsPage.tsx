@@ -1629,6 +1629,114 @@ export default function MetaFormsPage() {
           }} />
         )}
 
+        {/* Download Leads modal */}
+        {downloadModal && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-[16px] font-bold text-[#1c1410]">Download Leads</h3>
+                  <p className="text-[11px] text-[#7a6b5c] mt-0.5">Download all lead data from Meta as Excel</p>
+                </div>
+                <button onClick={() => setDownloadModal(false)} className="p-1.5 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-[#5c5245] mb-1.5">Select Form</label>
+              <div className="relative">
+                <select
+                  value={downloadFormId}
+                  onChange={(e) => setDownloadFormId(e.target.value)}
+                  className="w-full appearance-none bg-[#f5f0eb] border border-black/8 rounded-xl px-4 py-2.5 text-[13px] text-[#1c1410] outline-none focus:ring-2 focus:ring-primary/20 pr-9 cursor-pointer"
+                >
+                  <option value="">— Choose a form —</option>
+                  {forms.filter((f) => f.page_id === detailPage.id).map((f) => (
+                    <option key={f.form_id} value={f.form_id}>{f.form_name}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#9e8e7e] pointer-events-none" />
+              </div>
+              <p className="text-[11px] text-[#9e8e7e] mt-2">All fields submitted by leads will be included as columns in the Excel file.</p>
+              <div className="flex gap-2 mt-5">
+                <button
+                  onClick={() => setDownloadModal(false)}
+                  className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDownloadLeads}
+                  disabled={!downloadFormId || downloading}
+                  className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white disabled:opacity-40 flex items-center justify-center gap-1.5 transition-all"
+                  style={downloadFormId && !downloading ? { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' } : { background: '#d1cbc7' }}
+                >
+                  {downloading ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" />Downloading…</> : <><Download className="w-3.5 h-3.5" />Download</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Trigger Workflow modal */}
+        {triggerModal && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-[16px] font-bold text-[#1c1410]">Trigger Workflow</h3>
+                  <p className="text-[11px] text-[#7a6b5c] mt-0.5 truncate max-w-[240px]">{triggerModal.form_name}</p>
+                </div>
+                <button onClick={() => setTriggerModal(null)} className="p-1.5 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-[12px] text-[#7a6b5c] mb-3">Select the workflow to run for all imported leads. Only the selected workflow will execute.</p>
+              <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-[#5c5245] mb-1.5">Select Active Workflow</label>
+              {loadingTriggerWFs ? (
+                <div className="flex items-center justify-center h-10 text-[#9e8e7e] text-[12px] gap-1.5">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Loading workflows…
+                </div>
+              ) : triggerWorkflows.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-black/10 px-4 py-5 text-center">
+                  <Zap className="w-6 h-6 text-[#d4c9bc] mx-auto mb-2" />
+                  <p className="text-[12px] font-semibold text-[#1c1410]">No active workflows</p>
+                  <p className="text-[11px] text-[#9e8e7e] mt-0.5">Create a workflow with a Meta Form trigger in Automation first.</p>
+                </div>
+              ) : (
+                <div className="relative">
+                  <select
+                    value={triggerWorkflowId}
+                    onChange={(e) => setTriggerWorkflowId(e.target.value)}
+                    className="w-full appearance-none bg-[#f5f0eb] border border-black/8 rounded-xl px-4 py-2.5 text-[13px] text-[#1c1410] outline-none focus:ring-2 focus:ring-primary/20 pr-9 cursor-pointer"
+                  >
+                    <option value="">— Choose a workflow —</option>
+                    {triggerWorkflows.map((wf) => (
+                      <option key={wf.id} value={wf.id}>{wf.name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#9e8e7e] pointer-events-none" />
+                </div>
+              )}
+              <div className="flex gap-2 mt-5">
+                <button
+                  onClick={() => setTriggerModal(null)}
+                  className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handlePushToAutomation(triggerModal, 'old', triggerWorkflowId || undefined)}
+                  disabled={triggerWorkflows.length === 0 || !triggerWorkflowId}
+                  className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white disabled:opacity-40 transition-all"
+                  style={triggerWorkflowId ? { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' } : { background: '#d1cbc7' }}
+                >
+                  Run Workflow
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     );
   }
@@ -1955,121 +2063,6 @@ export default function MetaFormsPage() {
               </button>
               <button onClick={handleDisconnectPage} disabled={disconnectingPage} className="flex-1 py-2.5 rounded-xl text-[13px] font-bold bg-red-500 text-white hover:bg-red-600 disabled:opacity-60 transition-colors">
                 {disconnectingPage ? 'Disconnecting…' : 'Yes, Disconnect'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Download Leads modal — pick a form, download all raw Meta data as Excel */}
-      {downloadModal && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-[16px] font-bold text-[#1c1410]">Download Leads</h3>
-                <p className="text-[11px] text-[#7a6b5c] mt-0.5">Download all lead data from Meta as Excel</p>
-              </div>
-              <button onClick={() => setDownloadModal(false)} className="p-1.5 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-[#5c5245] mb-1.5">Select Form</label>
-            <div className="relative">
-              <select
-                value={downloadFormId}
-                onChange={(e) => setDownloadFormId(e.target.value)}
-                className="w-full appearance-none bg-[#f5f0eb] border border-black/8 rounded-xl px-4 py-2.5 text-[13px] text-[#1c1410] outline-none focus:ring-2 focus:ring-primary/20 pr-9 cursor-pointer"
-              >
-                <option value="">— Choose a form —</option>
-                {forms.map((f) => (
-                  <option key={f.form_id} value={f.form_id}>{f.form_name}</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#9e8e7e] pointer-events-none" />
-            </div>
-
-            <p className="text-[11px] text-[#9e8e7e] mt-2">All fields submitted by leads will be included as columns in the Excel file.</p>
-
-            <div className="flex gap-2 mt-5">
-              <button
-                onClick={() => setDownloadModal(false)}
-                className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#faf8f6] transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDownloadLeads}
-                disabled={!downloadFormId || downloading}
-                className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white disabled:opacity-40 flex items-center justify-center gap-1.5 transition-all"
-                style={downloadFormId && !downloading ? { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' } : { background: '#d1cbc7' }}
-              >
-                {downloading ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" />Downloading…</> : <><Download className="w-3.5 h-3.5" />Download</>}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Trigger Workflow modal — pick one workflow before importing */}
-      {triggerModal && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-[16px] font-bold text-[#1c1410]">Trigger Workflow</h3>
-                <p className="text-[11px] text-[#7a6b5c] mt-0.5 truncate max-w-[240px]">{triggerModal.form_name}</p>
-              </div>
-              <button onClick={() => setTriggerModal(null)} className="p-1.5 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <p className="text-[12px] text-[#7a6b5c] mb-3">Select the workflow to run for all imported leads. Only the selected workflow will execute.</p>
-
-            <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-[#5c5245] mb-1.5">Select Active Workflow</label>
-
-            {loadingTriggerWFs ? (
-              <div className="flex items-center justify-center h-10 text-[#9e8e7e] text-[12px] gap-1.5">
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Loading workflows…
-              </div>
-            ) : triggerWorkflows.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-black/10 px-4 py-5 text-center">
-                <Zap className="w-6 h-6 text-[#d4c9bc] mx-auto mb-2" />
-                <p className="text-[12px] font-semibold text-[#1c1410]">No active workflows</p>
-                <p className="text-[11px] text-[#9e8e7e] mt-0.5">Create a workflow with a Meta Form trigger in Automation first.</p>
-              </div>
-            ) : (
-              <div className="relative">
-                <select
-                  value={triggerWorkflowId}
-                  onChange={(e) => setTriggerWorkflowId(e.target.value)}
-                  className="w-full appearance-none bg-[#f5f0eb] border border-black/8 rounded-xl px-4 py-2.5 text-[13px] text-[#1c1410] outline-none focus:ring-2 focus:ring-primary/20 pr-9 cursor-pointer"
-                >
-                  <option value="">— Choose a workflow —</option>
-                  {triggerWorkflows.map((wf) => (
-                    <option key={wf.id} value={wf.id}>{wf.name}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#9e8e7e] pointer-events-none" />
-              </div>
-            )}
-
-            <div className="flex gap-2 mt-5">
-              <button
-                onClick={() => setTriggerModal(null)}
-                className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#faf8f6] transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handlePushToAutomation(triggerModal, 'old', triggerWorkflowId || undefined)}
-                disabled={triggerWorkflows.length === 0 || !triggerWorkflowId}
-                className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white disabled:opacity-40 transition-all"
-                style={triggerWorkflowId ? { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' } : { background: '#d1cbc7' }}
-              >
-                Run Workflow
               </button>
             </div>
           </div>
