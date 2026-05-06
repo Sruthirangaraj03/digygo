@@ -431,9 +431,9 @@ router.get('/pipeline-analytics', requireOwner, async (req: AuthRequest, res: Re
       query(`
         SELECT
           COUNT(*)::int AS total,
-          COUNT(CASE WHEN f.status='completed' THEN 1 END)::int AS completed,
-          COUNT(CASE WHEN f.status='pending' THEN 1 END)::int AS pending,
-          COUNT(CASE WHEN f.status='pending' AND f.due_date<NOW() THEN 1 END)::int AS overdue
+          COUNT(CASE WHEN f.completed=TRUE THEN 1 END)::int AS completed,
+          COUNT(CASE WHEN f.completed IS NOT TRUE THEN 1 END)::int AS pending,
+          COUNT(CASE WHEN f.completed IS NOT TRUE AND f.due_at<NOW() THEN 1 END)::int AS overdue
         FROM lead_followups f
         JOIN leads l ON l.id=f.lead_id AND l.tenant_id=$1 AND l.pipeline_id=$2::uuid AND l.is_deleted=FALSE
         WHERE f.tenant_id=$1 AND f.created_at>=$3 AND f.created_at<=$4
@@ -442,13 +442,13 @@ router.get('/pipeline-analytics', requireOwner, async (req: AuthRequest, res: Re
       // 9. Overdue follow-ups list (not period-scoped — show all current overdue)
       query(`
         SELECT l.name AS lead_name, l.id AS lead_id,
-          u.name AS staff_name, f.due_date,
-          ROUND(EXTRACT(EPOCH FROM(NOW()-f.due_date))/86400)::int AS overdue_days
+          u.name AS staff_name, f.due_at,
+          ROUND(EXTRACT(EPOCH FROM(NOW()-f.due_at))/86400)::int AS overdue_days
         FROM lead_followups f
         JOIN leads l ON l.id=f.lead_id AND l.tenant_id=$1 AND l.pipeline_id=$2::uuid AND l.is_deleted=FALSE
         LEFT JOIN users u ON u.id=f.assigned_to
-        WHERE f.tenant_id=$1 AND f.status='pending' AND f.due_date<NOW()
-        ORDER BY f.due_date ASC LIMIT 10
+        WHERE f.tenant_id=$1 AND f.completed IS NOT TRUE AND f.due_at<NOW()
+        ORDER BY f.due_at ASC LIMIT 10
       `, [tenantId, pipeline_id]),
 
       // 10. Stale count (>7 days no update, not in won stage)
