@@ -82,15 +82,15 @@ router.get('/pipeline-health', requireOwner, async (req: AuthRequest, res: Respo
   try {
     const result = await query(`
       SELECT p.id AS pipeline_id, p.name AS pipeline_name,
-        ps.name AS stage_name, ps.position, ps.is_won,
+        ps.name AS stage_name, ps.stage_order, ps.is_won,
         COUNT(l.id)::int AS lead_count,
         COALESCE(ROUND(AVG(EXTRACT(EPOCH FROM(NOW()-l.updated_at))/86400)::numeric),0)::int AS avg_days
       FROM pipelines p
       JOIN pipeline_stages ps ON ps.pipeline_id=p.id
       LEFT JOIN leads l ON l.stage_id=ps.id AND l.is_deleted=FALSE AND l.tenant_id=$1
       WHERE p.tenant_id=$1
-      GROUP BY p.id,p.name,ps.id,ps.name,ps.position,ps.is_won
-      ORDER BY p.name, ps.position
+      GROUP BY p.id,p.name,ps.id,ps.name,ps.stage_order,ps.is_won
+      ORDER BY p.name, ps.stage_order
     `, [tenantId]);
 
     const map: Record<string, any> = {};
