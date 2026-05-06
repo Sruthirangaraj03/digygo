@@ -418,25 +418,201 @@ function ConversionBar({ kpi }: { kpi: any }) {
   );
 }
 
-// ── Staff No-Access Screen ─────────────────────────────────────────────────────
-function StaffNoAccess() {
+// ── Staff Personal Report ──────────────────────────────────────────────────────
+function StaffReport() {
+  const [range, setRange]       = useState('all_time');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate]     = useState('');
+  const [data, setData]         = useState<any>(null);
+  const [loading, setLoading]   = useState(false);
+
+  useEffect(() => {
+    if (range === 'custom' && (!fromDate || !toDate)) return;
+    setLoading(true);
+    setData(null);
+    const params = new URLSearchParams({ range });
+    if (range === 'custom') { params.set('from', fromDate); params.set('to', toDate); }
+    api.get<any>(`/api/reports/staff-analytics?${params}`)
+      .then(setData)
+      .catch(() => toast.error('Failed to load your analytics'))
+      .finally(() => setLoading(false));
+  }, [range, fromDate, toDate]);
+
   return (
-    <div className="flex flex-col items-center justify-center py-32 text-center">
-      <div className="w-16 h-16 rounded-2xl bg-[#f5ede3] flex items-center justify-center mb-4">
-        <BarChart2 className="w-7 h-7 text-[#c2410c]" />
+    <div className="space-y-4 pb-10">
+      {/* Header */}
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="font-headline font-bold text-[17px] text-[#1c1410]">My Performance</h2>
+          <p className="text-[12px] text-[#9e8e7e] mt-0.5">Your personal lead analytics</p>
+        </div>
+        <div className="flex gap-0.5 bg-white border border-black/8 rounded-xl p-1">
+          {RANGES.map(r => (
+            <button key={r.id} onClick={() => setRange(r.id)}
+              className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all whitespace-nowrap ${
+                range === r.id ? 'bg-primary text-white shadow-sm' : 'text-[#7a6b5c] hover:bg-[#f5ede3]'
+              }`}>{r.label}</button>
+          ))}
+        </div>
       </div>
-      <h3 className="text-[17px] font-bold text-[#1c1410] mb-2">Reports are for managers &amp; owners</h3>
-      <p className="text-[13px] text-[#7a6b5c] max-w-xs">
-        Your manager or account owner can view pipeline analytics, team performance, and more here.
-      </p>
+
+      {range === 'custom' && (
+        <div className="flex items-center gap-2">
+          <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
+            className="border border-black/10 rounded-xl px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-primary/20" />
+          <span className="text-[13px] text-[#9e8e7e] font-medium">to</span>
+          <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
+            className="border border-black/10 rounded-xl px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-primary/20" />
+        </div>
+      )}
+
+      {loading && <Spinner />}
+
+      {data && !loading && (
+        <div className="space-y-4">
+          {/* KPI strip */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <KpiCard label="My Leads"        value={data.kpi.total_leads ?? 0}             color="#6366f1" icon={TrendingUp} />
+            <KpiCard label="Won"             value={data.kpi.won ?? 0}                      color="#10b981" icon={CheckCircle2} />
+            <KpiCard label="Conv. Rate"      value={`${data.kpi.conv_pct ?? 0}%`}           color="#ea580c" icon={Target} />
+            <KpiCard label="Avg Days to Win" value={`${data.kpi.avg_days_to_close ?? 0}d`} color="#3b82f6" icon={Clock}
+              sub="from creation to won" />
+            <KpiCard label="Active"          value={data.kpi.active ?? 0}                   color="#f59e0b" icon={Users}
+              sub="not yet in a won stage" />
+          </div>
+
+          {/* Lead Breakdown bar */}
+          {(data.kpi.total_leads ?? 0) > 0 && (
+            <div className="bg-white rounded-2xl border border-black/5 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[13px] font-bold text-[#1c1410]">My Lead Breakdown</h3>
+                <span className="text-[12px] text-[#9e8e7e]">{data.kpi.total_leads} total</span>
+              </div>
+              {(() => {
+                const total = data.kpi.total_leads ?? 0;
+                const won   = data.kpi.won ?? 0;
+                const active = data.kpi.active ?? 0;
+                const wonPct    = Math.round(won / total * 100);
+                const activePct = Math.round(active / total * 100);
+                const lostPct   = Math.max(100 - wonPct - activePct, 0);
+                return (
+                  <>
+                    <div className="flex h-4 rounded-full overflow-hidden gap-0.5">
+                      {wonPct > 0    && <div style={{ width: `${wonPct}%`,    background: '#10b981' }} className="transition-all duration-700" />}
+                      {activePct > 0 && <div style={{ width: `${activePct}%`, background: '#6366f1' }} className="transition-all duration-700" />}
+                      {lostPct > 0   && <div style={{ width: `${lostPct}%`,   background: '#f4efe9' }} className="transition-all duration-700" />}
+                    </div>
+                    <div className="flex items-center gap-4 mt-2.5">
+                      <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#10b981]" /><span className="text-[11px] text-[#9e8e7e]">Won {wonPct}% ({won})</span></div>
+                      <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-[#6366f1]" /><span className="text-[11px] text-[#9e8e7e]">Active {activePct}% ({active})</span></div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* Stages + Sources */}
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div className="md:col-span-3">
+              <Panel title="My Leads by Stage" accent="#6366f1">
+                {data.stages.length === 0
+                  ? <p className="text-[13px] text-center text-[#9e8e7e] py-8">No leads yet.</p>
+                  : (
+                    <div className="space-y-2">
+                      {data.stages.filter((s: any) => s.lead_count > 0).map((s: any, i: number) => {
+                        const max = Math.max(...data.stages.map((x: any) => x.lead_count), 1);
+                        const barW = Math.max(Math.round(s.lead_count / max * 100), 2);
+                        const color = s.is_won ? '#10b981' : STAGE_COLORS[i % STAGE_COLORS.length];
+                        return (
+                          <div key={s.stage_name} className="flex items-center gap-3">
+                            <span className="text-[11px] font-semibold text-[#4a3a2a] w-[88px] shrink-0 truncate">{s.stage_name}</span>
+                            <div className="flex-1 bg-[#f4efe9] rounded-full h-7 overflow-hidden">
+                              <div className="h-full rounded-full flex items-center justify-end pr-2.5 transition-all duration-500"
+                                style={{ width: `${barW}%`, background: color }}>
+                                {barW > 12 && <span className="text-[11px] font-bold text-white">{s.lead_count}</span>}
+                              </div>
+                            </div>
+                            {barW <= 12 && <span className="text-[12px] font-bold text-[#1c1410] w-5 text-right">{s.lead_count}</span>}
+                            {s.is_won && <span className="text-[10px] font-bold px-2 py-1 rounded-lg shrink-0 bg-emerald-50 text-emerald-600">Won ✓</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )
+                }
+              </Panel>
+            </div>
+            <div className="md:col-span-2">
+              <Panel title="My Lead Sources" accent="#3b82f6">
+                <SourceBreakdown sources={data.sources} />
+              </Panel>
+            </div>
+          </div>
+
+          {/* Trend + Overdue */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Panel title="My Leads vs Won — Monthly" accent="#10b981">
+              <WinTrendChart winLoss={data.win_loss} />
+            </Panel>
+            <Panel accent="#f59e0b" title="My Overdue Follow-ups">
+              {data.overdue_list.length === 0
+                ? (
+                  <div className="flex flex-col items-center justify-center py-8 gap-2">
+                    <CheckCircle2 className="w-9 h-9 text-[#10b981]" />
+                    <p className="text-[13px] font-semibold text-[#10b981]">No overdue follow-ups</p>
+                    <p className="text-[11px] text-[#9e8e7e]">You're on top of everything!</p>
+                  </div>
+                )
+                : (
+                  <div className="space-y-2.5">
+                    {data.overdue_list.map((o: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between p-3 bg-[#fefce8] rounded-xl border border-[#fef08a]">
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-semibold text-[#1c1410] truncate">{o.lead_name}</p>
+                          <p className="text-[11px] text-[#9e8e7e] mt-0.5">{o.title}</p>
+                        </div>
+                        <span className="text-[12px] font-bold text-[#ca8a04] shrink-0 ml-3 bg-white px-2.5 py-1 rounded-lg border border-[#fde047]">
+                          {o.overdue_days}d late
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              }
+            </Panel>
+          </div>
+
+          {/* Follow-up summary */}
+          <div className="bg-white rounded-2xl border border-black/5 p-4">
+            <h3 className="text-[13px] font-bold text-[#1c1410] mb-3">My Follow-up Summary</h3>
+            <div className="grid grid-cols-4 gap-3">
+              {[
+                { label: 'Total',     value: data.followups.total ?? 0,     color: '#6366f1' },
+                { label: 'Completed', value: data.followups.completed ?? 0, color: '#10b981' },
+                { label: 'Pending',   value: data.followups.pending ?? 0,   color: '#f59e0b' },
+                { label: 'Overdue',   value: data.followups.overdue ?? 0,   color: '#ef4444' },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="text-center p-3 rounded-xl" style={{ background: `${color}0f` }}>
+                  <p className="text-[22px] font-bold" style={{ color }}>{value}</p>
+                  <p className="text-[11px] text-[#9e8e7e] mt-0.5">{label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {data && !loading && (data.kpi.total_leads ?? 0) === 0 && (
+        <div className="text-center py-20 text-[#9e8e7e] text-[14px]">No leads assigned to you in this period.</div>
+      )}
     </div>
   );
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ReportsPage() {
-  const level     = useUserLevel();
-  const hasAccess = level !== 'staff';
+  const level = useUserLevel();
 
   const [pipelines, setPipelines] = useState<{ id: string; name: string }[]>([]);
   const [pipelineId, setPipelineId] = useState<string | null>(null);
@@ -448,7 +624,7 @@ export default function ReportsPage() {
   const [plLoading, setPlLoading]   = useState(true);
 
   useEffect(() => {
-    if (!hasAccess) { setPlLoading(false); return; }
+    if (level === 'staff') { setPlLoading(false); return; }
     api.get<{ id: string; name: string }[]>('/api/reports/pipelines')
       .then(rows => {
         setPipelines(rows);
@@ -474,7 +650,7 @@ export default function ReportsPage() {
   const selectedName = pipelines.find(p => p.id === pipelineId)?.name ?? '';
   const viewLabel    = level === 'owner' ? 'owner view' : 'manager view';
 
-  if (!hasAccess) return <StaffNoAccess />;
+  if (level === 'staff') return <StaffReport />;
 
   return (
     <div className="space-y-4 pb-10">

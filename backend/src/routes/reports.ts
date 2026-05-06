@@ -546,4 +546,105 @@ router.get('/pipeline-analytics', requireManagerOrOwner, async (req: AuthRequest
   }
 });
 
+// ── 11. Staff Personal Analytics ─────────────────────────────────────────────
+router.get('/staff-analytics', async (req: AuthRequest, res: Response) => {
+  const { tenantId, userId } = req.user!;
+  if (!tenantId) return res.status(403).json({ error: 'No tenant' });
+  const { range = 'all_time', from, to } = req.query as Record<string, string>;
+  const { start, end } = computeRange(range, from, to);
+
+  try {
+    const [kpiRes, stagesRes, sourcesRes, winLossRes, overdueRes, fuSummaryRes] = await Promise.all([
+
+      // KPI — scoped to this user's assigned leads
+      query(`
+        SELECT
+          COUNT(DISTINCT l.id)::int AS total_leads,
+          COUNT(DISTINCT CASE WHEN ps.is_won THEN l.id END)::int AS won,
+          COUNT(DISTINCT CASE WHEN COALESCE(ps.is_won,FALSE)=FALSE THEN l.id END)::int AS active,
+          COALESCE(ROUND(COUNT(DISTINCT CASE WHEN ps.is_won THEN l.id END)::numeric
+            /NULLIF(COUNT(DISTINCT l.id),0)*100),0)::int AS conv_pct,
+          COALESCE(ROUND(AVG(CASE WHEN ps.is_won
+            THEN EXTRACT(EPOCH FROM(l.updated_at-l.created_at))/86400 END)::numeric),0)::int AS avg_days_to_close
+        FROM leads l LEFT JOIN pipeline_stages ps ON ps.id=l.stage_id
+        WHERE l.tenant_id=$1 AND l.assigned_to=$2::uuid AND l.is_deleted=FALSE
+          AND l.created_at>=$3 AND l.created_at<=$4
+      `, [tenantId, userId, start, end]),
+
+      // Leads per stage
+      query(`
+        SELECT ps.name AS stage_name, ps.stage_order, ps.is_won,
+          COUNT(l.id)::int AS lead_count
+        FROM pipeline_stages ps
+        LEFT JOIN leads l ON l.stage_id=ps.id AND l.is_deleted=FALSE
+          AND l.tenant_id=$1 AND l.assigned_to=$2::uuid
+          AND l.created_at>=$3 AND l.created_at<=$4
+        JOIN pipelines p ON p.id=ps.pipeline_id AND p.tenant_id=$1
+        GROUP BY ps.id,ps.name,ps.stage_order,ps.is_won
+        ORDER BY ps.stage_order ASC
+      `, [tenantId, userId, start, end]),
+
+      // Sources
+      query(`
+        SELECT COALESCE(l.source,'Unknown') AS source,
+          COUNT(*)::int AS total,
+          COUNT(CASE WHEN ps.is_won THEN 1 END)::int AS won,
+          COALESCE(ROUND(COUNT(CASE WHEN ps.is_won THEN 1 END)::numeric/NULLIF(COUNT(*),0)*100),0)::int AS conv_pct
+        FROM leads l LEFT JOIN pipeline_stages ps ON ps.id=l.stage_id
+        WHERE l.tenant_id=$1 AND l.assigned_to=$2::uuid AND l.is_deleted=FALSE
+          AND l.created_at>=$3 AND l.created_at<=$4
+        GROUP BY l.source ORDER BY total DESC
+      `, [tenantId, userId, start, end]),
+
+      // Monthly trend
+      query(`
+        SELECT TO_CHAR(DATE_TRUNC('month',l.created_at),'Mon YY') AS month,
+          DATE_TRUNC('month',l.created_at) AS month_ts,
+          COUNT(*)::int AS new_leads,
+          COUNT(CASE WHEN ps.is_won THEN 1 END)::int AS won
+        FROM leads l LEFT JOIN pipeline_stages ps ON ps.id=l.stage_id
+        WHERE l.tenant_id=$1 AND l.assigned_to=$2::uuid AND l.is_deleted=FALSE
+          AND l.created_at>=$3 AND l.created_at<=$4
+        GROUP BY month_ts,month ORDER BY month_ts ASC
+      `, [tenantId, userId, start, end]),
+
+      // Overdue follow-ups for this user
+      query(`
+        SELECT l.name AS lead_name, f.title, f.due_at,
+          ROUND(EXTRACT(EPOCH FROM(NOW()-f.due_at))/86400)::int AS overdue_days
+        FROM lead_followups f
+        JOIN leads l ON l.id=f.lead_id AND l.tenant_id=$1 AND l.is_deleted=FALSE
+        WHERE f.tenant_id=$1 AND f.assigned_to=$2::uuid
+          AND f.completed IS NOT TRUE AND f.due_at<NOW()
+        ORDER BY f.due_at ASC LIMIT 8
+      `, [tenantId, userId]),
+
+      // Follow-up summary
+      query(`
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(CASE WHEN f.completed=TRUE THEN 1 END)::int AS completed,
+          COUNT(CASE WHEN f.completed IS NOT TRUE THEN 1 END)::int AS pending,
+          COUNT(CASE WHEN f.completed IS NOT TRUE AND f.due_at<NOW() THEN 1 END)::int AS overdue
+        FROM lead_followups f
+        JOIN leads l ON l.id=f.lead_id AND l.tenant_id=$1 AND l.is_deleted=FALSE
+        WHERE f.tenant_id=$1 AND f.assigned_to=$2::uuid
+          AND f.created_at>=$3 AND f.created_at<=$4
+      `, [tenantId, userId, start, end]),
+    ]);
+
+    res.json({
+      kpi:       kpiRes.rows[0] ?? {},
+      stages:    stagesRes.rows,
+      sources:   sourcesRes.rows,
+      win_loss:  winLossRes.rows,
+      overdue_list: overdueRes.rows,
+      followups: fuSummaryRes.rows[0] ?? {},
+    });
+  } catch (err) {
+    console.error('[reports:staff-analytics]', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router;

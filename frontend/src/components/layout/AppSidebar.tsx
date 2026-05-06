@@ -22,7 +22,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: 'Dashboard',       icon: LayoutDashboard,   path: '/dashboard' },
-  { label: 'Reports',         icon: BarChart2,          path: '/reports',  permKey: 'staff:manage' },
+  { label: 'Reports',         icon: BarChart2,          path: '/reports' },
   {
     label: 'Lead Generation', icon: Database,           path: '/lead-generation',
     anyOf: ['meta_forms:read', 'custom_forms:read', 'landing_pages:read', 'whatsapp_setup:read'],
