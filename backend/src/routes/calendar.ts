@@ -489,7 +489,7 @@ router.post('/public/book', publicBookingLimiter, async (req: Request, res: Resp
             ).catch(() => null);
             const calendarContext = { ...lead, event_type_id, calendar_name: et.name };
             await triggerWorkflows('calendar_form_submitted', calendarContext, et.tenant_id, '', { triggerContext: { calendarId: event_type_id } }).catch(() => null);
-            await triggerWorkflows('appointment_booked', lead, et.tenant_id, '').catch(() => null);
+            await triggerWorkflows('appointment_booked', lead, et.tenant_id, '', { triggerContext: { calendarId: event_type_id } }).catch(() => null);
           }
         }
       } catch (err) {
@@ -698,7 +698,7 @@ router.post('/', checkPermission('calendar:manage'), async (req: AuthRequest, re
           ).catch(() => null);
           const calendarContext = { ...lead, event_type_id: event_type_id ?? '', calendar_name: calendarName };
           await triggerWorkflows('calendar_form_submitted', calendarContext, tenantId, userId, { triggerContext: { calendarId: event_type_id ?? '' } }).catch(() => null);
-          await triggerWorkflows('appointment_booked',      calendarContext, tenantId, userId).catch(() => null);
+          await triggerWorkflows('appointment_booked',      calendarContext, tenantId, userId, { triggerContext: { calendarId: event_type_id ?? '' } }).catch(() => null);
         } catch (err) {
           console.error('[calendar manual booking] trigger error:', err);
         }
@@ -763,9 +763,10 @@ router.patch('/:id', checkPermission('calendar:manage'), async (req: AuthRequest
       if (wfTrigger) {
         const leadRes = await query('SELECT * FROM leads WHERE id=$1', [event.lead_id]).catch(() => null);
         const lead = leadRes?.rows[0] ?? { id: event.lead_id, name: '' };
-        const apptType = (event.type as string) ?? '';
+        const apptType   = (event.type as string) ?? '';
+        const calendarId = (event.event_type_id as string) ?? '';
         setImmediate(() => triggerWorkflows(wfTrigger, lead, req.user!.tenantId!, req.user!.userId,
-          { triggerContext: { apptType } }
+          { triggerContext: { apptType, calendarId } }
         ).catch(() => null));
       }
     }
