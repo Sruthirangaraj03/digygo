@@ -306,8 +306,11 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
   onRegenerateToken?: () => void;
 }) {
   const cfg = node.config;
-  const leads = useCrmStore((s) => s.leads);
-  const allLeadTags = useMemo(() => [...new Set(leads.flatMap((l) => l.tags ?? []))].sort(), [leads]);
+  const [allLeadTags, setAllLeadTags] = useState<string[]>([]);
+  useEffect(() => {
+    if (node.actionType !== 'contact_tagged') return;
+    api.get<string[]>('/api/leads/tags').then(setAllLeadTags).catch(() => null);
+  }, [node.actionType]);
   const sel = (field: string) => (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement | HTMLTextAreaElement>) =>
     onUpdate({ config: { ...cfg, [field]: e.target.value } });
 
@@ -459,35 +462,49 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
         </FieldRow>
       </>)}
 
-      {node.actionType === 'contact_tagged' && (<>
-        <FieldRow label="Tags (optional)" hint="Fires when any of these tags is added. Leave empty to fire for any tag.">
-          <div className="w-full border border-border rounded-lg px-3 py-2 min-h-10 flex flex-wrap gap-1.5 items-center bg-card">
-            {((cfg.tags as string[]) ?? []).map((t) => (
-              <span key={t} className="flex items-center gap-1 bg-muted text-foreground text-xs px-2 py-1 rounded-full">
-                {t}
-                <button onClick={() => onUpdate({ config: { ...cfg, tags: ((cfg.tags as string[]) ?? []).filter((x) => x !== t) } })}>
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            ))}
-            <select
-              value=""
-              onChange={(e) => {
-                if (!e.target.value) return;
-                const existing = (cfg.tags as string[]) ?? [];
-                if (existing.includes(e.target.value)) return;
-                onUpdate({ config: { ...cfg, tags: [...existing, e.target.value] } });
-              }}
-              className="flex-1 min-w-[120px] text-[12px] bg-transparent outline-none text-[#7a6b5c] cursor-pointer"
-            >
-              <option value="">+ Add tag...</option>
-              {allLeadTags.filter((t) => !((cfg.tags as string[]) ?? []).includes(t)).map((t) => (
-                <option key={t} value={t}>{t}</option>
+      {node.actionType === 'contact_tagged' && (() => {
+        const selectedTags = (cfg.tags as string[]) ?? [];
+        const noTagsSelected = selectedTags.length === 0;
+        return (<>
+          <FieldRow label="Tags" hint="Fires when any of these tags is added to a contact.">
+            <div className={cn(
+              'w-full border rounded-lg px-3 py-2 min-h-10 flex flex-wrap gap-1.5 items-center bg-card',
+              noTagsSelected ? 'border-amber-400' : 'border-border'
+            )}>
+              {selectedTags.map((t) => (
+                <span key={t} className="flex items-center gap-1 bg-muted text-foreground text-xs px-2 py-1 rounded-full">
+                  {t}
+                  <button onClick={() => onUpdate({ config: { ...cfg, tags: selectedTags.filter((x) => x !== t) } })}>
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
               ))}
-            </select>
-          </div>
-        </FieldRow>
-      </>)}
+              <select
+                value=""
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  if (selectedTags.includes(e.target.value)) return;
+                  onUpdate({ config: { ...cfg, tags: [...selectedTags, e.target.value] } });
+                }}
+                className="flex-1 min-w-[120px] text-[12px] bg-transparent outline-none text-[#7a6b5c] cursor-pointer"
+              >
+                <option value="">+ Add tag...</option>
+                {allLeadTags.filter((t) => !selectedTags.includes(t)).map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+          </FieldRow>
+          {noTagsSelected && (
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800">
+                <span className="font-semibold">No tag selected.</span> This workflow will fire for <span className="font-semibold">every tag added to any contact</span>. Add at least one tag to restrict it.
+              </p>
+            </div>
+          )}
+        </>);
+      })()}
 
       {/* Calendar triggers */}
       {['appointment_booked', 'appointment_cancelled', 'appointment_rescheduled', 'appointment_noshow', 'appointment_showup'].includes(node.actionType) && (

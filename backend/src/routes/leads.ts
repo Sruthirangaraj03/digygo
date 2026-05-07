@@ -136,6 +136,23 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// GET /api/leads/tags — all unique tags used across tenant leads (for workflow editor dropdown)
+router.get('/tags', async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await query(
+      `SELECT DISTINCT jsonb_array_elements_text(tags) AS tag
+       FROM leads
+       WHERE tenant_id = $1 AND is_deleted = FALSE
+         AND tags IS NOT NULL AND jsonb_array_length(tags) > 0
+       ORDER BY tag`,
+      [req.user!.tenantId]
+    );
+    res.json(result.rows.map((r: any) => r.tag as string));
+  } catch {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // GET /api/leads/followups — follow-ups scoped by user access level
 router.get('/followups', async (req: AuthRequest, res: Response) => {
   const { userId, tenantId, role } = req.user!;
