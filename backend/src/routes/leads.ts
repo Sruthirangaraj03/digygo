@@ -70,7 +70,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
   if (!viewAll) {
     params.push(userId);
-    sql += ` AND l.assigned_to = $${params.length}`;
+    sql += ` AND (l.assigned_to = $${params.length}::uuid OR $${params.length}::uuid = ANY(l.team_members))`;
   }
 
   if (stage)       { params.push(stage);                  sql += ` AND l.stage_id = $${params.length}`; }
@@ -185,7 +185,7 @@ router.get('/followups', async (req: AuthRequest, res: Response) => {
 
     if (onlyAssigned) {
       params.push(userId);
-      sql += ` AND (f.assigned_to = $${params.length} OR l.assigned_to = $${params.length})`;
+      sql += ` AND (f.assigned_to = $${params.length}::uuid OR l.assigned_to = $${params.length}::uuid OR $${params.length}::uuid = ANY(l.team_members))`;
     }
 
     sql += ' ORDER BY f.due_at ASC';
@@ -421,6 +421,13 @@ router.patch('/:id', checkPermission('leads:edit'), validate(UpdateLeadSchema), 
   if (req.body.custom_fields && typeof req.body.custom_fields === 'object') {
     params.push(JSON.stringify(req.body.custom_fields));
     updates.push(`custom_fields = COALESCE(custom_fields, '{}'::jsonb) || $${params.length}::jsonb`);
+  }
+
+  // Team members — replace the full array
+  if (req.body.team_members !== undefined) {
+    const members: string[] = Array.isArray(req.body.team_members) ? req.body.team_members : [];
+    params.push(members);
+    updates.push(`team_members = $${params.length}::uuid[]`);
   }
 
   if (!updates.length) { res.status(400).json({ error: 'No fields to update' }); return; }

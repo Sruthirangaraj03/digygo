@@ -504,6 +504,7 @@ export const useCrmStore = create<CrmState>((set) => ({
           nextFollowUp: null,
           customFields: [],
           leadQuality: l.custom_fields?.lead_quality ?? '',
+          teamMembers: l.team_members ?? [],
         } as Lead;
       });
 

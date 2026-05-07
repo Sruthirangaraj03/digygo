@@ -1825,6 +1825,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
     assignedTo: lead.assignedTo ?? '',
     tags: [...lead.tags], tagInput: '',
     leadQuality: lead.leadQuality ?? '',
+    teamMembers: [...(lead.teamMembers ?? [])],
   });
 
   const handleSaveEdit = async () => {
@@ -1840,6 +1841,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
         tags: editForm.tags,
         deal_value: editForm.dealValue !== undefined ? Number(editForm.dealValue) : undefined,
         custom_fields: { lead_quality: editForm.leadQuality || null },
+        team_members: editForm.teamMembers,
       });
       updateLead(lead.id, {
         firstName: editForm.firstName, lastName: editForm.lastName,
@@ -1849,6 +1851,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
         assignedName: staff.find((s) => s.id === editForm.assignedTo)?.name ?? '',
         tags: editForm.tags,
         leadQuality: editForm.leadQuality || undefined,
+        teamMembers: editForm.teamMembers,
       });
       setEditMode(false);
       toast.success('Lead updated');
@@ -2005,6 +2008,21 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
               ))}
 
 
+              {/* Team Members */}
+              {(lead.teamMembers ?? []).length > 0 && (
+                <div className="flex items-start gap-3">
+                  <Users className="w-4 h-4 text-[#7a6b5c] shrink-0 mt-0.5" />
+                  <div className="flex flex-wrap gap-1">
+                    {(lead.teamMembers ?? []).map((id) => {
+                      const m = staff.find((s) => s.id === id);
+                      return m ? (
+                        <span key={id} className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 font-medium">{m.name}</span>
+                      ) : null;
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Tags */}
               {lead.tags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 pt-0.5">
@@ -2135,6 +2153,40 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
                   </select>
                 </div>
 
+                {/* Team Members */}
+                <div>
+                  <label className="text-[11px] text-[#7a6b5c] mb-1.5 block font-medium">Team Members</label>
+                  {editForm.teamMembers.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {editForm.teamMembers.map((id) => {
+                        const m = staff.find((s) => s.id === id);
+                        return m ? (
+                          <span key={id} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                            {m.name}
+                            <button type="button" onClick={() => setEditForm({ ...editForm, teamMembers: editForm.teamMembers.filter((x) => x !== id) })}><X className="w-3 h-3" /></button>
+                          </span>
+                        ) : null;
+                      })}
+                    </div>
+                  )}
+                  <select
+                    className={inputCls}
+                    value=""
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      if (id && !editForm.teamMembers.includes(id)) {
+                        setEditForm({ ...editForm, teamMembers: [...editForm.teamMembers, id] });
+                      }
+                    }}
+                  >
+                    <option value="">Add team member...</option>
+                    {staff
+                      .filter((s) => s.id !== editForm.assignedTo && !editForm.teamMembers.includes(s.id))
+                      .map((s) => <option key={s.id} value={s.id}>{s.name}</option>)
+                    }
+                  </select>
+                </div>
+
                 {/* Tags */}
                 <div>
                   <label className="text-[11px] text-[#7a6b5c] mb-1.5 block font-medium">Tags</label>
@@ -2175,7 +2227,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
             {/* ═══ FOOTER · Save / Cancel ═══ */}
             <div className="flex gap-2 px-5 py-4 bg-[#faf8f6] sticky bottom-0 border-t border-black/5">
               <button
-                onClick={() => { setEditMode(false); setEditForm({ firstName: lead.firstName, lastName: lead.lastName, phone: lead.phone, email: lead.email, dealValue: lead.dealValue, source: lead.source, assignedTo: lead.assignedTo ?? '', tags: [...lead.tags], tagInput: '', leadQuality: lead.leadQuality ?? '' }); }}
+                onClick={() => { setEditMode(false); setEditForm({ firstName: lead.firstName, lastName: lead.lastName, phone: lead.phone, email: lead.email, dealValue: lead.dealValue, source: lead.source, assignedTo: lead.assignedTo ?? '', tags: [...lead.tags], tagInput: '', leadQuality: lead.leadQuality ?? '', teamMembers: [...(lead.teamMembers ?? [])] }); }}
                 className="flex-1 py-2.5 rounded-lg text-[13px] font-semibold text-[#7a6b5c] hover:bg-gray-100 transition-colors"
               >Cancel</button>
               <button
@@ -3254,6 +3306,7 @@ export default function LeadsPage() {
         notes: [],
         assignedTo: lead.assigned_to ?? '',
         assignedName: lead.assigned_name ?? '',
+        teamMembers: lead.team_members ?? [],
         createdAt: lead.created_at ?? new Date().toISOString(),
         lastActivity: lead.updated_at ?? new Date().toISOString(),
       });
@@ -3273,6 +3326,7 @@ export default function LeadsPage() {
         tags: lead.tags ?? [],
         assignedTo: lead.assigned_to ?? '',
         assignedName: lead.assigned_name ?? '',
+        teamMembers: lead.team_members ?? [],
         dealValue: Number(lead.deal_value ?? 0),
         lastActivity: lead.updated_at ?? new Date().toISOString(),
         leadQuality: lead.custom_fields?.lead_quality ?? undefined,

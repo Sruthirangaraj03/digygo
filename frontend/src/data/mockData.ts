@@ -21,6 +21,7 @@ export interface Lead {
   notes: string[];
   customFields?: { label: string; value: string; fieldId?: string }[];
   leadQuality?: string;
+  teamMembers?: string[];
 }
 
 export interface StaffMember {
