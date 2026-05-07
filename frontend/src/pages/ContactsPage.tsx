@@ -7,6 +7,7 @@ import {
 import { useCrmStore } from '@/store/crmStore';
 import { usePermission } from '@/hooks/usePermission';
 import { api } from '@/lib/api';
+import { ExportModal } from '@/components/ui/ExportModal';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -333,7 +334,9 @@ export default function ContactsPage() {
   const { leads, pipelines, staff, updateLead, deleteLead } = useCrmStore();
   const canEditContact   = usePermission('leads:edit');
   const canDeleteContact = usePermission('leads:delete');
+  const canExport        = usePermission('contacts:export');
   const [search, setSearch] = useState('');
+  const [showExportModal, setShowExportModal] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState('All');
@@ -505,13 +508,15 @@ export default function ContactsPage() {
         </button>
 
         {/* Export */}
-        <button
-          onClick={() => toast.info('Export coming soon')}
-          className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-black/10 bg-white text-[13px] font-medium text-[#7a6b5c] hover:border-primary/30 hover:text-primary transition-all"
-          style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
-        >
-          <Download className="w-3.5 h-3.5" /> Export
-        </button>
+        {canExport && (
+          <button
+            onClick={() => setShowExportModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-black/10 bg-white text-[13px] font-medium text-[#7a6b5c] hover:border-primary/30 hover:text-primary transition-all"
+            style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
+          >
+            <Download className="w-3.5 h-3.5" /> Export
+          </button>
+        )}
       </div>
 
       {/* Filter dropdowns row */}
@@ -750,6 +755,20 @@ export default function ContactsPage() {
     </div>
 
     {selectedContact && <ContactDetailModal lead={selectedContact} onClose={() => setSelectedContactId(null)} />}
+
+    {showExportModal && (
+      <ExportModal
+        title="Export Contacts"
+        fields={[
+          { key: 'name', label: 'Name' }, { key: 'email', label: 'Email' },
+          { key: 'phone', label: 'Phone' }, { key: 'company', label: 'Company' },
+          { key: 'tags', label: 'Tags' }, { key: 'created_at', label: 'Created At' },
+        ]}
+        buildUrl={(fields, format) => `/api/contacts/export?fields=${fields.join(',')}&format=${format}`}
+        filename="contacts"
+        onClose={() => setShowExportModal(false)}
+      />
+    )}
 
     {showBulkDeleteConfirm && (
       <ConfirmModal

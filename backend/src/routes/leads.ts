@@ -12,6 +12,7 @@ import { parseMetaFieldData } from '../utils/meta';
 import https from 'https';
 import { emitToTenant } from '../socket';
 import { sendNewLeadNotification } from '../utils/notifications';
+import * as XLSX from 'xlsx';
 
 const router = Router();
 router.use(requireAuth);
@@ -174,6 +175,95 @@ router.get('/followups', async (req: AuthRequest, res: Response) => {
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/leads/export
+const LEAD_FIELDS: Record<string, string> = {
+  name: 'Name', email: 'Email', phone: 'Phone', source: 'Source',
+  quality: 'Quality', pipeline_name: 'Pipeline', stage_name: 'Stage',
+  assigned_name: 'Assigned To', tags: 'Tags', created_at: 'Created At',
+};
+
+router.get('/export', checkPermission('leads:export'), async (req: AuthRequest, res: Response) => {
+  const { tenantId, userId, role } = req.user!;
+  const { fields = '', format = 'xlsx', pipeline_id, stage, search, assigned_to } = req.query as Record<string, string>;
+
+  const isSuperAdmin = role === 'super_admin';
+  let viewAll: boolean;
+  let shouldMaskPhone = false;
+
+  if (isSuperAdmin) {
+    viewAll = true;
+  } else {
+    let onlyAssigned = false;
+    try { onlyAssigned = await hasPermission(userId, 'leads:only_assigned', tenantId); } catch { onlyAssigned = true; }
+    if (onlyAssigned) {
+      viewAll = false;
+    } else {
+      try { viewAll = await hasPermission(userId, 'leads:view_all', tenantId); } catch { viewAll = false; }
+    }
+    try { shouldMaskPhone = await hasPermission(userId, 'leads:mask_phone', tenantId); } catch {}
+  }
+
+  let sql = `
+    SELECT l.*, ps.name AS stage_name, p.name AS pipeline_name,
+           u.name AS assigned_name
+    FROM leads l
+    LEFT JOIN pipeline_stages ps ON ps.id = l.stage_id
+    LEFT JOIN pipelines p ON p.id = l.pipeline_id
+    LEFT JOIN users u ON u.id = l.assigned_to
+    WHERE l.tenant_id = $1 AND l.is_deleted = FALSE
+  `;
+  const params: any[] = [tenantId];
+
+  if (!viewAll) { params.push(userId); sql += ` AND l.assigned_to = $${params.length}`; }
+  if (pipeline_id) { params.push(pipeline_id); sql += ` AND l.pipeline_id = $${params.length}`; }
+  if (stage)       { params.push(stage);       sql += ` AND l.stage_id = $${params.length}`; }
+  if (assigned_to) { params.push(assigned_to); sql += ` AND l.assigned_to = $${params.length}`; }
+  if (search) {
+    params.push(`%${search}%`);
+    const phoneClause = shouldMaskPhone ? '' : ` OR l.phone ILIKE $${params.length}`;
+    sql += ` AND (l.name ILIKE $${params.length} OR l.email ILIKE $${params.length}${phoneClause})`;
+  }
+  sql += ' ORDER BY l.created_at DESC LIMIT 10000';
+
+  try {
+    const result = await query(sql, params);
+    const rows = result.rows;
+
+    const selectedFields = fields ? fields.split(',').filter((f) => LEAD_FIELDS[f]) : Object.keys(LEAD_FIELDS);
+
+    const sheetData = rows.map((row: any) => {
+      const out: Record<string, any> = {};
+      for (const f of selectedFields) {
+        let val = row[f];
+        if (f === 'phone' && shouldMaskPhone) val = maskPhone(val);
+        if (f === 'tags' && Array.isArray(val)) val = val.join(', ');
+        if (f === 'created_at' && val) val = new Date(val).toLocaleString();
+        out[LEAD_FIELDS[f]] = val ?? '';
+      }
+      return out;
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(sheetData);
+    XLSX.utils.book_append_sheet(wb, ws, 'Leads');
+
+    if (format === 'csv') {
+      const csv = XLSX.utils.sheet_to_csv(ws);
+      res.setHeader('Content-Disposition', 'attachment; filename="leads.csv"');
+      res.setHeader('Content-Type', 'text/csv');
+      res.send(csv);
+    } else {
+      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      res.setHeader('Content-Disposition', 'attachment; filename="leads.xlsx"');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.send(buf);
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Export failed' });
   }
 });
 

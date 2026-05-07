@@ -3,7 +3,7 @@ import { useSearchParams, useLocation } from 'react-router-dom';
 import { useCrmStore, LeadActivity } from '@/store/crmStore';
 import { useAuthStore } from '@/store/authStore';
 import { usePermission } from '@/hooks/usePermission';
-import { api } from '@/lib/api';
+import { api, downloadBlob } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import { Lead, Pipeline } from '@/data/mockData';
 import {
@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { ExportModal } from '@/components/ui/ExportModal';
 import { cn, copyToClipboard } from '@/lib/utils';
 import { formatDistanceToNow, format, isPast } from 'date-fns';
 import {
@@ -3058,6 +3059,14 @@ function mapApiLeadsToStore(rows: any[], stageMap: Record<string, string>): Lead
   });
 }
 
+const LEAD_EXPORT_FIELDS = [
+  { key: 'name', label: 'Name' }, { key: 'email', label: 'Email' },
+  { key: 'phone', label: 'Phone' }, { key: 'source', label: 'Source' },
+  { key: 'quality', label: 'Quality' }, { key: 'pipeline_name', label: 'Pipeline' },
+  { key: 'stage_name', label: 'Stage' }, { key: 'assigned_name', label: 'Assigned To' },
+  { key: 'tags', label: 'Tags' }, { key: 'created_at', label: 'Created At' },
+];
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function LeadsPage() {
   const { leads, moveLeadStage, followUps, completeFollowUp, pipelines, updateLead, deleteLead, staff, bookingLinks } = useCrmStore();
@@ -3067,6 +3076,7 @@ export default function LeadsPage() {
   const canCreateLead = usePermission('leads:create');
   const canEditLead   = usePermission('leads:edit');
   const canDeleteLead = usePermission('leads:delete');
+  const canExport     = usePermission('leads:export');
   const [search, setSearch] = useState('');
   const [pipelineSearch, setPipelineSearch] = useState('');
   const [pipelineOpen, setPipelineOpen] = useState(false);
@@ -3138,6 +3148,7 @@ export default function LeadsPage() {
   const [showNewPipeline, setShowNewPipeline] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [showWorkflow, setShowWorkflow] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -3233,28 +3244,7 @@ export default function LeadsPage() {
     };
   }, [stageMap]);
 
-  const exportLeads = () => {
-    // Use real API export when available
-    api.get('/api/leads/export', { responseType: 'blob' } as any)
-      .then((data: any) => {
-        const blob = data instanceof Blob ? data : new Blob([data as any], { type: 'text/csv' });
-        const a = Object.assign(document.createElement('a'), {
-          href: URL.createObjectURL(blob),
-          download: `leads_${format(new Date(), 'dd-MM-yyyy')}.csv`,
-        });
-        a.click();
-        toast.success('Leads exported');
-      })
-      .catch(() => {
-        // Fallback to client-side export
-        const headers = ['First Name', 'Last Name', 'Phone', 'Email', 'Deal Value', 'Stage', 'Source', 'Tags', 'Created At'];
-        const rows = filteredLeads.map((l) => [l.firstName, l.lastName, l.phone, l.email, l.dealValue, l.stage, l.source, l.tags.join('; '), format(new Date(l.createdAt), 'dd/MM/yyyy')]);
-        const csv = [headers, ...rows].map((r) => r.map((c) => `"${c ?? ''}"`).join(',')).join('\n');
-        const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })), download: `opportunities_${format(new Date(), 'dd-MM-yyyy')}.csv` });
-        a.click();
-        toast.success(`${filteredLeads.length} opportunities exported`);
-      });
-  };
+  const exportLeads = () => setShowExportModal(true);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterState>({ ...emptyFilters });
   const [quickEditLead, setQuickEditLead] = useState<Lead | null>(null);
@@ -3651,9 +3641,11 @@ export default function LeadsPage() {
                     <button onClick={() => { setShowMoreMenu(false); setShowImport(true); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
                       <Package className="w-3.5 h-3.5 text-[#7a6b5c]" /> Import leads
                     </button>
-                    <button onClick={() => { setShowMoreMenu(false); exportLeads(); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
-                      <Download className="w-3.5 h-3.5 text-[#7a6b5c]" /> Export leads
-                    </button>
+                    {canExport && (
+                      <button onClick={() => { setShowMoreMenu(false); exportLeads(); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
+                        <Download className="w-3.5 h-3.5 text-[#7a6b5c]" /> Export leads
+                      </button>
+                    )}
                     <div className="border-t border-black/5 my-1" />
                     <button onClick={() => { setShowMoreMenu(false); setShowWorkflow(true); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf0e8] transition-colors">
                       <Zap className="w-3.5 h-3.5 text-[#7a6b5c]" /> Trigger Workflow
@@ -3854,6 +3846,14 @@ export default function LeadsPage() {
       {showAddLead && <AddLeadModal onClose={() => setShowAddLead(false)} />}
       {showNewPipeline && <NewPipelineModal onClose={() => setShowNewPipeline(false)} />}
       {showImport && <ImportModal onClose={() => setShowImport(false)} />}
+      {showExportModal && (
+        <ExportModal
+          title="Export Leads"
+          fields={LEAD_EXPORT_FIELDS}
+          buildUrl={(fields, format) => `/api/leads/export?fields=${fields.join(',')}&format=${format}${selectedPipelineId ? `&pipeline_id=${selectedPipelineId}` : ''}`}
+          onClose={() => setShowExportModal(false)}
+        />
+      )}
       {showWorkflow && <WorkflowModal leadIds={selectedIds.length > 0 ? selectedIds : filteredLeads.map((l) => l.id)} onClose={() => setShowWorkflow(false)} />}
       {quickEditLead && <EditLeadModal lead={quickEditLead} onClose={() => setQuickEditLead(null)} />}
       {quickNoteLead && <NoteModal leadId={quickNoteLead.id} onClose={() => setQuickNoteLead(null)} />}

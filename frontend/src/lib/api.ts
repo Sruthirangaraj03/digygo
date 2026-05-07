@@ -67,3 +67,23 @@ export const api = {
   put:    <T>(path: string, body: unknown)   => request<T>(path, { method: 'PUT',    body: JSON.stringify(body) }),
   delete: <T>(path: string)                  => request<T>(path, { method: 'DELETE' }),
 };
+
+export async function downloadBlob(path: string, filename: string): Promise<void> {
+  const res = await fetch(`${BASE}${path}`, {
+    credentials: 'include',
+    headers: _accessToken ? { Authorization: `Bearer ${_accessToken}` } : {},
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error((data as any).error ?? 'Export failed');
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

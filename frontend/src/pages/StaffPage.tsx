@@ -65,6 +65,7 @@ const PERM_GROUPS: PermGroup[] = [
     ],
     simpleRows: [
       { label: 'Contact Groups', keys: [{ key: 'contact_groups:read', label: 'Read' }, { key: 'contact_groups:manage', label: 'Manage' }] },
+      { label: 'Export',         keys: [{ key: 'leads:export', label: 'Export Leads' }, { key: 'contacts:export', label: 'Export Contacts' }] },
     ],
   },
   {

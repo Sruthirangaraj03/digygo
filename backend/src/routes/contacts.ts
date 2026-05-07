@@ -4,6 +4,7 @@ import { requireAuth, requireTenant, AuthRequest } from '../middleware/auth';
 import { checkPermission, hasPermission } from '../middleware/permissions';
 import { checkUsage, incrementUsage } from '../middleware/plan';
 import { triggerWorkflows } from './workflows';
+import * as XLSX from 'xlsx';
 
 const router = Router();
 router.use(requireAuth);
@@ -35,6 +36,71 @@ router.get('/', checkPermission('contacts:read'), async (req: AuthRequest, res: 
     );
     res.json(result.rows);
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// GET /api/contacts/export
+const CONTACT_FIELDS: Record<string, string> = {
+  name: 'Name', email: 'Email', phone: 'Phone', company: 'Company',
+  tags: 'Tags', created_at: 'Created At',
+};
+
+router.get('/export', checkPermission('contacts:export'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { userId, tenantId, role } = req.user!;
+    const { fields = '', format = 'xlsx' } = req.query as Record<string, string>;
+    const isSuperAdmin = role === 'super_admin';
+
+    let onlyAssigned = false;
+    if (!isSuperAdmin) {
+      try { onlyAssigned = await hasPermission(userId, 'leads:only_assigned', tenantId); } catch { onlyAssigned = true; }
+    }
+
+    const params: any[] = [tenantId];
+    let assignedFilter = '';
+    if (onlyAssigned) {
+      params.push(userId);
+      assignedFilter = ` AND l.assigned_to = $${params.length}`;
+    }
+
+    const result = await query(
+      `SELECT c.* FROM contacts c
+       LEFT JOIN leads l ON l.id = c.lead_id
+       WHERE c.tenant_id = $1${assignedFilter} ORDER BY c.created_at DESC LIMIT 10000`,
+      params
+    );
+
+    const selectedFields = fields ? fields.split(',').filter((f) => CONTACT_FIELDS[f]) : Object.keys(CONTACT_FIELDS);
+
+    const sheetData = result.rows.map((row: any) => {
+      const out: Record<string, any> = {};
+      for (const f of selectedFields) {
+        let val = row[f];
+        if (f === 'tags' && Array.isArray(val)) val = val.join(', ');
+        if (f === 'created_at' && val) val = new Date(val).toLocaleString();
+        out[CONTACT_FIELDS[f]] = val ?? '';
+      }
+      return out;
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(sheetData);
+    XLSX.utils.book_append_sheet(wb, ws, 'Contacts');
+
+    if (format === 'csv') {
+      const csv = XLSX.utils.sheet_to_csv(ws);
+      res.setHeader('Content-Disposition', 'attachment; filename="contacts.csv"');
+      res.setHeader('Content-Type', 'text/csv');
+      res.send(csv);
+    } else {
+      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      res.setHeader('Content-Disposition', 'attachment; filename="contacts.xlsx"');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.send(buf);
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Export failed' });
+  }
 });
 
 // POST /api/contacts
