@@ -1644,7 +1644,7 @@ export async function triggerWorkflows(
   lead: LeadContext,
   tenantId: string,
   userId: string,
-  options?: { forceReEntry?: boolean; triggerContext?: TriggerContext }
+  options?: { forceReEntry?: boolean; triggerContext?: TriggerContext; workflowId?: string }
 ): Promise<void> {
   try {
     const enrichedLead = await enrichLead(lead);
@@ -1663,6 +1663,8 @@ export async function triggerWorkflows(
     // filter is irrelevant and must be bypassed so stale form configs don't block them.
     // product_enquired also requires a form to be configured — blank = inactive
     const isFormTrigger = triggerType === 'opt_in_form' || triggerType === 'meta_form' || triggerType === 'product_enquired';
+    // workflowId filter: when set (push-automation "Run Workflow"), scope to that one workflow only
+    const workflowIdFilter = options?.workflowId ?? null;
     const result = await query(
       `SELECT * FROM workflows
        WHERE tenant_id = $1
@@ -1674,8 +1676,9 @@ export async function triggerWorkflows(
            -- Form triggers: must have at least one form configured AND it must match
            -- Blank trigger_forms = workflow is effectively inactive — never fires
            OR ($5 = true AND ($3 = ANY(trigger_forms) OR $4 = ANY(trigger_forms)))
-         )`,
-      [tenantId, matchingKeys, formId, formName, isFormTrigger]
+         )
+         AND ($6::uuid IS NULL OR id = $6::uuid)`,
+      [tenantId, matchingKeys, formId, formName, isFormTrigger, workflowIdFilter]
     );
 
     console.log(`[WF] trigger="${triggerType}" form="${formName || formId || '-'}" → ${result.rows.length} matching workflow(s)`);

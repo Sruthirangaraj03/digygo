@@ -1565,7 +1565,7 @@ router.post('/meta/forms/:formId/push-automation', checkPermission('meta_forms:e
               `INSERT INTO leads (tenant_id, name, email, phone, source, source_ref, meta_form_id, created_at, pipeline_id, stage_id)
                VALUES ($1,$2,$3,$4,'meta_form',$5,$6,$7,$8,$9)
                ON CONFLICT (source, source_ref) WHERE source_ref IS NOT NULL AND source_ref <> ''
-               DO UPDATE SET is_deleted=FALSE, pipeline_id=$8, stage_id=$9, updated_at=NOW() RETURNING *`,
+               DO UPDATE SET is_deleted=FALSE, meta_form_id=EXCLUDED.meta_form_id, pipeline_id=$8, stage_id=$9, updated_at=NOW() RETURNING *`,
               [tenantId, name, email, phone, leadgenId, mf.form_id, createdAt, mf.pipeline_id ?? null, mf.stage_id ?? null]
             );
             if (!ins.rows[0]) continue;
@@ -1579,80 +1579,47 @@ router.post('/meta/forms/:formId/push-automation', checkPermission('meta_forms:e
       } catch (e: any) { console.error('[push-automation] lead error:', e.message); }
     }
 
-    // Execute workflows synchronously — always force re-entry (push = intentional re-run).
-    // If workflow_id was provided, only run that one; otherwise run all matching (legacy behaviour).
+    // Execute workflows via the battle-tested triggerWorkflows path.
+    // This replaces the old executeNodes-direct path that silently failed for all leads
+    // due to a re-query that returned null. triggerWorkflows handles enrichment, form
+    // matching against trigger_forms DB column, re-entry, node execution, and logging.
     const wfsToRun = selectedWorkflowId
-      ? matchingWFs.filter((w) => w.id === selectedWorkflowId)
+      ? matchingWFs.filter((w: any) => w.id === selectedWorkflowId)
       : matchingWFs;
 
-    let totalDone = 0;
-    let totalSkipped = 0;
-    let totalFailed = 0;
+    const pushStartedAt = new Date();
 
-    for (const wf of wfsToRun) {
+    for (const lead of crmLeads) {
       try {
-        const wfRow = await query(
-          `SELECT * FROM workflows WHERE id=$1 AND tenant_id=$2 AND status='active'`,
-          [wf.id, tenantId]
+        await triggerWorkflows(
+          'meta_form',
+          lead,
+          tenantId,
+          userId,
+          { forceReEntry: true, workflowId: selectedWorkflowId ?? undefined }
         );
-        if (!wfRow.rows[0]) continue;
-        const wfFull = wfRow.rows[0];
-        const nodes = Array.isArray(wfFull.nodes) ? wfFull.nodes : JSON.parse(wfFull.nodes ?? '[]');
-
-        for (const lead of crmLeads) {
-          try {
-            const leadRes = await query(
-              `SELECT l.*, ps.name AS stage_name, p.name AS pipeline_name, u.name AS assigned_staff_name
-               FROM leads l
-               LEFT JOIN pipeline_stages ps ON ps.id = l.stage_id
-               LEFT JOIN pipelines p ON p.id = l.pipeline_id
-               LEFT JOIN users u ON u.id = l.assigned_to
-               WHERE l.id=$1 AND l.tenant_id=$2 AND l.is_deleted=FALSE`,
-              [lead.id, tenantId]
-            );
-            if (!leadRes.rows[0]) { totalSkipped++; continue; }
-            const leadCtx = { ...leadRes.rows[0], form_id: lead.form_id, form_name: lead.form_name };
-
-            // Manual push = intentional re-run — supersede any prior execution so the
-            // unique constraint never blocks re-entry regardless of allow_reentry setting.
-            await query(
-              `UPDATE workflow_executions SET status='superseded'
-               WHERE workflow_id=$1 AND lead_id=$2 AND status IN ('running','completed','skipped','superseded')`,
-              [wf.id, lead.id]
-            ).catch(() => null);
-
-            const execRes = await query(
-              `INSERT INTO workflow_executions
-                 (workflow_id, tenant_id, lead_id, lead_name, trigger_type, status, enrolled_at)
-               VALUES ($1,$2,$3,$4,'meta_form','running',NOW()) RETURNING id`,
-              [wf.id, tenantId, lead.id, leadCtx.name]
-            );
-            const executionId = execRes.rows[0].id;
-
-            try {
-              const stats = await executeNodes(nodes, leadCtx, tenantId, userId, executionId, wf.id);
-              await query(`UPDATE workflow_executions SET status='completed', completed_at=NOW() WHERE id=$1`, [executionId]);
-              totalDone++;
-              totalSkipped += stats?.skipped ?? 0;
-              totalFailed  += stats?.failed  ?? 0;
-            } catch (execErr: any) {
-              await query(`UPDATE workflow_executions SET status='failed', error=$2, completed_at=NOW() WHERE id=$1`, [executionId, execErr.message]);
-              totalFailed++;
-            }
-          } catch (e: any) {
-            if (e.code === '23505') {
-              // Lead already enrolled in this workflow — skip silently (not an error)
-              totalSkipped++;
-              continue;
-            }
-            console.error('[push-automation] lead error:', wf.name, e.message);
-            totalFailed++;
-          }
-        }
       } catch (e: any) {
-        console.error('[push-automation] workflow error:', wf.name, e.message);
+        console.error('[push-automation] triggerWorkflows error for lead', lead.id, ':', e.message);
       }
     }
+
+    // Read back execution stats from workflow_executions rows enrolled in this push
+    const execStatRows = await query(
+      `SELECT status, COUNT(*)::int AS count
+       FROM workflow_executions
+       WHERE tenant_id   = $1
+         AND lead_id     = ANY($2::uuid[])
+         AND enrolled_at >= $3
+         AND ($4::uuid IS NULL OR workflow_id = $4::uuid)
+       GROUP BY status`,
+      [tenantId, crmLeads.map((l: any) => l.id), pushStartedAt, selectedWorkflowId ?? null]
+    ).catch(() => ({ rows: [] as any[] }));
+
+    const statMap: Record<string, number> = {};
+    for (const row of execStatRows.rows) statMap[row.status] = Number(row.count);
+    const totalDone    = statMap['completed'] ?? 0;
+    const totalSkipped = (statMap['skipped'] ?? 0) + (statMap['superseded'] ?? 0);
+    const totalFailed  = statMap['failed']    ?? 0;
 
     await query(
       `UPDATE meta_forms SET leads_count=(SELECT COUNT(*) FROM leads WHERE meta_form_id=$1 AND tenant_id=$2 AND is_deleted=FALSE), last_sync_at=NOW() WHERE id=$3`,
