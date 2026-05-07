@@ -222,9 +222,9 @@ function AddLeadModal({ onClose }: { onClose: () => void }) {
               {lbl('Lead Quality')}
               <select className={inputCls} value={form.leadQuality} onChange={(e) => setForm({ ...form, leadQuality: e.target.value })}>
                 <option value="">Select quality...</option>
-                <option value="Hot">🔥 Hot</option>
-                <option value="Warm">☀️ Warm</option>
-                <option value="Cold">❄️ Cold</option>
+                <option value="Hot">Hot</option>
+                <option value="Warm">Warm</option>
+                <option value="Cold">Cold</option>
                 <option value="Unqualified">Unqualified</option>
               </select>
             </div>
@@ -246,7 +246,7 @@ function AddLeadModal({ onClose }: { onClose: () => void }) {
 
 // ─── Filter Panel ──────────────────────────────────────────────────────────────
 const DATE_RANGES = ['Today', 'Yesterday', 'This Week', 'Last Week', 'Last 7 Days', 'Last 30 Days', 'This Month', 'Last Month', 'This Year', 'Last Year', 'Custom'];
-const LEAD_QUALITIES = ['Cold Lead', 'Hot Lead', 'Warm Lead', 'Won', 'Lost'];
+const LEAD_QUALITIES = ['Hot', 'Warm', 'Cold', 'Unqualified'];
 const OPP_VALUES = ['Less than ₹1,000', '₹1,000 - ₹5,000', '₹5,001 - ₹10,000', '₹10,001 - ₹50,000', 'More than ₹50,000', 'Custom'];
 
 const emptyFilters = {
@@ -2046,14 +2046,13 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
                 <div className="flex items-center gap-3">
                   <Star className="w-4 h-4 text-[#7a6b5c] shrink-0" />
                   <span className={cn(
-                    'inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1 rounded-full',
+                    'inline-flex items-center text-[12px] font-semibold px-2.5 py-1 rounded-full',
                     lead.leadQuality === 'Hot'         ? 'bg-red-100 text-red-700'     :
                     lead.leadQuality === 'Warm'        ? 'bg-amber-100 text-amber-700' :
                     lead.leadQuality === 'Cold'        ? 'bg-blue-100 text-blue-700'   :
                     lead.leadQuality === 'Unqualified' ? 'bg-gray-100 text-gray-500'   :
                     'bg-emerald-100 text-emerald-700'
                   )}>
-                    {lead.leadQuality === 'Hot' ? '🔥' : lead.leadQuality === 'Warm' ? '☀️' : lead.leadQuality === 'Cold' ? '❄️' : ''}
                     {lead.leadQuality}
                   </span>
                 </div>
@@ -2129,9 +2128,9 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
                   <label className="text-[11px] text-[#7a6b5c] mb-1 block font-medium">Lead Quality</label>
                   <select className={inputCls} value={editForm.leadQuality} onChange={(e) => setEditForm({ ...editForm, leadQuality: e.target.value })}>
                     <option value="">— None —</option>
-                    <option value="Hot">🔥 Hot</option>
-                    <option value="Warm">☀️ Warm</option>
-                    <option value="Cold">❄️ Cold</option>
+                    <option value="Hot">Hot</option>
+                    <option value="Warm">Warm</option>
+                    <option value="Cold">Cold</option>
                     <option value="Unqualified">Unqualified</option>
                   </select>
                 </div>
@@ -2715,7 +2714,7 @@ function LeadCard({ lead, onClick, onFollowUp, onNote, onAssign, showPhone }: { 
               lead.leadQuality === 'Unqualified' ? 'bg-gray-100 text-gray-500' :
               'bg-emerald-100 text-emerald-700'
             }`}>
-              {lead.leadQuality === 'Hot' ? '🔥' : lead.leadQuality === 'Warm' ? '☀️' : lead.leadQuality === 'Cold' ? '❄️' : ''} {lead.leadQuality}
+              {lead.leadQuality}
             </span>
           </div>
         )}
@@ -3801,7 +3800,7 @@ export default function LeadsPage() {
                     className="w-4 h-4 accent-primary"
                   />
                 </th>
-                {[['Opportunity', '130px'], ['Contact Name', '150px'], ['Contact Email', '210px'], ['Contact Phone', '160px'], ['Pipeline', '170px'], ['Stage', '110px'], ['Created', '150px'], ['Updated', '150px']].map(([col]) => (
+                {[['Opportunity', '130px'], ['Contact Name', '150px'], ['Contact Email', '210px'], ['Contact Phone', '160px'], ['Pipeline', '170px'], ['Stage', '110px'], ['Quality', '100px'], ['Created', '150px'], ['Updated', '150px']].map(([col]) => (
                   <th key={col} className="px-3 py-3 text-left">
                     <button className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] hover:text-[#1c1410] transition-colors">
                       {col} <ArrowUpDown className="w-3 h-3 opacity-50" />
@@ -3812,7 +3811,7 @@ export default function LeadsPage() {
             </thead>
             <tbody className="divide-y divide-black/[0.04]">
               {filteredLeads.length === 0 && (
-                <tr><td colSpan={9} className="py-16 text-center">
+                <tr><td colSpan={10} className="py-16 text-center">
                   <User className="w-8 h-8 text-[#c4b09e] mx-auto mb-2" />
                   <p className="text-[13px] text-[#7a6b5c]">No leads found</p>
                 </td></tr>
@@ -3862,6 +3861,17 @@ export default function LeadsPage() {
                     </td>
                     <td className="px-3 py-3 text-[#3d3128] truncate max-w-[170px]">{pipeline?.name ?? '—'}</td>
                     <td className="px-3 py-3"><span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-primary">{lead.stage}</span></td>
+                    <td className="px-3 py-3">
+                      {lead.leadQuality ? (
+                        <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-semibold',
+                          lead.leadQuality === 'Hot'         ? 'bg-red-100 text-red-700'     :
+                          lead.leadQuality === 'Warm'        ? 'bg-amber-100 text-amber-700' :
+                          lead.leadQuality === 'Cold'        ? 'bg-blue-100 text-blue-700'   :
+                          lead.leadQuality === 'Unqualified' ? 'bg-gray-100 text-gray-500'   :
+                          'bg-emerald-100 text-emerald-700'
+                        )}>{lead.leadQuality}</span>
+                      ) : <span className="text-[#c4b09e]">—</span>}
+                    </td>
                     <td className="px-3 py-3 text-[#7a6b5c] whitespace-nowrap">{format(new Date(lead.createdAt), 'dd/MM/yyyy hh:mm aa')}</td>
                     <td className="px-3 py-3 text-[#7a6b5c] whitespace-nowrap">{format(new Date(lead.lastActivity), 'dd/MM/yyyy hh:mm aa')}</td>
                   </tr>
