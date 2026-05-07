@@ -2215,7 +2215,7 @@ router.post('/:id/bulk-trigger', checkPermission('automation:manage'), async (re
              LEFT JOIN pipeline_stages ps ON ps.id = l.stage_id
              LEFT JOIN pipelines p ON p.id = l.pipeline_id
              LEFT JOIN users u ON u.id = l.assigned_to
-             WHERE l.id=$1 AND l.tenant_id=$2 AND l.is_deleted=FALSE`,
+             WHERE l.id=$1::uuid AND l.tenant_id=$2::uuid AND l.is_deleted=FALSE`,
             [leadId, tenantId]
           );
           if (!leadRes.rows[0]) return;

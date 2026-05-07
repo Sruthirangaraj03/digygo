@@ -11,6 +11,20 @@ import https from 'https';
 
 const router = Router();
 
+// Upsert a contact record linked to a lead — idempotent, safe to call multiple times.
+// Ensures Meta Form leads are visible in the Contacts page even when automation fails.
+async function upsertContact(tenantId: string, leadRow: any): Promise<void> {
+  if (!leadRow?.id || !leadRow?.name) return;
+  await query(
+    `INSERT INTO contacts (tenant_id, name, email, phone, lead_id)
+     SELECT $1::uuid, $2, $3, $4, $5::uuid
+     WHERE NOT EXISTS (
+       SELECT 1 FROM contacts WHERE lead_id = $5::uuid
+     )`,
+    [tenantId, leadRow.name, leadRow.email ?? null, leadRow.phone ?? null, leadRow.id]
+  ).catch(() => null);
+}
+
 
 function graphGet(path: string, token: string): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -501,6 +515,7 @@ router.post('/meta/webhook', async (req: Request, res: Response) => {
 
             const dataChanged = changedFields.length > 0;
             const existingCtx = { ...(updated.rows[0] ?? existing.rows[0]), form_id: mf.form_id, form_name: mf.form_name };
+            upsertContact(mf.tenant_id, existingCtx).catch(() => null);
             // Force re-entry only when field data actually changed — new pincode triggers fresh routing
             setImmediate(() => triggerWorkflows('meta_form', existingCtx, mf.tenant_id, 'webhook', { forceReEntry: dataChanged }).catch((e) => console.error('[webhook trigger existing]', e)));
           } else {
@@ -514,6 +529,7 @@ router.post('/meta/webhook', async (req: Request, res: Response) => {
             leadId = ins.rows[0]?.id;
             if (ins.rows[0]) {
               const leadCtx = { ...ins.rows[0], form_id: mf.form_id, form_name: mf.form_name };
+              upsertContact(mf.tenant_id, ins.rows[0]).catch(() => null);
               sendNewLeadNotification(mf.tenant_id, ins.rows[0], null).catch(() => null);
               setImmediate(() => triggerWorkflows('lead_created', leadCtx, mf.tenant_id, 'webhook').catch((e) => console.error('[webhook trigger new]', e)));
               setImmediate(() => triggerWorkflows('meta_form',    leadCtx, mf.tenant_id, 'webhook').catch((e) => console.error('[webhook trigger new]', e)));
@@ -1582,6 +1598,7 @@ router.post('/meta/forms/:formId/push-automation', checkPermission('meta_forms:e
             created++;
           }
         }
+        await upsertContact(tenantId, leadRow);
         crmLeads.push({ ...leadRow, form_id: mf.form_id, form_name: mf.form_name });
       } catch (e: any) { console.error('[push-automation] lead error:', e.message); }
     }
