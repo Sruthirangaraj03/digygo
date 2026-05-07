@@ -488,7 +488,7 @@ router.post('/public/book', publicBookingLimiter, async (req: Request, res: Resp
                `${et.name} · ${date} at ${time}`]
             ).catch(() => null);
             const calendarContext = { ...lead, event_type_id, calendar_name: et.name };
-            await triggerWorkflows('calendar_form_submitted', calendarContext, et.tenant_id, '').catch(() => null);
+            await triggerWorkflows('calendar_form_submitted', calendarContext, et.tenant_id, '', { triggerContext: { calendarId: event_type_id } }).catch(() => null);
             await triggerWorkflows('appointment_booked', lead, et.tenant_id, '').catch(() => null);
           }
         }
@@ -697,7 +697,7 @@ router.post('/', checkPermission('calendar:manage'), async (req: AuthRequest, re
              userId]
           ).catch(() => null);
           const calendarContext = { ...lead, event_type_id: event_type_id ?? '', calendar_name: calendarName };
-          await triggerWorkflows('calendar_form_submitted', calendarContext, tenantId, userId).catch(() => null);
+          await triggerWorkflows('calendar_form_submitted', calendarContext, tenantId, userId, { triggerContext: { calendarId: event_type_id ?? '' } }).catch(() => null);
           await triggerWorkflows('appointment_booked',      calendarContext, tenantId, userId).catch(() => null);
         } catch (err) {
           console.error('[calendar manual booking] trigger error:', err);
