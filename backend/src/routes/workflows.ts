@@ -765,9 +765,11 @@ export async function executeNodes(
           if (node.config.due_hours) {
             dueHours = parseInt(node.config.due_hours as string) || 24;
           } else if (node.config.dueDays) {
-            const days = parseFloat(node.config.dueDays as string) || 1;
+            const val  = parseFloat(node.config.dueDays as string) || 1;
             const unit = (node.config.dueUnit as string) ?? 'days';
-            dueHours = unit === 'hours' ? days : days * 24;
+            if      (unit === 'minutes') dueHours = val / 60;
+            else if (unit === 'hours')   dueHours = val;
+            else                         dueHours = val * 24;
           }
           const dueAt = new Date(Date.now() + dueHours * 3600000).toISOString();
           if (lead.id && !lead.id.startsWith('test-')) {
