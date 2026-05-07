@@ -1971,16 +1971,20 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
 
             <div className="space-y-3">
               {[
-                { Icon: User, value: `${lead.firstName} ${lead.lastName}` },
-                { Icon: Phone, value: lead.phone },
-                { Icon: Mail, value: lead.email || '—' },
-                { Icon: Layers, value: lead.stage ? `${lead.stage} · ${pipelineName}` : pipelineName },
-                { Icon: UserCheck, value: assignedDisplayName ? `Assigned to ${assignedDisplayName}` : 'Unassigned' },
-                { Icon: Tag, value: getSourceLabel(lead) },
-              ].map(({ Icon, value }, i) => (
+                { Icon: User, value: `${lead.firstName} ${lead.lastName}`, href: undefined as string | undefined },
+                { Icon: Phone, value: lead.phone, href: `tel:${lead.phone}` },
+                { Icon: Mail, value: lead.email || '—', href: undefined as string | undefined },
+                { Icon: Layers, value: lead.stage ? `${lead.stage} · ${pipelineName}` : pipelineName, href: undefined as string | undefined },
+                { Icon: UserCheck, value: assignedDisplayName ? `Assigned to ${assignedDisplayName}` : 'Unassigned', href: undefined as string | undefined },
+                { Icon: Tag, value: getSourceLabel(lead), href: undefined as string | undefined },
+              ].map(({ Icon, value, href }, i) => (
                 <div key={i} className="flex items-center gap-3">
                   <Icon className="w-4 h-4 text-[#7a6b5c] shrink-0" />
-                  <span className="text-[13px] text-[#1c1410] font-medium flex-1 break-words">{value}</span>
+                  {href ? (
+                    <a href={href} className="text-[13px] text-[#1c1410] font-medium flex-1 break-words hover:text-primary transition-colors">{value}</a>
+                  ) : (
+                    <span className="text-[13px] text-[#1c1410] font-medium flex-1 break-words">{value}</span>
+                  )}
                 </div>
               ))}
 

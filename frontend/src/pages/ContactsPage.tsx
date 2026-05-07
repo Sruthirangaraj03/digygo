@@ -624,7 +624,7 @@ export default function ContactsPage() {
                           <p className="font-semibold text-[13px] text-[#1c1410] truncate hover:text-primary transition-colors">{lead.firstName} {lead.lastName}</p>
                           <div className="flex items-center gap-3 mt-0.5">
                             {lead.email && <span className="text-[11px] text-[#7a6b5c] truncate max-w-[160px]">{lead.email}</span>}
-                            <span className="text-[11px] text-[#7a6b5c]">{lead.phone}</span>
+                            <a href={`tel:${lead.phone}`} className="text-[11px] text-[#7a6b5c] hover:text-primary transition-colors" onClick={(e) => e.stopPropagation()}>{lead.phone}</a>
                           </div>
                         </div>
                       </div>

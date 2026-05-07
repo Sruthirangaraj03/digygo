@@ -328,7 +328,7 @@ export default function FollowUpPage() {
                           )}
                           <div className="flex items-center gap-1.5">
                             <Phone className="w-3 h-3 text-[#b09e8d] shrink-0" />
-                            <span className="text-[11px] text-[#7a6b5c]">{fu.lead.phone}</span>
+                            <a href={`tel:${fu.lead.phone}`} className="text-[11px] text-[#7a6b5c] hover:text-primary transition-colors" onClick={(e) => e.stopPropagation()}>{fu.lead.phone}</a>
                           </div>
                         </div>
                       ) : (

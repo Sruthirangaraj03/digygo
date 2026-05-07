@@ -347,7 +347,7 @@ function ContactSidebar({
                         onClick={() => setExpanded(isOpen ? null : log.id)}
                       >
                         <p className="text-[13px] font-semibold text-[#1c1410] truncate">{name}</p>
-                        <p className="text-[11px] text-[#7a6b5c]">{phone}{enrolledAt ? ` · ${enrolledAt}` : ''}</p>
+                        <p className="text-[11px] text-[#7a6b5c]"><a href={`tel:${phone}`} className="hover:text-primary transition-colors" onClick={(e) => e.stopPropagation()}>{phone}</a>{enrolledAt ? ` · ${enrolledAt}` : ''}</p>
                       </div>
 
                       {/* Right side */}

@@ -297,7 +297,7 @@ export default function ContactGroupPage() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-[13px] font-semibold text-[#1c1410] truncate">{lead.firstName} {lead.lastName}</p>
-                          <p className="text-[11px] text-[#7a6b5c] truncate">{lead.email || lead.phone}</p>
+                          <p className="text-[11px] text-[#7a6b5c] truncate">{lead.email ? lead.email : <a href={`tel:${lead.phone}`} className="hover:text-primary transition-colors" onClick={(e) => e.stopPropagation()}>{lead.phone}</a>}</p>
                         </div>
                         <span className="text-[11px] text-[#7a6b5c] bg-[#faf8f6] px-2 py-0.5 rounded-full hidden sm:block">{lead.source}</span>
                         <button onClick={() => removeMember(selectedGroup.id, id)}
@@ -390,7 +390,7 @@ export default function ContactGroupPage() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-[13px] font-semibold text-[#1c1410] truncate">{l.firstName} {l.lastName}</p>
-                          <p className="text-[11px] text-[#7a6b5c] truncate">{l.email || l.phone}</p>
+                          <p className="text-[11px] text-[#7a6b5c] truncate">{l.email ? l.email : <a href={`tel:${l.phone}`} className="hover:text-primary transition-colors">{l.phone}</a>}</p>
                         </div>
                         <span className="text-[10px] text-[#7a6b5c] bg-[#faf8f6] px-2 py-0.5 rounded-full">{l.source}</span>
                       </label>
@@ -462,7 +462,7 @@ function AddMembersModal({ group, leads, search, onSearchChange, onAdd, onClose 
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-[13px] font-semibold text-[#1c1410] truncate">{l.firstName} {l.lastName}</p>
-                  <p className="text-[11px] text-[#7a6b5c] truncate">{l.email || l.phone}</p>
+                  <p className="text-[11px] text-[#7a6b5c] truncate">{l.email ? l.email : <a href={`tel:${l.phone}`} className="hover:text-primary transition-colors">{l.phone}</a>}</p>
                 </div>
               </label>
             );

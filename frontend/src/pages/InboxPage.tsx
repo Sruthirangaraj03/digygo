@@ -287,7 +287,7 @@ export default function InboxPage() {
                 </div>
                 <div>
                   <h3 className="font-headline font-bold text-[#1c1410]">{selected.lead_name}</h3>
-                  <p className="text-[11px] text-[#7a6b5c]">{selected.lead_phone}</p>
+                  <a href={`tel:${selected.lead_phone}`} className="text-[11px] text-[#7a6b5c] hover:text-primary transition-colors">{selected.lead_phone}</a>
                 </div>
               </div>
               <div className="flex items-center gap-2">

@@ -141,7 +141,7 @@ function CreateModal({
               {step === 'search' ? 'New Follow-up' : `Follow-up · ${selectedLead?.name}`}
             </h3>
             {step === 'form' && selectedLead?.phone && (
-              <p className="text-[12px] text-[#7a6b5c] mt-0.5">{selectedLead.phone}</p>
+              <a href={`tel:${selectedLead.phone}`} className="text-[12px] text-[#7a6b5c] mt-0.5 hover:text-primary transition-colors block">{selectedLead.phone}</a>
             )}
           </div>
           <div className="flex items-center gap-2">
@@ -186,7 +186,7 @@ function CreateModal({
                   </div>
                   <div className="min-w-0">
                     <p className="text-[13px] font-semibold text-[#1c1410] truncate">{lead.name}</p>
-                    {lead.phone && <p className="text-[11px] text-[#7a6b5c]">{lead.phone}</p>}
+                    {lead.phone && <a href={`tel:${lead.phone}`} className="text-[11px] text-[#7a6b5c] hover:text-primary transition-colors" onClick={(e) => e.stopPropagation()}>{lead.phone}</a>}
                   </div>
                 </button>
               ))}
