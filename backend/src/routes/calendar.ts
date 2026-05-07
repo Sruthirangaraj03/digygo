@@ -791,7 +791,10 @@ router.delete('/:id', checkPermission('calendar:manage'), async (req: AuthReques
     if (event.lead_id) {
       const leadRes = await query('SELECT * FROM leads WHERE id=$1', [event.lead_id]).catch(() => null);
       const lead = leadRes?.rows[0] ?? { id: event.lead_id, name: '' };
-      setImmediate(() => triggerWorkflows('appointment_cancelled', lead, tenantId!, userId).catch(() => null));
+      const calendarId = (event.event_type_id as string) ?? '';
+      setImmediate(() => triggerWorkflows('appointment_cancelled', lead, tenantId!, userId,
+        { triggerContext: { calendarId } }
+      ).catch(() => null));
     }
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });

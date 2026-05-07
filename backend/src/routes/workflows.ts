@@ -1744,8 +1744,6 @@ export async function triggerWorkflows(
 
       if (['appointment_booked','appointment_cancelled','appointment_rescheduled',
            'appointment_noshow','appointment_showup'].includes(triggerType)) {
-        const cfgType = (triggerNode.config?.apptType as string) ?? '';
-        if (cfgType && cfgType !== (ctx.apptType ?? '')) continue;
         const cfgCalendars = (triggerNode.config?.calendars as string[]) ?? [];
         if (cfgCalendars.length > 0 && !cfgCalendars.includes(ctx.calendarId ?? '')) continue;
       }

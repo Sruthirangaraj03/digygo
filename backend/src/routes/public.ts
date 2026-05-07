@@ -453,7 +453,7 @@ router.post('/book/:slug', bookingLimiter, async (req: Request, res: Response) =
           triggerWorkflows('calendar_form_submitted', { id: capturedLeadId, name: capturedName }, tenantId, 'system',
             { triggerContext: { calendarId: link.id, apptType: link.name ?? 'Booking' } }).catch(() => null);
           triggerWorkflows('appointment_booked', { id: capturedLeadId, name: capturedName }, tenantId, 'system',
-            { triggerContext: { apptType: link.name ?? 'Booking' } }).catch(() => null);
+            { triggerContext: { calendarId: link.id, apptType: link.name ?? 'Booking' } }).catch(() => null);
         } catch {}
       });
     }
