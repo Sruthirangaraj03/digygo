@@ -428,10 +428,12 @@ export async function executeNodes(
           }
           if (sets.length > 1) {
             vals.push(lead.id, tenantId);
+            console.log(`[add_to_crm] lead.id=${lead.id} tenantId=${tenantId} sets=${sets.join(',')}`);
             const updateRes = await query(
-              `UPDATE leads SET ${sets.join(',')} WHERE id=$${vals.length - 1} AND tenant_id=$${vals.length} RETURNING pipeline_id, stage_id`,
+              `UPDATE leads SET ${sets.join(',')} WHERE id=$${vals.length - 1}::uuid AND tenant_id=$${vals.length}::uuid RETURNING pipeline_id, stage_id`,
               vals
             );
+            console.log(`[add_to_crm] rows returned: ${updateRes.rows.length}`);
             const vRow = updateRes.rows[0];
             const stageName = node.config.stage_id
               ? (await query('SELECT name FROM pipeline_stages WHERE id=$1', [node.config.stage_id])).rows[0]?.name ?? ''
@@ -464,12 +466,12 @@ export async function executeNodes(
           const stageId = node.config.stage_id as string;
           if (stageId && lead.id) {
             await query(
-              `UPDATE leads SET stage_id=$1, updated_at=NOW() WHERE id=$2 AND tenant_id=$3`,
+              `UPDATE leads SET stage_id=$1::uuid, updated_at=NOW() WHERE id=$2::uuid AND tenant_id=$3::uuid`,
               [stageId, lead.id, tenantId]
             );
             const sr = await query('SELECT name FROM pipeline_stages WHERE id=$1', [stageId]);
             const stageName = sr.rows[0]?.name ?? stageId;
-            const vStage = await query('SELECT stage_id FROM leads WHERE id=$1 AND tenant_id=$2', [lead.id, tenantId]);
+            const vStage = await query('SELECT stage_id FROM leads WHERE id=$1::uuid AND tenant_id=$2::uuid', [lead.id, tenantId]);
             if (vStage.rows[0]?.stage_id !== stageId) {
               status = 'failed'; message = 'change_stage: stage was not updated on lead';
             } else {
@@ -548,11 +550,11 @@ export async function executeNodes(
             }
 
             await query(
-              `UPDATE leads SET assigned_to=$1, updated_at=NOW() WHERE id=$2 AND tenant_id=$3`,
+              `UPDATE leads SET assigned_to=$1::uuid, updated_at=NOW() WHERE id=$2::uuid AND tenant_id=$3::uuid`,
               [staffId, lead.id, tenantId]
             );
             const ur = await query('SELECT name FROM users WHERE id=$1', [staffId]);
-            const vStaff = await query('SELECT assigned_to FROM leads WHERE id=$1 AND tenant_id=$2', [lead.id, tenantId]);
+            const vStaff = await query('SELECT assigned_to FROM leads WHERE id=$1::uuid AND tenant_id=$2::uuid', [lead.id, tenantId]);
             if (vStaff.rows[0]?.assigned_to !== staffId) {
               status = 'failed'; message = `assign_staff: lead was not assigned to ${ur.rows[0]?.name ?? staffId}`;
             } else {
@@ -590,15 +592,15 @@ export async function executeNodes(
           if (tagList.length && lead.id) {
             for (const t of tagList) {
               await query(
-                `UPDATE leads SET tags=array_append(tags, $1::text), updated_at=NOW()
-                 WHERE id=$2 AND tenant_id=$3 AND NOT ($1=ANY(tags))`,
+                `UPDATE leads SET tags=array_append(COALESCE(tags, '{}'), $1::text), updated_at=NOW()
+                 WHERE id=$2::uuid AND tenant_id=$3::uuid AND NOT (COALESCE($1=ANY(tags), false))`,
                 [t, lead.id, tenantId]
               );
               await syncTagToJunction(tenantId, lead.id, t);
             }
             // Verify every tag was actually added
             const vTags = await query(
-              `SELECT tags FROM leads WHERE id=$1 AND tenant_id=$2`,
+              `SELECT tags FROM leads WHERE id=$1::uuid AND tenant_id=$2::uuid`,
               [lead.id, tenantId]
             );
             const actualTags: string[] = vTags.rows[0]?.tags ?? [];

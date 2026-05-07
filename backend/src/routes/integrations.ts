@@ -1531,7 +1531,14 @@ router.post('/meta/forms/:formId/push-automation', checkPermission('meta_forms:e
         let leadRow: any = existingRes.rows[0];
 
         if (leadRow && !leadRow.is_deleted) {
-          // Already active in CRM
+          // Already active in CRM — update meta_form_id if not yet set
+          if (!leadRow.meta_form_id) {
+            await query(
+              `UPDATE leads SET meta_form_id=$1, updated_at=NOW() WHERE id=$2 AND meta_form_id IS NULL`,
+              [mf.form_id, leadRow.id]
+            ).catch(() => null);
+            leadRow = { ...leadRow, meta_form_id: mf.form_id };
+          }
           existing++;
         } else if (leadRow && leadRow.is_deleted) {
           // Was deleted — restore it
