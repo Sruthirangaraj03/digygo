@@ -3715,7 +3715,7 @@ export default function WorkflowEditorPage() {
   };
 
   const handleSelectTrigger = (_source: string, type: string, label: string) => {
-    updateNode(workflow.nodes[0].id, { actionType: type, label });
+    updateNode(workflow.nodes[0].id, { actionType: type, label, config: {} });
     setShowTriggerPicker(false);
     setSelectedNodeId(workflow.nodes[0].id);
     setSelectedBranchCtx(null);
@@ -3823,6 +3823,8 @@ export default function WorkflowEditorPage() {
       return 'Select at least one form before going live';
     if (triggerType === 'calendar_form_submitted' && ((triggerCfg.calendars as string[]) ?? []).length === 0)
       return 'Select at least one calendar before going live';
+    if (triggerType === 'contact_tagged' && ((triggerCfg.tags as string[]) ?? []).length === 0)
+      return 'Select at least one tag before going live';
     return null;
   })();
   const canGoLive = goLiveBlockReason === null;

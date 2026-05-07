@@ -1742,7 +1742,10 @@ export async function triggerWorkflows(
         const cfgTags: string[] = Array.isArray(triggerNode.config?.tags)
           ? (triggerNode.config!.tags as string[])
           : (triggerNode.config?.tag as string) ? [(triggerNode.config!.tag as string)] : [];
-        if (cfgTags.length > 0 && !cfgTags.includes(ctx.tag ?? '')) continue;
+        // No tags configured = workflow is inactive (never fires) — same rule as form triggers.
+        // Empty means the user hasn't finished setting up the trigger.
+        if (cfgTags.length === 0) continue;
+        if (!cfgTags.includes(ctx.tag ?? '')) continue;
       }
 
       if (['appointment_booked','appointment_cancelled','appointment_rescheduled',
