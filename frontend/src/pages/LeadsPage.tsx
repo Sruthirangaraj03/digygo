@@ -80,7 +80,7 @@ function AddLeadModal({ onClose }: { onClose: () => void }) {
     firstName: '', lastName: '', email: '', phone: '+91 ',
     city: '', pipelineId: pipelines[0]?.id ?? '', stage: pipelines[0]?.stages[0]?.name ?? '',
     tags: [] as string[], tagInput: '', dealValue: 0, source: 'Manual',
-    assignedTo: '',
+    assignedTo: '', leadQuality: '',
   });
 
   const selectedPipeline = pipelines.find((p) => p.id === form.pipelineId);
@@ -104,6 +104,7 @@ function AddLeadModal({ onClose }: { onClose: () => void }) {
         stage_id: stageId || undefined,
         assigned_to: form.assignedTo || undefined,
         tags: form.tags,
+        custom_fields: form.leadQuality ? { lead_quality: form.leadQuality } : undefined,
       });
       addLead({
         id: created.id,
@@ -113,6 +114,7 @@ function AddLeadModal({ onClose }: { onClose: () => void }) {
         source: form.source, dealValue: form.dealValue,
         tags: form.tags, score: 0, notes: [],
         assignedTo: form.assignedTo,
+        leadQuality: form.leadQuality || undefined,
         createdAt: created.created_at ?? now, lastActivity: created.created_at ?? now,
       });
       toast.success('Opportunity added');
@@ -215,6 +217,16 @@ function AddLeadModal({ onClose }: { onClose: () => void }) {
             <div>
               {lbl('Lead Value')}
               <input className={inputCls} type="number" placeholder="0" value={form.dealValue || ''} onChange={(e) => setForm({ ...form, dealValue: Number(e.target.value) })} />
+            </div>
+            <div>
+              {lbl('Lead Quality')}
+              <select className={inputCls} value={form.leadQuality} onChange={(e) => setForm({ ...form, leadQuality: e.target.value })}>
+                <option value="">Select quality...</option>
+                <option value="Hot">🔥 Hot</option>
+                <option value="Warm">☀️ Warm</option>
+                <option value="Cold">❄️ Cold</option>
+                <option value="Unqualified">Unqualified</option>
+              </select>
             </div>
           </div>
         </div>
@@ -1812,6 +1824,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
     dealValue: lead.dealValue, source: lead.source,
     assignedTo: lead.assignedTo ?? '',
     tags: [...lead.tags], tagInput: '',
+    leadQuality: lead.leadQuality ?? '',
   });
 
   const handleSaveEdit = async () => {
@@ -1826,6 +1839,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
         assigned_to: editForm.assignedTo || null,
         tags: editForm.tags,
         deal_value: editForm.dealValue !== undefined ? Number(editForm.dealValue) : undefined,
+        custom_fields: { lead_quality: editForm.leadQuality || null },
       });
       updateLead(lead.id, {
         firstName: editForm.firstName, lastName: editForm.lastName,
@@ -1834,6 +1848,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
         assignedTo: editForm.assignedTo,
         assignedName: staff.find((s) => s.id === editForm.assignedTo)?.name ?? '',
         tags: editForm.tags,
+        leadQuality: editForm.leadQuality || undefined,
       });
       setEditMode(false);
       toast.success('Lead updated');
@@ -2026,6 +2041,24 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
                 </div>
               )}
 
+              {/* Lead Quality */}
+              {lead.leadQuality && (
+                <div className="flex items-center gap-3">
+                  <Star className="w-4 h-4 text-[#7a6b5c] shrink-0" />
+                  <span className={cn(
+                    'inline-flex items-center gap-1 text-[12px] font-semibold px-2.5 py-1 rounded-full',
+                    lead.leadQuality === 'Hot'         ? 'bg-red-100 text-red-700'     :
+                    lead.leadQuality === 'Warm'        ? 'bg-amber-100 text-amber-700' :
+                    lead.leadQuality === 'Cold'        ? 'bg-blue-100 text-blue-700'   :
+                    lead.leadQuality === 'Unqualified' ? 'bg-gray-100 text-gray-500'   :
+                    'bg-emerald-100 text-emerald-700'
+                  )}>
+                    {lead.leadQuality === 'Hot' ? '🔥' : lead.leadQuality === 'Warm' ? '☀️' : lead.leadQuality === 'Cold' ? '❄️' : ''}
+                    {lead.leadQuality}
+                  </span>
+                </div>
+              )}
+
               {/* Timestamps */}
               <div className="pt-1 border-t border-black/5 mt-1 space-y-1.5">
                 <div className="flex items-center justify-between">
@@ -2092,6 +2125,17 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
                   </select>
                 </div>
 
+                <div>
+                  <label className="text-[11px] text-[#7a6b5c] mb-1 block font-medium">Lead Quality</label>
+                  <select className={inputCls} value={editForm.leadQuality} onChange={(e) => setEditForm({ ...editForm, leadQuality: e.target.value })}>
+                    <option value="">— None —</option>
+                    <option value="Hot">🔥 Hot</option>
+                    <option value="Warm">☀️ Warm</option>
+                    <option value="Cold">❄️ Cold</option>
+                    <option value="Unqualified">Unqualified</option>
+                  </select>
+                </div>
+
                 {/* Tags */}
                 <div>
                   <label className="text-[11px] text-[#7a6b5c] mb-1.5 block font-medium">Tags</label>
@@ -2132,7 +2176,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
             {/* ═══ FOOTER · Save / Cancel ═══ */}
             <div className="flex gap-2 px-5 py-4 bg-[#faf8f6] sticky bottom-0 border-t border-black/5">
               <button
-                onClick={() => { setEditMode(false); setEditForm({ firstName: lead.firstName, lastName: lead.lastName, phone: lead.phone, email: lead.email, dealValue: lead.dealValue, source: lead.source, assignedTo: lead.assignedTo ?? '', tags: [...lead.tags], tagInput: '' }); }}
+                onClick={() => { setEditMode(false); setEditForm({ firstName: lead.firstName, lastName: lead.lastName, phone: lead.phone, email: lead.email, dealValue: lead.dealValue, source: lead.source, assignedTo: lead.assignedTo ?? '', tags: [...lead.tags], tagInput: '', leadQuality: lead.leadQuality ?? '' }); }}
                 className="flex-1 py-2.5 rounded-lg text-[13px] font-semibold text-[#7a6b5c] hover:bg-gray-100 transition-colors"
               >Cancel</button>
               <button

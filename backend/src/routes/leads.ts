@@ -365,7 +365,16 @@ router.post('/', checkPermission('leads:create'), checkUsage('leads'), validate(
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
       [tenantId, name, email, phone, source, pipeline_id, stage_id, explicitAssignee, notes, tags ?? []]
     );
-    const lead = result.rows[0];
+    let lead = result.rows[0];
+
+    // Set custom_fields (e.g. lead_quality) if provided at creation time
+    if (req.body.custom_fields && typeof req.body.custom_fields === 'object') {
+      const cfResult = await query(
+        `UPDATE leads SET custom_fields = COALESCE(custom_fields, '{}'::jsonb) || $1::jsonb WHERE id=$2 RETURNING *`,
+        [JSON.stringify(req.body.custom_fields), lead.id]
+      );
+      if (cfResult.rows[0]) lead = cfResult.rows[0];
+    }
 
     await query(
       `INSERT INTO lead_activities (lead_id, tenant_id, type, title, created_by)
@@ -407,6 +416,13 @@ router.patch('/:id', checkPermission('leads:edit'), validate(UpdateLeadSchema), 
       updates.push(`${field} = $${params.length}`);
     }
   }
+
+  // Merge custom_fields patch (e.g. { lead_quality: 'Hot' }) into JSONB column
+  if (req.body.custom_fields && typeof req.body.custom_fields === 'object') {
+    params.push(JSON.stringify(req.body.custom_fields));
+    updates.push(`custom_fields = COALESCE(custom_fields, '{}'::jsonb) || $${params.length}::jsonb`);
+  }
+
   if (!updates.length) { res.status(400).json({ error: 'No fields to update' }); return; }
 
   updates.push(`updated_at = NOW()`);
