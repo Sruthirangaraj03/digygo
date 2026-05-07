@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Zap, Plus, X, ChevronDown, Check, Search,
@@ -306,7 +306,8 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
   onRegenerateToken?: () => void;
 }) {
   const cfg = node.config;
-  const tags = useCrmStore((s) => s.tags);
+  const leads = useCrmStore((s) => s.leads);
+  const allLeadTags = useMemo(() => [...new Set(leads.flatMap((l) => l.tags ?? []))].sort(), [leads]);
   const sel = (field: string) => (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement | HTMLTextAreaElement>) =>
     onUpdate({ config: { ...cfg, [field]: e.target.value } });
 
@@ -480,8 +481,8 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
               className="flex-1 min-w-[120px] text-[12px] bg-transparent outline-none text-[#7a6b5c] cursor-pointer"
             >
               <option value="">+ Add tag...</option>
-              {tags.filter((t) => !((cfg.tags as string[]) ?? []).includes(t.name)).map((t) => (
-                <option key={t.id} value={t.name}>{t.name}</option>
+              {allLeadTags.filter((t) => !((cfg.tags as string[]) ?? []).includes(t)).map((t) => (
+                <option key={t} value={t}>{t}</option>
               ))}
             </select>
           </div>
