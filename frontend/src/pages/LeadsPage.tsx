@@ -79,7 +79,7 @@ function AddLeadModal({ onClose }: { onClose: () => void }) {
     firstName: '', lastName: '', email: '', phone: '+91 ',
     city: '', pipelineId: pipelines[0]?.id ?? '', stage: pipelines[0]?.stages[0]?.name ?? '',
     tags: [] as string[], tagInput: '', dealValue: 0, source: 'Manual',
-    assignedTo: currentUser?.id ?? '',
+    assignedTo: '',
   });
 
   const selectedPipeline = pipelines.find((p) => p.id === form.pipelineId);
