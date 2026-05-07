@@ -1988,23 +1988,6 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
                 </div>
               ))}
 
-              {/* Last Follow Up */}
-              {(() => {
-                const last = leadFollowUps
-                  .filter((f) => f.dueAt)
-                  .sort((a, b) => new Date(b.dueAt).getTime() - new Date(a.dueAt).getTime())[0];
-                if (!last) return null;
-                return (
-                  <div className="flex items-center gap-3">
-                    <Clock className="w-4 h-4 text-[#7a6b5c] shrink-0" />
-                    <span className="text-[13px] text-[#1c1410] font-medium">
-                      Last Follow Up:{' '}
-                      <span className="text-[#1c1410]">{format(new Date(last.dueAt), 'dd MMM yyyy')}</span>
-                      <span className="text-[#7a6b5c] ml-1">({formatDistanceToNow(new Date(last.dueAt), { addSuffix: true })})</span>
-                    </span>
-                  </div>
-                );
-              })()}
 
               {/* Tags */}
               {lead.tags.length > 0 && (
