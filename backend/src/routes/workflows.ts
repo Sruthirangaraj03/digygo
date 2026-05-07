@@ -1601,9 +1601,17 @@ export async function enrichLead(lead: LeadContext): Promise<LeadContext> {
     const r = await query('SELECT name FROM pipeline_stages WHERE id=$1', [lead.stage_id]);
     enriched.stage_name = r.rows[0]?.name ?? '';
   }
+  // Derive first_name / last_name from full name so if_else conditions can match on them
+  if (enriched.name) {
+    const parts = enriched.name.trim().split(/\s+/);
+    (enriched as any).first_name = parts[0] ?? '';
+    (enriched as any).last_name  = parts.length > 1 ? parts.slice(1).join(' ') : '';
+  }
+
   // Fetch custom field values so if_else conditions can evaluate them
   if (lead.id) {
-    const [cfRes, lqRes] = await Promise.all([
+    const [cfRes, jsonbRes] = await Promise.all([
+      // Structured custom fields stored in lead_field_values
       query(
         `SELECT cf.slug, lfv.value
          FROM lead_field_values lfv
@@ -1611,19 +1619,25 @@ export async function enrichLead(lead: LeadContext): Promise<LeadContext> {
          WHERE lfv.lead_id = $1`,
         [lead.id]
       ).catch(() => ({ rows: [] })),
-      // lead_quality is stored in leads.custom_fields JSONB, not lead_field_values
+      // Flat JSONB custom_fields column (stores lead_quality, city, and any mapped values)
       query(
-        `SELECT custom_fields->>'lead_quality' AS lead_quality FROM leads WHERE id=$1`,
+        `SELECT custom_fields FROM leads WHERE id=$1 LIMIT 1`,
         [lead.id]
       ).catch(() => ({ rows: [] })),
     ]);
     enriched.custom_fields = {};
+    // Merge JSONB column first (lower priority)
+    const jsonbFields: Record<string, string> = jsonbRes.rows[0]?.custom_fields ?? {};
+    for (const [k, v] of Object.entries(jsonbFields)) {
+      if (v !== null && v !== undefined) enriched.custom_fields[k] = String(v);
+    }
+    // lead_field_values override (higher priority — structured data)
     for (const row of cfRes.rows) {
       enriched.custom_fields[row.slug] = row.value;
     }
-    if (lqRes.rows[0]?.lead_quality) {
-      enriched.custom_fields['lead_quality'] = lqRes.rows[0].lead_quality;
-      (enriched as any).lead_quality = lqRes.rows[0].lead_quality;
+    // Expose lead_quality as a top-level key for direct comparison
+    if (enriched.custom_fields['lead_quality']) {
+      (enriched as any).lead_quality = enriched.custom_fields['lead_quality'];
     }
   }
   return enriched;
