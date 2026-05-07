@@ -697,25 +697,38 @@ export async function executeNodes(
         // ── Update Contact Attributes ──────────────────────────────────────────
         case 'update_attributes': {
           if (!lead.id) { status = 'skipped'; message = 'update_attributes: no lead ID'; break; }
-          const allowed = ['name', 'email', 'phone', 'source'];
+          const directCols = new Set(['name', 'email', 'phone', 'source', 'deal_value', 'assigned_to', 'stage_id', 'pipeline_id']);
           const sets: string[] = ['updated_at=NOW()'];
           const vals: any[] = [];
+          const jsonbMerge: Record<string, string> = {};
+
+          const processField = (fieldKey: string, rawValue: string) => {
+            const v = interpolate(rawValue, lead);
+            if (directCols.has(fieldKey)) {
+              vals.push(v); sets.push(`${fieldKey}=$${vals.length}`);
+            } else if (fieldKey === 'lead_quality') {
+              jsonbMerge['lead_quality'] = v;
+            } else if (fieldKey.startsWith('custom:')) {
+              const slug = fieldKey.slice(7);
+              if (slug) jsonbMerge[slug] = v;
+            }
+          };
 
           // New UI sends attrField/attrValue (single field at a time)
           // Old UI sent name/email/phone/source directly on config
           if (node.config.attrField && node.config.attrValue !== undefined) {
-            const f = (node.config.attrField as string).trim();
-            if (allowed.includes(f)) {
-              const v = interpolate(node.config.attrValue as string, lead);
-              vals.push(v); sets.push(`${f}=$${vals.length}`);
-            }
+            processField((node.config.attrField as string).trim(), node.config.attrValue as string);
           } else {
-            for (const field of allowed) {
+            for (const field of directCols) {
               if (node.config[field] !== undefined && node.config[field] !== '') {
-                vals.push(interpolate(node.config[field] as string, lead));
-                sets.push(`${field}=$${vals.length}`);
+                processField(field, node.config[field] as string);
               }
             }
+          }
+
+          if (Object.keys(jsonbMerge).length > 0) {
+            vals.push(JSON.stringify(jsonbMerge));
+            sets.push(`custom_fields = COALESCE(custom_fields, '{}'::jsonb) || $${vals.length}::jsonb`);
           }
 
           if (sets.length > 1) {
@@ -724,7 +737,11 @@ export async function executeNodes(
               `UPDATE leads SET ${sets.join(',')} WHERE id=$${vals.length - 1} AND tenant_id=$${vals.length}`,
               vals
             );
-            message = `Updated: ${sets.slice(1).map((s) => s.split('=')[0]).join(', ')}`;
+            const updatedCols = [
+              ...sets.slice(1).filter((s) => !s.startsWith('custom_fields')).map((s) => s.split('=')[0]),
+              ...Object.keys(jsonbMerge),
+            ];
+            message = `Updated: ${updatedCols.join(', ')}`;
           } else {
             status = 'skipped'; message = 'update_attributes: no field/value configured';
           }

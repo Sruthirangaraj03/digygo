@@ -1555,24 +1555,115 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
       </>)}
 
       {/* Update Attributes */}
-      {node.actionType === 'update_attributes' && (<>
-        <p className="text-sm text-muted-foreground">Set a specific field on this contact to a fixed or dynamic value.</p>
-        <FieldRow label="Field to Update" required>
-          <select className={selectCls} value={(cfg.attrField as string) ?? ''} onChange={sel('attrField')}>
-            <option value="">Select field...</option>
-            <option value="name">Full Name</option>
-            <option value="email">Email</option>
-            <option value="phone">Phone</option>
-            <option value="source">Source</option>
-          </select>
-        </FieldRow>
-        <FieldRow label="New Value" required>
-          <div>
-            <input className={inputCls} placeholder="Enter value or use {first_name}" value={(cfg.attrValue as string) ?? ''} onChange={sel('attrValue')} />
-            <VarHints onInsert={(v) => onUpdate({ config: { ...cfg, attrValue: ((cfg.attrValue as string) ?? '') + v } })} />
-          </div>
-        </FieldRow>
-      </>)}
+      {node.actionType === 'update_attributes' && (() => {
+        const [varPickerOpen, setVarPickerOpen] = useState(false);
+        const [varTab, setVarTab] = useState<string>(systemFields[0]?.group ?? 'Contact');
+
+        const systemGroups = Array.from(new Set(systemFields.map((f) => f.group)));
+        const EXCLUDED_UA = new Set(['assigned_to_staff']);
+        const uaTabs = [
+          ...systemGroups.map((group) => ({
+            id: group,
+            label: group,
+            fields: systemFields
+              .filter((f) => f.group === group && !EXCLUDED_UA.has(f.slug))
+              .map((f) => ({ name: f.name, variable: `{%${f.slug}%}` })),
+          })),
+          {
+            id: 'CRM',
+            label: 'CRM',
+            fields: [
+              { name: 'Pipeline',       variable: '{pipeline}' },
+              { name: 'Stage',          variable: '{stage}' },
+              { name: 'Assigned Staff', variable: '{assigned_staff}' },
+              { name: 'Source',         variable: '{source}' },
+              { name: 'Created At',     variable: '{created_at}' },
+            ],
+          },
+          {
+            id: 'Custom',
+            label: 'Custom',
+            fields: customFields.map((f) => ({ name: f.name, variable: `{%${f.slug}%}` })),
+          },
+        ];
+
+        const insertVar = (variable: string) => {
+          onUpdate({ config: { ...cfg, attrValue: variable } });
+          setVarPickerOpen(false);
+        };
+
+        return (<>
+          <p className="text-sm text-muted-foreground">Set a specific field on this contact to a fixed or dynamic value.</p>
+          <FieldRow label="Field to Update" required>
+            <select className={selectCls} value={(cfg.attrField as string) ?? ''} onChange={sel('attrField')}>
+              <option value="">Select field...</option>
+              <option value="name">Full Name</option>
+              <option value="email">Email</option>
+              <option value="phone">Phone</option>
+              <option value="source">Source</option>
+              <option value="lead_quality">Lead Quality</option>
+              <option value="deal_value">Deal Value</option>
+              <option value="assigned_to">Assigned To (Staff ID)</option>
+              {customFields.length > 0 && customFields.map((f) => (
+                <option key={f.id} value={`custom:${f.slug}`}>{f.name}</option>
+              ))}
+            </select>
+          </FieldRow>
+          <FieldRow label="New Value" required>
+            <div>
+              <div className="flex gap-2">
+                <input
+                  className={`${inputCls} flex-1`}
+                  placeholder="Type a fixed value or pick a variable →"
+                  value={(cfg.attrValue as string) ?? ''}
+                  onChange={sel('attrValue')}
+                />
+                <button
+                  type="button"
+                  onClick={() => setVarPickerOpen(true)}
+                  className="px-3 py-2 rounded-lg border border-border text-[12px] font-semibold text-primary hover:bg-primary/5 whitespace-nowrap"
+                >
+                  Variables
+                </button>
+              </div>
+              {varPickerOpen && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50" onClick={() => setVarPickerOpen(false)}>
+                  <div className="bg-white rounded-2xl shadow-2xl w-[420px] max-h-[500px] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-between px-5 py-4 border-b">
+                      <h3 className="font-bold text-[15px]">Custom Values</h3>
+                      <button type="button" onClick={() => setVarPickerOpen(false)} className="text-gray-400 hover:text-gray-600">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="flex border-b px-2 gap-1 overflow-x-auto">
+                      {uaTabs.map((tab) => (
+                        <button key={tab.id} type="button"
+                          onClick={() => setVarTab(tab.id)}
+                          className={`text-xs font-semibold px-3 py-2.5 whitespace-nowrap transition-colors border-b-2 -mb-px ${varTab === tab.id ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-2">
+                      {(uaTabs.find((t) => t.id === varTab)?.fields ?? []).map((f) => (
+                        <button key={f.variable} type="button"
+                          onClick={() => insertVar(f.variable)}
+                          className="w-full text-left px-4 py-2.5 hover:bg-gray-50 rounded-lg flex items-center justify-between group">
+                          <span className="text-[13px] text-gray-800">{f.name}</span>
+                          <span className="text-[11px] font-mono text-gray-400 group-hover:text-primary">{f.variable}</span>
+                        </button>
+                      ))}
+                      {(uaTabs.find((t) => t.id === varTab)?.fields.length ?? 0) === 0 && (
+                        <p className="text-xs text-gray-400 text-center py-6">No fields in this category</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </FieldRow>
+        </>);
+      })()}
 
       {/* Create Follow-up */}
       {node.actionType === 'create_followup' && (<>
