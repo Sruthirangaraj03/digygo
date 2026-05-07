@@ -306,6 +306,7 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
   onRegenerateToken?: () => void;
 }) {
   const cfg = node.config;
+  const tags = useCrmStore((s) => s.tags);
   const sel = (field: string) => (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement | HTMLTextAreaElement>) =>
     onUpdate({ config: { ...cfg, [field]: e.target.value } });
 
