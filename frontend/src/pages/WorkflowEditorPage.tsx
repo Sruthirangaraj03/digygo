@@ -2680,7 +2680,8 @@ function BranchNodeList({ nodes, label, branchKey, parentNodeId, selectedNodeId,
               <button
                 onClick={() => onSelectNode(node.id)}
                 className={cn(
-                  'relative flex items-center bg-white rounded-xl border text-left transition-all hover:shadow-md hover:-translate-y-0.5 w-full overflow-hidden',
+                  'relative flex items-center bg-white rounded-xl border text-left transition-all hover:shadow-md hover:-translate-y-0.5 overflow-hidden',
+                  isNestedCondition ? 'w-[200px]' : 'w-full',
                   isSelected ? 'border-primary ring-2 ring-primary/15 shadow-md' : 'border-black/[0.07] shadow-sm'
                 )}
               >
