@@ -2642,13 +2642,14 @@ interface BranchNodeListProps {
   selectedNodeId: string | null;
   onSelectNode: (id: string) => void;
   onAddAction: (parentId: string, branch: 'yes' | 'no', afterIndex: number) => void;
-  onDeleteBranchNode: (parentId: string, branch: 'yes' | 'no', nodeId: string) => void;
+  onDeleteBranchNode: (nodeId: string) => void;
+  onSelectBranchNode: (nodeId: string, branch: 'yes' | 'no') => void;
 }
 
-function BranchNodeList({ nodes, label, branchKey, parentNodeId, selectedNodeId, onSelectNode, onAddAction }: BranchNodeListProps) {
+function BranchNodeList({ nodes, label, branchKey, parentNodeId, selectedNodeId, onSelectNode, onAddAction, onDeleteBranchNode, onSelectBranchNode }: BranchNodeListProps) {
   const isYes = branchKey === 'yes';
   return (
-    <div className="flex flex-col items-center min-w-[200px] px-3">
+    <div className="flex flex-col items-center min-w-[220px] px-3">
       {/* Branch label pill */}
       <div className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border',
         isYes ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-600 border-red-200'
@@ -2673,6 +2674,7 @@ function BranchNodeList({ nodes, label, branchKey, parentNodeId, selectedNodeId,
         nodes.map((node, idx) => {
           const { bar: accentBar, icon: iconStyle, badge: badgeStyle } = nodeAccent(node.type, node.actionType);
           const isSelected = selectedNodeId === node.id;
+          const isNestedCondition = node.type === 'condition' && node.actionType === 'if_else';
           return (
             <div key={node.id} className="flex flex-col items-center w-full">
               <button
@@ -2695,6 +2697,36 @@ function BranchNodeList({ nodes, label, branchKey, parentNodeId, selectedNodeId,
                   </div>
                 </div>
               </button>
+
+              {/* Nested if/else: render its Yes/No branches inline */}
+              {isNestedCondition && (
+                <div className="flex gap-6 mt-3 mb-1 items-start border border-amber-100 rounded-xl bg-amber-50/30 px-3 py-2">
+                  <BranchNodeList
+                    nodes={node.branches?.yes ?? []}
+                    label={(node.config.yesLabel as string) || 'Yes'}
+                    branchKey="yes"
+                    parentNodeId={node.id}
+                    selectedNodeId={selectedNodeId}
+                    onSelectNode={onSelectNode}
+                    onAddAction={onAddAction}
+                    onDeleteBranchNode={onDeleteBranchNode}
+                    onSelectBranchNode={onSelectBranchNode}
+                  />
+                  <div className="w-px bg-[#e8e0d8] self-stretch mt-6" />
+                  <BranchNodeList
+                    nodes={node.branches?.no ?? []}
+                    label={(node.config.noLabel as string) || 'No'}
+                    branchKey="no"
+                    parentNodeId={node.id}
+                    selectedNodeId={selectedNodeId}
+                    onSelectNode={onSelectNode}
+                    onAddAction={onAddAction}
+                    onDeleteBranchNode={onDeleteBranchNode}
+                    onSelectBranchNode={onSelectBranchNode}
+                  />
+                </div>
+              )}
+
               <div className="flex flex-col items-center">
                 <div className="w-px h-5 bg-[#e2d9d0]" />
                 <button
@@ -2757,8 +2789,8 @@ interface CanvasNodeProps {
   onSelectNode: (id: string) => void;
   onInsertAfter: (idx: number) => void;
   onAddBranchAction: (parentId: string, branch: 'yes' | 'no', afterIndex: number) => void;
-  onDeleteBranchNode: (parentId: string, branch: 'yes' | 'no', nodeId: string) => void;
-  onSelectBranchNode: (parentId: string, branch: 'yes' | 'no', nodeId: string) => void;
+  onDeleteBranchNode: (nodeId: string) => void;
+  onSelectBranchNode: (nodeId: string, branch: 'yes' | 'no') => void;
   testStatus?: NodeTestStatus;
 }
 
@@ -2822,9 +2854,10 @@ function CanvasNode({ node, idx, selectedNodeId, onSelectNode, onInsertAfter, on
               branchKey="yes"
               parentNodeId={node.id}
               selectedNodeId={selectedNodeId}
-              onSelectNode={(id) => onSelectBranchNode(node.id, 'yes', id)}
+              onSelectNode={(id) => onSelectBranchNode(id, 'yes')}
               onAddAction={onAddBranchAction}
               onDeleteBranchNode={onDeleteBranchNode}
+              onSelectBranchNode={onSelectBranchNode}
             />
             <div className="w-px bg-[#e8e0d8] self-stretch mt-6" />
             <BranchNodeList
@@ -2833,9 +2866,10 @@ function CanvasNode({ node, idx, selectedNodeId, onSelectNode, onInsertAfter, on
               branchKey="no"
               parentNodeId={node.id}
               selectedNodeId={selectedNodeId}
-              onSelectNode={(id) => onSelectBranchNode(node.id, 'no', id)}
+              onSelectNode={(id) => onSelectBranchNode(id, 'no')}
               onAddAction={onAddBranchAction}
               onDeleteBranchNode={onDeleteBranchNode}
+              onSelectBranchNode={onSelectBranchNode}
             />
           </div>
           {/* Merge point */}
@@ -2874,11 +2908,51 @@ function CanvasNode({ node, idx, selectedNodeId, onSelectNode, onInsertAfter, on
   );
 }
 
+// ── Recursive tree helpers for nested if/else support ─────────────────────────
+function findNodeById(nodes: WFNode[], nodeId: string): WFNode | null {
+  for (const n of nodes) {
+    if (n.id === nodeId) return n;
+    if (n.branches) {
+      const found = findNodeById(n.branches.yes, nodeId) ?? findNodeById(n.branches.no, nodeId);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function updateNodeById(nodes: WFNode[], nodeId: string, updates: Partial<WFNode>): WFNode[] {
+  return nodes.map((n) => {
+    if (n.id === nodeId) return { ...n, ...updates };
+    if (!n.branches) return n;
+    return { ...n, branches: { yes: updateNodeById(n.branches.yes, nodeId, updates), no: updateNodeById(n.branches.no, nodeId, updates) } };
+  });
+}
+
+function deleteNodeById(nodes: WFNode[], nodeId: string): WFNode[] {
+  return nodes
+    .filter((n) => n.id !== nodeId)
+    .map((n) => {
+      if (!n.branches) return n;
+      return { ...n, branches: { yes: deleteNodeById(n.branches.yes, nodeId), no: deleteNodeById(n.branches.no, nodeId) } };
+    });
+}
+
+function insertIntoBranch(nodes: WFNode[], parentId: string, branch: 'yes' | 'no', afterIndex: number, newNode: WFNode): WFNode[] {
+  return nodes.map((n) => {
+    if (n.id === parentId) {
+      const arr = [...(n.branches?.[branch] ?? [])];
+      arr.splice(afterIndex < 0 ? 0 : afterIndex + 1, 0, newNode);
+      return { ...n, branches: { yes: n.branches?.yes ?? [], no: n.branches?.no ?? [], [branch]: arr } };
+    }
+    if (!n.branches) return n;
+    return { ...n, branches: { yes: insertIntoBranch(n.branches.yes, parentId, branch, afterIndex, newNode), no: insertIntoBranch(n.branches.no, parentId, branch, afterIndex, newNode) } };
+  });
+}
+
 // ── Branch node state for panel ───────────────────────────────────────────────
 interface BranchNodeContext {
-  parentId: string;
-  branch: 'yes' | 'no';
   nodeId: string;
+  branch: 'yes' | 'no';
 }
 
 // ── Node Config Modal ──────────────────────────────────────────────────────────
@@ -3498,12 +3572,9 @@ export default function WorkflowEditorPage() {
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, []);
 
-  // Determine which node is selected (main canvas or branch)
+  // Determine which node is selected (main canvas or any nested branch)
   const selectedNode = selectedBranchCtx
-    ? (() => {
-        const parent = workflow.nodes.find((n) => n.id === selectedBranchCtx.parentId);
-        return parent?.branches?.[selectedBranchCtx.branch]?.find((n) => n.id === selectedBranchCtx.nodeId) ?? null;
-      })()
+    ? findNodeById(workflow.nodes, selectedBranchCtx.nodeId)
     : workflow.nodes.find((n) => n.id === selectedNodeId) ?? null;
 
   const validateNodes = (nodes: WFNode[]): string | null => {
@@ -3572,21 +3643,8 @@ export default function WorkflowEditorPage() {
     }));
   };
 
-  const updateBranchNode = (parentId: string, branch: 'yes' | 'no', nodeId: string, updates: Partial<WFNode>) => {
-    setWorkflow((w) => ({
-      ...w,
-      nodes: w.nodes.map((n) => {
-        if (n.id !== parentId) return n;
-        return {
-          ...n,
-          branches: {
-            yes: n.branches?.yes ?? [],
-            no: n.branches?.no ?? [],
-            [branch]: (n.branches?.[branch] ?? []).map((bn) => bn.id === nodeId ? { ...bn, ...updates } : bn),
-          },
-        };
-      }),
-    }));
+  const updateBranchNode = (_parentId: string, _branch: 'yes' | 'no', nodeId: string, updates: Partial<WFNode>) => {
+    setWorkflow((w) => ({ ...w, nodes: updateNodeById(w.nodes, nodeId, updates) }));
   };
 
   const deleteNode = (nodeId: string) => {
@@ -3596,21 +3654,8 @@ export default function WorkflowEditorPage() {
     setSelectedBranchCtx(null);
   };
 
-  const deleteBranchNode = (parentId: string, branch: 'yes' | 'no', nodeId: string) => {
-    setWorkflow((w) => ({
-      ...w,
-      nodes: w.nodes.map((n) => {
-        if (n.id !== parentId) return n;
-        return {
-          ...n,
-          branches: {
-            yes: n.branches?.yes ?? [],
-            no: n.branches?.no ?? [],
-            [branch]: (n.branches?.[branch] ?? []).filter((bn) => bn.id !== nodeId),
-          },
-        };
-      }),
-    }));
+  const deleteBranchNode = (nodeId: string) => {
+    setWorkflow((w) => ({ ...w, nodes: deleteNodeById(w.nodes, nodeId) }));
     setSelectedBranchCtx(null);
     setSelectedNodeId(null);
   };
@@ -3635,7 +3680,7 @@ export default function WorkflowEditorPage() {
         branches: action.id === 'if_else' ? { yes: [], no: [] } : undefined,
       };
       if (selectedBranchCtx) {
-        updateBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedNode.id, patch);
+        updateBranchNode('', 'yes', selectedNode.id, patch);
       } else if (selectedNodeId) {
         updateNode(selectedNodeId, patch);
       }
@@ -3655,25 +3700,10 @@ export default function WorkflowEditorPage() {
     };
 
     if (insertBranchCtx) {
-      // Adding to a branch
+      // Adding to a branch (works for nested branches via insertIntoBranch)
       const { parentId, branch, afterIndex } = insertBranchCtx;
-      setWorkflow((w) => ({
-        ...w,
-        nodes: w.nodes.map((n) => {
-          if (n.id !== parentId) return n;
-          const branchNodes = [...(n.branches?.[branch] ?? [])];
-          branchNodes.splice(afterIndex + 1, 0, newNode);
-          return {
-            ...n,
-            branches: {
-              yes: n.branches?.yes ?? [],
-              no: n.branches?.no ?? [],
-              [branch]: branchNodes,
-            },
-          };
-        }),
-      }));
-      setSelectedBranchCtx({ parentId, branch, nodeId: newNode.id });
+      setWorkflow((w) => ({ ...w, nodes: insertIntoBranch(w.nodes, parentId, branch, afterIndex, newNode) }));
+      setSelectedBranchCtx({ nodeId: newNode.id, branch });
       setSelectedNodeId(null);
     } else {
       // Adding to main canvas
@@ -3711,7 +3741,7 @@ export default function WorkflowEditorPage() {
     const sample = `Hi {%first_name%},\n\nThank you for your interest! ${aiPrompt}\n\nLooking forward to hearing from you.\n\nBest regards,\nYour Team`;
     const field = selectedNode.actionType === 'send_email' ? 'content' : selectedNode.actionType === 'create_note' ? 'noteContent' : 'message';
     if (selectedBranchCtx) {
-      updateBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedNode.id, { config: { ...selectedNode.config, [field]: sample } });
+      updateBranchNode('', 'yes', selectedNode.id, { config: { ...selectedNode.config, [field]: sample } });
     } else {
       updateNode(selectedNode.id, { config: { ...selectedNode.config, [field]: sample } });
     }
@@ -3901,8 +3931,8 @@ export default function WorkflowEditorPage() {
                 onInsertAfter={(i) => { setInsertAfterIndex(i); setInsertBranchCtx(null); setShowActionPicker(true); }}
                 onAddBranchAction={handleAddBranchAction}
                 onDeleteBranchNode={deleteBranchNode}
-                onSelectBranchNode={(parentId, branch, nodeId) => {
-                  setSelectedBranchCtx({ parentId, branch, nodeId });
+                onSelectBranchNode={(nodeId, branch) => {
+                  setSelectedBranchCtx({ nodeId, branch });
                   setSelectedNodeId(null);
                   setShowNodeModal(true);
                 }}
@@ -3997,7 +4027,7 @@ export default function WorkflowEditorPage() {
                     </div>
                   </div>
                   <button
-                    onClick={() => { if (selectedBranchCtx) deleteBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedBranchCtx.nodeId); else if (selectedNodeId) deleteNode(selectedNodeId); }}
+                    onClick={() => { if (selectedBranchCtx) deleteBranchNode(selectedBranchCtx.nodeId); else if (selectedNodeId) deleteNode(selectedNodeId); }}
                     className="w-7 h-7 rounded-lg hover:bg-red-50 text-[#b09e8d] hover:text-red-500 flex items-center justify-center transition-colors"
                     title="Delete node"
                   >
@@ -4133,8 +4163,8 @@ export default function WorkflowEditorPage() {
                     {selectedNode.type === 'trigger'
                       ? <TriggerConfigPanel node={selectedNode} onUpdate={(u) => updateNode(selectedNode.id, u)} onChangeTrigger={() => setShowTriggerPicker(true)} pipelines={editorPipelines} staff={editorStaff} forms={editorForms} metaForms={editorMetaForms} eventTypes={editorEventTypes} bookingLinks={editorBookingLinks} metaPages={editorMetaPages} webhookUrls={editorWebhookUrls} allowReentry={workflow.allowReentry} onToggleReentry={(val) => setWorkflow((w) => ({ ...w, allowReentry: val }))} workflowId={workflow.id} apiToken={workflow.apiToken} onRegenerateToken={handleRegenerateToken} />
                       : selectedNodeIsCondition
-                      ? <ConditionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedNode.id, u) : updateNode(selectedNode.id, u)} pipelines={editorPipelines} staff={editorStaff} />
-                      : <ActionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedNode.id, u) : updateNode(selectedNode.id, u)} pipelines={editorPipelines} staff={editorStaff} templates={editorTemplates} workflows={editorWorkflows} routingSets={editorRoutingSets} onRefreshPipelines={refreshPipelines} refreshingPipelines={refreshingPipelines} />
+                      ? <ConditionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode('', 'yes', selectedNode.id, u) : updateNode(selectedNode.id, u)} pipelines={editorPipelines} staff={editorStaff} />
+                      : <ActionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode('', 'yes', selectedNode.id, u) : updateNode(selectedNode.id, u)} pipelines={editorPipelines} staff={editorStaff} templates={editorTemplates} workflows={editorWorkflows} routingSets={editorRoutingSets} onRefreshPipelines={refreshPipelines} refreshingPipelines={refreshingPipelines} />
                     }
                   </>
                 )}
@@ -4163,11 +4193,11 @@ export default function WorkflowEditorPage() {
           branchCtx={selectedBranchCtx}
           onClose={() => setShowNodeModal(false)}
           onUpdate={(u) => selectedBranchCtx
-            ? updateBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedNode.id, u)
+            ? updateBranchNode('', 'yes', selectedNode.id, u)
             : updateNode(selectedNode.id, u)
           }
           onDelete={() => {
-            if (selectedBranchCtx) deleteBranchNode(selectedBranchCtx.parentId, selectedBranchCtx.branch, selectedBranchCtx.nodeId);
+            if (selectedBranchCtx) deleteBranchNode(selectedBranchCtx.nodeId);
             else if (selectedNodeId) deleteNode(selectedNodeId);
             setShowNodeModal(false);
           }}
