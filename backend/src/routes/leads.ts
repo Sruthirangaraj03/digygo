@@ -366,7 +366,7 @@ router.patch('/:id', checkPermission('leads:edit'), validate(UpdateLeadSchema), 
       setImmediate(() => triggerWorkflows('lead_created', result.rows[0], tenantId!, userId).catch(() => null));
     }
 
-    // Log tag changes
+    // Log tag changes and fire contact_tagged workflow trigger
     if (old && req.body.tags !== undefined) {
       const oldTags: string[] = old.tags ?? [];
       const newTags: string[] = req.body.tags ?? [];
@@ -378,6 +378,13 @@ router.patch('/:id', checkPermission('leads:edit'), validate(UpdateLeadSchema), 
            VALUES ($1,$2,'tag_added',$3,$4)`,
           [req.params.id, tenantId, `Tags added: ${added.join(', ')}`, userId]
         );
+        // Fire one contact_tagged trigger per newly added tag
+        const lead = result.rows[0];
+        for (const addedTag of added) {
+          setImmediate(() => triggerWorkflows('contact_tagged', lead, tenantId!, userId,
+            { triggerContext: { tag: addedTag } }
+          ).catch(() => null));
+        }
       }
       if (removed.length > 0) {
         await query(
