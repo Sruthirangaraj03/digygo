@@ -386,6 +386,26 @@ function uuidOrNull(id: string): string | null {
     : null;
 }
 
+function adjustToTimeWindow(dt: Date, start: string, end: string, days: string[]): Date {
+  const DAY_NAMES = ['sun','mon','tue','wed','thu','fri','sat'];
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  const startMins = sh * 60 + sm;
+  const endMins   = eh * 60 + em;
+  for (let i = 0; i < 14; i++) {
+    const dayName  = DAY_NAMES[dt.getDay()];
+    const currMins = dt.getHours() * 60 + dt.getMinutes();
+    if (days.includes(dayName)) {
+      if (currMins < startMins) { const r = new Date(dt); r.setHours(sh, sm, 0, 0); return r; }
+      if (currMins < endMins)   return dt;
+    }
+    dt = new Date(dt);
+    dt.setDate(dt.getDate() + 1);
+    dt.setHours(sh, sm, 0, 0);
+  }
+  return dt;
+}
+
 export async function executeNodes(
   nodes: WFNode[],
   lead: LeadContext,
@@ -1280,15 +1300,37 @@ export async function executeNodes(
 
         // ── Time Delay ─────────────────────────────────────────────────────────
         case 'delay': {
-          const amount = parseFloat((node.config.delayAmount ?? node.config.delay_amount ?? '1') as string) || 1;
-          const unit   = (node.config.delayUnit ?? node.config.delay_unit ?? 'hours') as string;
-          let ms = amount * 3_600_000; // default hours
-          if (unit === 'minutes') ms = amount * 60_000;
-          if (unit === 'days')    ms = amount * 86_400_000;
-          const runAt = new Date(Date.now() + ms).toISOString();
+          // Resolve delay in minutes — supports preset format + legacy delayAmount/delayUnit
+          let delayMinutes = 1440;
+          const preset = node.config.preset as string | undefined;
+          if (preset && preset !== 'custom') {
+            const presetMap: Record<string, number> = {
+              '24h': 1440, '12h': 720, '4h': 240, '60m': 60, '30m': 30, '15m': 15, '5m': 5,
+            };
+            delayMinutes = presetMap[preset] ?? 1440;
+          } else if (preset === 'custom') {
+            const val  = parseFloat((node.config.customValue ?? '1') as string) || 1;
+            const unit = (node.config.customUnit ?? 'hours') as string;
+            delayMinutes = unit === 'minutes' ? val : unit === 'days' ? val * 1440 : val * 60;
+          } else {
+            // Legacy format: delayAmount + delayUnit
+            const amount = parseFloat((node.config.delayAmount ?? node.config.delay_amount ?? '1') as string) || 1;
+            const unit   = (node.config.delayUnit ?? node.config.delay_unit ?? 'hours') as string;
+            delayMinutes = unit === 'minutes' ? amount : unit === 'days' ? amount * 1440 : amount * 60;
+          }
 
-          // Find remaining nodes after this delay node
-          const nodeIdx = nodes.indexOf(node);
+          let runAt = new Date(Date.now() + delayMinutes * 60_000);
+
+          // Advanced Time Window: push run_at into the next allowed window if needed
+          if (node.config.useAdvancedWindow) {
+            const winStart = (node.config.windowStart as string) ?? '09:00';
+            const winEnd   = (node.config.windowEnd   as string) ?? '18:00';
+            const winDays  = (node.config.windowDays  as string[]) ?? ['mon','tue','wed','thu','fri'];
+            runAt = adjustToTimeWindow(runAt, winStart, winEnd, winDays);
+          }
+
+          const runAtIso = runAt.toISOString();
+          const nodeIdx  = nodes.indexOf(node);
           const remaining = nodes.slice(nodeIdx + 1);
 
           if (remaining.length > 0) {
@@ -1296,11 +1338,11 @@ export async function executeNodes(
               `INSERT INTO scheduled_workflow_steps
                  (workflow_id, execution_id, tenant_id, lead_data, remaining_nodes, run_at)
                VALUES ($1,$2,$3,$4,$5,$6)`,
-              [workflowId, executionId, tenantId, JSON.stringify(lead), JSON.stringify(remaining), runAt]
+              [workflowId, executionId, tenantId, JSON.stringify(lead), JSON.stringify(remaining), runAtIso]
             );
-            message = `Delay scheduled: ${amount} ${unit} — ${remaining.length} step(s) queued for ${runAt}`;
+            message = `Delay scheduled: ${delayMinutes}m — ${remaining.length} step(s) queued for ${runAtIso}`;
           } else {
-            message = `Delay of ${amount} ${unit} (no further steps after delay)`;
+            message = `Delay of ${delayMinutes}m (no further steps after delay)`;
           }
           // Stop processing remaining nodes inline — the worker will resume
           await logStep(executionId, workflowId, tenantId, node, 'completed', message);

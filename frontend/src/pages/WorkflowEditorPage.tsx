@@ -1769,30 +1769,101 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
       </>)}
 
       {/* Time Delay */}
-      {node.actionType === 'delay' && (<>
-        <FieldRow label="Wait Duration">
-          <div className="flex gap-2">
-            <input type="number" className="w-24 border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-primary outline-none" value={(cfg.delayAmount as string) ?? '1'} onChange={sel('delayAmount')} min="1" />
-            <select className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-card focus:border-primary outline-none" value={(cfg.delayUnit as string) ?? 'hours'} onChange={sel('delayUnit')}>
-              <option value="minutes">Minutes</option>
-              <option value="hours">Hours</option>
-              <option value="days">Days</option>
-            </select>
-          </div>
-        </FieldRow>
-        <FieldRow label="Delay Type">
-          <select className={selectCls} value={(cfg.delayType as string) ?? 'wait'} onChange={sel('delayType')}>
-            <option value="wait">Wait for duration</option>
-            <option value="until_time">Wait until specific time</option>
-            <option value="business_hours">Wait until business hours</option>
-          </select>
-        </FieldRow>
-        {(cfg.delayType as string) === 'until_time' && (
-          <FieldRow label="Time">
-            <input type="time" className={inputCls} value={(cfg.untilTime as string) ?? '09:00'} onChange={sel('untilTime')} />
+      {node.actionType === 'delay' && (() => {
+        const preset    = (cfg.preset    as string)   ?? '24h';
+        const direction = (cfg.direction as string)   ?? 'after';
+        const isCustom  = preset === 'custom';
+        const useAdvWindow = !!(cfg.useAdvancedWindow);
+        const windowDays   = (cfg.windowDays as string[]) ?? ['mon','tue','wed','thu','fri'];
+        const PRESET_LABELS: Record<string, string> = {
+          '24h':'24 hours','12h':'12 hours','4h':'4 hours',
+          '60m':'60 minutes','30m':'30 minutes','15m':'15 minutes','5m':'5 minutes','custom':'Custom',
+        };
+        const buildLabel = (dir: string, p: string) =>
+          dir === 'after' ? `Wait ${PRESET_LABELS[p] ?? p}` : `Before ${PRESET_LABELS[p] ?? p}`;
+        const handlePreset = (e: React.ChangeEvent<HTMLSelectElement>) =>
+          onUpdate({ config: { ...cfg, preset: e.target.value }, label: buildLabel(direction, e.target.value) });
+        const handleDirection = (e: React.ChangeEvent<HTMLSelectElement>) =>
+          onUpdate({ config: { ...cfg, direction: e.target.value }, label: buildLabel(e.target.value, preset) });
+
+        return (<>
+          <FieldRow label="Timing">
+            <div className="flex gap-2">
+              <select
+                className="w-28 border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-primary outline-none"
+                value={direction} onChange={handleDirection}
+              >
+                <option value="after">After</option>
+                <option value="before">Before</option>
+              </select>
+              <select
+                className="flex-1 border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-primary outline-none"
+                value={preset} onChange={handlePreset}
+              >
+                <option value="24h">24 hours</option>
+                <option value="12h">12 hours</option>
+                <option value="4h">4 hours</option>
+                <option value="60m">60 minutes</option>
+                <option value="30m">30 minutes</option>
+                <option value="15m">15 minutes</option>
+                <option value="5m">5 minutes</option>
+                <option value="custom">Custom</option>
+              </select>
+            </div>
           </FieldRow>
-        )}
-      </>)}
+
+          {isCustom && (
+            <FieldRow label="Custom Duration">
+              <div className="flex gap-2">
+                <input
+                  type="number" min="1"
+                  className="w-24 border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-primary outline-none"
+                  value={(cfg.customValue as string) ?? '1'} onChange={sel('customValue')}
+                />
+                <select
+                  className="flex-1 border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-primary outline-none"
+                  value={(cfg.customUnit as string) ?? 'hours'} onChange={sel('customUnit')}
+                >
+                  <option value="minutes">Minutes</option>
+                  <option value="hours">Hours</option>
+                  <option value="days">Days</option>
+                </select>
+              </div>
+            </FieldRow>
+          )}
+
+          <div className="flex items-center gap-3 py-1">
+            <Switch checked={useAdvWindow} onCheckedChange={(v) => onUpdate({ config: { ...cfg, useAdvancedWindow: v } })} />
+            <span className="text-sm text-foreground font-medium">Use Advanced Time Window</span>
+          </div>
+
+          {useAdvWindow && (<>
+            <FieldRow label="Active Hours">
+              <div className="flex items-center gap-2">
+                <input type="time" className="flex-1 border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-primary outline-none" value={(cfg.windowStart as string) ?? '09:00'} onChange={sel('windowStart')} />
+                <span className="text-sm text-muted-foreground">to</span>
+                <input type="time" className="flex-1 border border-border rounded-lg px-3 py-2.5 text-sm bg-card focus:border-primary outline-none" value={(cfg.windowEnd as string) ?? '18:00'} onChange={sel('windowEnd')} />
+              </div>
+            </FieldRow>
+            <FieldRow label="Active Days">
+              <div className="flex flex-wrap gap-2">
+                {(['mon','tue','wed','thu','fri','sat','sun'] as const).map((d) => {
+                  const DAY_LBL: Record<string,string> = {mon:'Mon',tue:'Tue',wed:'Wed',thu:'Thu',fri:'Fri',sat:'Sat',sun:'Sun'};
+                  const active = windowDays.includes(d);
+                  return (
+                    <button key={d} type="button"
+                      onClick={() => { const next = active ? windowDays.filter((x:string)=>x!==d) : [...windowDays,d]; onUpdate({config:{...cfg,windowDays:next}}); }}
+                      className={cn('px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors', active ? 'bg-primary text-white border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/40')}
+                    >
+                      {DAY_LBL[d]}
+                    </button>
+                  );
+                })}
+              </div>
+            </FieldRow>
+          </>)}
+        </>);
+      })()}
 
       {/* Instagram DM */}
       {node.actionType === 'post_instagram' && (<>
