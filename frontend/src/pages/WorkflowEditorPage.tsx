@@ -464,25 +464,29 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
       </>)}
 
       {/* Calendar triggers */}
-      {['appointment_booked', 'appointment_cancelled', 'appointment_rescheduled', 'appointment_noshow', 'appointment_showup'].includes(node.actionType) && (<>
-        <FieldRow label="Appointment Type">
-          <select className={selectCls} value={(cfg.apptType as string) ?? ''} onChange={sel('apptType')}>
-            <option value="">All types</option>
-            <option>Demo</option>
-            <option>Meeting</option>
-            <option>Call</option>
-            <option>Consultation</option>
-          </select>
+      {['appointment_booked', 'appointment_cancelled', 'appointment_rescheduled', 'appointment_noshow', 'appointment_showup'].includes(node.actionType) && (
+        <FieldRow label="Booking Link (optional)" hint="Only fire for appointments from this calendar. Leave empty to fire for all.">
+          <div className="w-full border border-border rounded-lg px-3 py-2 min-h-10 flex flex-wrap gap-1.5 items-center cursor-text bg-card">
+            {((cfg.calendars as string[]) ?? []).map((blId) => (
+              <span key={blId} className="flex items-center gap-1 bg-muted text-foreground text-xs px-2 py-1 rounded-full">
+                {bookingLinks.find((bl) => bl.id === blId)?.name ?? blId}
+                <button onClick={() => onUpdate({ config: { ...cfg, calendars: ((cfg.calendars as string[]) ?? []).filter((x) => x !== blId) } })}>
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+            <select className="flex-1 min-w-[120px] bg-transparent text-sm outline-none cursor-pointer" value=""
+              onChange={(e) => {
+                if (!e.target.value) return;
+                if (((cfg.calendars as string[]) ?? []).includes(e.target.value)) return;
+                onUpdate({ config: { ...cfg, calendars: [...((cfg.calendars as string[]) ?? []), e.target.value] } });
+              }}>
+              <option value="">+ Add calendar...</option>
+              {bookingLinks.map((bl) => <option key={bl.id} value={bl.id}>{bl.name}</option>)}
+            </select>
+          </div>
         </FieldRow>
-        <FieldRow label="Booking Link (optional)">
-          <select className={selectCls} value={(cfg.bookingLink as string) ?? ''} onChange={sel('bookingLink')}>
-            <option value="">Any booking link</option>
-            <option>30-min Intro Call</option>
-            <option>60-min Strategy Session</option>
-            <option>Product Demo</option>
-          </select>
-        </FieldRow>
-      </>)}
+      )}
 
       {/* Webhook / API trigger */}
       {node.actionType === 'webhook_inbound' && (() => {

@@ -5,7 +5,7 @@ import { api } from '@/lib/api';
 import {
   ChevronLeft, ChevronRight, Plus, Video, Phone as PhoneIcon, Users, Clock,
   Copy, Trash2, Settings2, ChevronDown, Search, X, Check, Pencil,
-  UserCheck, Ban, CalendarDays, AlertTriangle, ExternalLink, Link, UserCog,
+  UserCheck, Ban, CalendarDays, AlertTriangle, ExternalLink, Link, UserCog, RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn, copyToClipboard } from '@/lib/utils';
@@ -24,20 +24,22 @@ const gradStyle   = { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 5
 const shadowStyle = { ...gradStyle, boxShadow: '0 4px 14px rgba(234,88,12,0.28)' };
 
 // ── Status system ─────────────────────────────────────────────────────────────
-type ApptStatus = 'scheduled' | 'showup' | 'noshow' | 'cancelled';
+type ApptStatus = 'scheduled' | 'showup' | 'noshow' | 'cancelled' | 'rescheduled';
 type CalView    = 'day' | 'week' | 'month';
 
 const AS: Record<ApptStatus, { bar: string; bg: string; text: string; label: string; dot: string; border: string; check: string }> = {
-  scheduled: { bar: 'bg-blue-400',   bg: 'bg-blue-50',   text: 'text-blue-700',   label: 'Scheduled', dot: 'bg-blue-400',   border: 'border-blue-200',   check: '#60a5fa' },
-  showup:    { bar: 'bg-green-500',  bg: 'bg-green-50',  text: 'text-green-700',  label: 'Show Up',   dot: 'bg-green-500',  border: 'border-green-200',  check: '#22c55e' },
-  noshow:    { bar: 'bg-amber-400',  bg: 'bg-amber-50',  text: 'text-amber-700',  label: 'No Show',   dot: 'bg-amber-400',  border: 'border-amber-200',  check: '#fbbf24' },
-  cancelled: { bar: 'bg-red-400',    bg: 'bg-red-50',    text: 'text-red-600',    label: 'Cancelled', dot: 'bg-red-400',    border: 'border-red-200',    check: '#f87171' },
+  scheduled:   { bar: 'bg-blue-400',   bg: 'bg-blue-50',   text: 'text-blue-700',   label: 'Scheduled',   dot: 'bg-blue-400',   border: 'border-blue-200',   check: '#60a5fa' },
+  showup:      { bar: 'bg-green-500',  bg: 'bg-green-50',  text: 'text-green-700',  label: 'Show Up',     dot: 'bg-green-500',  border: 'border-green-200',  check: '#22c55e' },
+  noshow:      { bar: 'bg-amber-400',  bg: 'bg-amber-50',  text: 'text-amber-700',  label: 'No Show',     dot: 'bg-amber-400',  border: 'border-amber-200',  check: '#fbbf24' },
+  cancelled:   { bar: 'bg-red-400',    bg: 'bg-red-50',    text: 'text-red-600',    label: 'Cancelled',   dot: 'bg-red-400',    border: 'border-red-200',    check: '#f87171' },
+  rescheduled: { bar: 'bg-purple-400', bg: 'bg-purple-50', text: 'text-purple-700', label: 'Rescheduled', dot: 'bg-purple-400', border: 'border-purple-200', check: '#a78bfa' },
 };
 
 function getApptStatus(e: CalendarEvent): ApptStatus {
-  if (e.status === 'completed')  return 'showup';
-  if (e.status === 'no-show')    return 'noshow';
-  if (e.status === 'cancelled')  return 'cancelled';
+  if (e.status === 'completed')   return 'showup';
+  if (e.status === 'no-show')     return 'noshow';
+  if (e.status === 'cancelled')   return 'cancelled';
+  if (e.status === 'rescheduled') return 'rescheduled';
   return 'scheduled';
 }
 
@@ -98,6 +100,7 @@ function ApptPopup({ event, onClose, onStatusChange, onDelete, onUpdate, staff }
   staff: any[];
 }) {
   const [editing, setEditing] = useState(false);
+  const [isRescheduling, setIsRescheduling] = useState(false);
   const [editForm, setEditForm] = useState({
     date: event.date, time: event.time,
     type: event.type as 'call' | 'demo' | 'meeting',
@@ -116,21 +119,24 @@ function ApptPopup({ event, onClose, onStatusChange, onDelete, onUpdate, staff }
     const endDate  = new Date(startIso);
     endDate.setMinutes(endDate.getMinutes() + editForm.duration);
     try {
-      await api.patch(`/api/calendar/${event.id}`, {
+      const payload: any = {
         type: editForm.type,
         start_time: startIso,
         end_time: endDate.toISOString(),
         assigned_to: editForm.assignedTo || null,
         meeting_link: editForm.meetingLink.trim() || null,
-      });
+      };
+      if (isRescheduling) payload.status = 'rescheduled';
+      await api.patch(`/api/calendar/${event.id}`, payload);
       onUpdate(event.id, {
         type: editForm.type,
         date: editForm.date, time: editForm.time,
         duration: editForm.duration,
         assignedTo: editForm.assignedTo,
         meetingLink: editForm.meetingLink.trim() || undefined,
+        ...(isRescheduling ? { status: 'rescheduled' } : {}),
       });
-      toast.success('Event updated');
+      toast.success(isRescheduling ? 'Appointment rescheduled' : 'Event updated');
       onClose();
     } catch (err: any) {
       const msg: string = err?.message ?? '';
@@ -266,18 +272,18 @@ function ApptPopup({ event, onClose, onStatusChange, onDelete, onUpdate, staff }
                     className="w-full border border-gray-200 rounded-xl px-3 py-2 text-[12px] outline-none focus:border-primary/40 placeholder:text-[#c4b09e]" />
                 </div>
                 <div className="flex gap-2 pt-1">
-                  <button onClick={() => setEditing(false)}
+                  <button onClick={() => { setEditing(false); setIsRescheduling(false); }}
                     className="flex-1 py-2 rounded-xl text-[12px] font-bold text-[#7a6b5c] border border-black/10 bg-white hover:bg-[#faf8f6]">Cancel</button>
                   <button onClick={handleSaveEdit} disabled={saving}
                     className="flex-1 py-2 rounded-xl text-[12px] font-bold text-white disabled:opacity-50" style={shadowStyle}>
-                    {saving ? 'Saving…' : 'Save'}
+                    {saving ? 'Saving…' : isRescheduling ? 'Reschedule' : 'Save'}
                   </button>
                 </div>
               </div>
             )}
           </div>
 
-          {!editing && st === 'scheduled' && (
+          {!editing && (st === 'scheduled' || st === 'rescheduled') && (
             <div className="px-5 py-3 border-t border-[#f5f0eb] flex flex-wrap gap-2">
               <button onClick={() => setPendingAction({ type: 'status', status: 'completed', label: 'Show Up', msg: 'Mark this appointment as shown up?' })}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-green-600 bg-green-50 border border-green-200 hover:bg-green-100 transition-colors">
@@ -287,6 +293,12 @@ function ApptPopup({ event, onClose, onStatusChange, onDelete, onUpdate, staff }
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-amber-600 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-colors">
                 <AlertTriangle className="w-3 h-3" /> No Show
               </button>
+              {st === 'scheduled' && (
+                <button onClick={() => { setIsRescheduling(true); setEditing(true); }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-purple-600 bg-purple-50 border border-purple-200 hover:bg-purple-100 transition-colors">
+                  <RefreshCw className="w-3 h-3" /> Reschedule
+                </button>
+              )}
               <button onClick={() => setPendingAction({ type: 'status', status: 'cancelled', label: 'Cancel', msg: 'Are you sure you want to cancel this appointment?' })}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors">
                 <Ban className="w-3 h-3" /> Cancel
@@ -568,18 +580,19 @@ for (let h = 8; h <= 17; h++) {
 
 // ── Status badge styles for Appointments tab ──────────────────────────────────
 const STATUS_BADGE: Record<string, string> = {
-  booked:    'bg-blue-50 text-blue-700 border-blue-200',
-  cancelled: 'bg-red-50 text-red-600 border-red-200',
-  'show-up': 'bg-green-50 text-green-700 border-green-200',
-  'no-show': 'bg-amber-50 text-amber-700 border-amber-200',
+  booked:       'bg-blue-50 text-blue-700 border-blue-200',
+  cancelled:    'bg-red-50 text-red-600 border-red-200',
+  'show-up':    'bg-green-50 text-green-700 border-green-200',
+  'no-show':    'bg-amber-50 text-amber-700 border-amber-200',
+  rescheduled:  'bg-purple-50 text-purple-700 border-purple-200',
 };
-const STATUS_LBL: Record<string, string>  = { booked: 'Booked', cancelled: 'Cancelled', 'show-up': 'Show Up', 'no-show': 'No Show' };
-const DOT_COLOR:  Record<string, string>  = { booked: 'bg-blue-500', cancelled: 'bg-red-500', 'show-up': 'bg-green-500', 'no-show': 'bg-amber-400' };
+const STATUS_LBL: Record<string, string>  = { booked: 'Booked', cancelled: 'Cancelled', 'show-up': 'Show Up', 'no-show': 'No Show', rescheduled: 'Rescheduled' };
+const DOT_COLOR:  Record<string, string>  = { booked: 'bg-blue-500', cancelled: 'bg-red-500', 'show-up': 'bg-green-500', 'no-show': 'bg-amber-400', rescheduled: 'bg-purple-400' };
 
 interface Appointment {
   id: string; eventTypeName: string; leadName: string; email: string;
   date: string; startTime: string; endTime: string;
-  status: 'booked' | 'cancelled' | 'show-up' | 'no-show'; timezone: string;
+  status: 'booked' | 'cancelled' | 'show-up' | 'no-show' | 'rescheduled'; timezone: string;
 }
 
 // ── Main CalendarPage ─────────────────────────────────────────────────────────
@@ -625,7 +638,7 @@ export default function CalendarPage() {
   const [view,             setView]             = useState<CalView>('week');
   const [cursor,           setCursor]           = useState(new Date());
   const [search,           setSearch]           = useState('');
-  const [visibleStatuses,  setVisibleStatuses]  = useState<Set<ApptStatus>>(new Set(['scheduled','showup','noshow','cancelled']));
+  const [visibleStatuses,  setVisibleStatuses]  = useState<Set<ApptStatus>>(new Set(['scheduled','showup','noshow','cancelled','rescheduled']));
   const [selectedEvent,    setSelectedEvent]    = useState<CalendarEvent | null>(null);
   const [showNewEvent,     setShowNewEvent]     = useState(false);
   const [newEventForm, setNewEventForm] = useState({ date: format(new Date(), 'yyyy-MM-dd'), time: '09:00', leadName: '', leadId: '', type: 'call' as 'call'|'demo'|'meeting', duration: 30, assignedTo: '', meetingLink: '' });
@@ -787,12 +800,12 @@ export default function CalendarPage() {
   }, [location.state]);
 
   // ── Appointments tab state ─────────────────────────────────────────────────
-  const [apptFilter, setApptFilter] = useState<'all'|'booked'|'show-up'|'no-show'|'cancelled'>('all');
+  const [apptFilter, setApptFilter] = useState<'all'|'booked'|'show-up'|'no-show'|'cancelled'|'rescheduled'>('all');
 
   const appointments = useMemo<Appointment[]>(() => {
     const statusMap: Record<string, Appointment['status']> = {
       scheduled: 'booked', completed: 'show-up',
-      cancelled: 'cancelled', 'no-show': 'no-show',
+      cancelled: 'cancelled', 'no-show': 'no-show', rescheduled: 'rescheduled',
     };
     return calendarEvents.map((e) => {
       const [h, m] = e.time.split(':').map(Number);
@@ -819,6 +832,7 @@ export default function CalendarPage() {
     showUp: appointments.filter((a) => a.status === 'show-up').length,
     noShow: appointments.filter((a) => a.status === 'no-show').length,
     cancelled: appointments.filter((a) => a.status === 'cancelled').length,
+    rescheduled: appointments.filter((a) => a.status === 'rescheduled').length,
   }), [appointments]);
 
   // OTHER TABS
@@ -1079,11 +1093,12 @@ export default function CalendarPage() {
         <div className="space-y-5">
           <div className="flex items-center gap-2 flex-wrap">
             {([
-              { key: 'all',       label: 'All',       count: apptStats.total     },
-              { key: 'booked',    label: 'Booked',    count: apptStats.booked    },
-              { key: 'show-up',   label: 'Show Up',   count: apptStats.showUp    },
-              { key: 'no-show',   label: 'No Show',   count: apptStats.noShow    },
-              { key: 'cancelled', label: 'Cancelled', count: apptStats.cancelled },
+              { key: 'all',          label: 'All',          count: apptStats.total       },
+              { key: 'booked',       label: 'Booked',       count: apptStats.booked      },
+              { key: 'show-up',      label: 'Show Up',      count: apptStats.showUp      },
+              { key: 'no-show',      label: 'No Show',      count: apptStats.noShow      },
+              { key: 'rescheduled',  label: 'Rescheduled',  count: apptStats.rescheduled },
+              { key: 'cancelled',    label: 'Cancelled',    count: apptStats.cancelled   },
             ] as const).map((f) => (
               <button key={f.key} onClick={() => setApptFilter(f.key)}
                 className={cn('flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-semibold border transition-all',
@@ -1126,7 +1141,7 @@ export default function CalendarPage() {
                         <span className={cn('text-[11px] font-semibold px-2.5 py-1 rounded-full border shrink-0', STATUS_BADGE[apt.status])}>{STATUS_LBL[apt.status]}</span>
                       </div>
                       <div className="px-6 py-3 border-t border-black/[0.04] bg-[#faf8f6] flex items-center gap-2 flex-wrap">
-                        {apt.status === 'booked' && [
+                        {(apt.status === 'booked' || apt.status === 'rescheduled') && [
                           { label: 'Show Up',  status: 'completed', Icon: UserCheck,    cls: 'text-green-600 bg-green-50 border-green-200 hover:bg-green-100' },
                           { label: 'No Show',  status: 'no-show',   Icon: AlertTriangle, cls: 'text-amber-600 bg-amber-50 border-amber-200 hover:bg-amber-100' },
                           { label: 'Cancel',   status: 'cancelled', Icon: Ban,           cls: 'text-red-600 bg-red-50 border-red-200 hover:bg-red-100' },
@@ -1138,6 +1153,12 @@ export default function CalendarPage() {
                             <Icon className="w-3.5 h-3.5" /> {label}
                           </button>
                         ))}
+                        {apt.status === 'booked' && (
+                          <button onClick={() => { const e = calendarEvents.find((ce) => ce.id === apt.id); if (e) setSelectedEvent(e); }}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-bold border transition-colors text-purple-600 bg-purple-50 border-purple-200 hover:bg-purple-100">
+                            <RefreshCw className="w-3.5 h-3.5" /> Reschedule
+                          </button>
+                        )}
                         <button onClick={async () => {
                           if (!window.confirm('Delete this event?')) return;
                           try { await deleteEvent(apt.id); } catch { toast.error('Failed'); }
