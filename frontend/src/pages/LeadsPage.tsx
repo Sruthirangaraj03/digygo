@@ -3744,10 +3744,14 @@ export default function LeadsPage() {
                   const nextB = followUps
                     .filter((f) => f.leadId === b.id && !f.completed)
                     .sort((x, y) => new Date(x.dueAt).getTime() - new Date(y.dueAt).getTime())[0];
-                  if (nextA && nextB) return new Date(nextA.dueAt).getTime() - new Date(nextB.dueAt).getTime();
-                  if (nextA) return -1;
-                  if (nextB) return 1;
-                  return 0;
+                  const aOverdue = nextA && new Date(nextA.dueAt) < now;
+                  const bOverdue = nextB && new Date(nextB.dueAt) < now;
+                  // Overdue follow-ups float to top, sorted by most overdue first
+                  if (aOverdue && !bOverdue) return -1;
+                  if (!aOverdue && bOverdue) return 1;
+                  if (aOverdue && bOverdue) return new Date(nextA!.dueAt).getTime() - new Date(nextB!.dueAt).getTime();
+                  // No overdue: newest lead first
+                  return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
                 });
               return (
               <StageColumn
