@@ -143,7 +143,9 @@ router.get('/tags', async (req: AuthRequest, res: Response) => {
       `SELECT DISTINCT jsonb_array_elements_text(tags) AS tag
        FROM leads
        WHERE tenant_id = $1 AND is_deleted = FALSE
-         AND tags IS NOT NULL AND jsonb_array_length(tags) > 0
+         AND tags IS NOT NULL
+         AND jsonb_typeof(tags) = 'array'
+         AND jsonb_array_length(tags) > 0
        ORDER BY tag`,
       [req.user!.tenantId]
     );

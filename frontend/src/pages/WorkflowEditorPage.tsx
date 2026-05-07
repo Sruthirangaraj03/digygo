@@ -503,6 +503,12 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
               </p>
             </div>
           )}
+          <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5">
+            <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+            <p className="text-xs text-blue-800">
+              <span className="font-semibold">Re-entry tip:</span> By default this workflow fires only <span className="font-semibold">once per contact</span>. If the tag is removed and re-added later, the workflow won't fire again — enable <span className="font-semibold">Allow Re-entry</span> in the settings panel to fire every time the tag is added.
+            </p>
+          </div>
         </>);
       })()}
 
