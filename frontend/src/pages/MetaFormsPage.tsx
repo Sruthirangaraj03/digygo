@@ -1002,13 +1002,18 @@ export default function MetaFormsPage() {
         );
       } else if (workflows.length === 0) {
         setPushResult({ formId: form.form_id, type, pushed, created, existing, workflows: [] });
-        toast.warning('No live automation matched this form — leads are in CRM but no workflow ran. Create one in Automation.');
+        toast.warning(`${pushed} lead${pushed !== 1 ? 's' : ''} added to CRM — no automation ran. Set up a workflow with a Meta Form trigger first.`);
       } else {
         setPushResult({ formId: form.form_id, type, pushed, created, existing, workflows });
         const parts = [`Done: ${done}`];
         if (skipped > 0) parts.push(`Skipped: ${skipped}`);
         if (failed > 0)  parts.push(`Failed: ${failed}`);
-        toast.success(`${pushed} lead${pushed !== 1 ? 's' : ''} pushed — ${parts.join(', ')}`);
+        const allSkipped = done === 0 && skipped > 0 && failed === 0;
+        if (allSkipped) {
+          toast.warning(`${pushed} lead${pushed !== 1 ? 's' : ''} pushed — all skipped (already enrolled). Enable "Allow Re-entry" on the workflow to re-run.`);
+        } else {
+          toast.success(`${pushed} lead${pushed !== 1 ? 's' : ''} pushed — ${parts.join(', ')}`);
+        }
       }
       // Refresh from server for accurate count (backend recalculates from CRM leads)
       const fresh = await api.get<MetaFormRow[]>('/api/integrations/meta/connected-forms').catch(() => forms);
@@ -1672,7 +1677,13 @@ export default function MetaFormsPage() {
                 <div className="rounded-xl border border-dashed border-black/10 px-4 py-5 text-center">
                   <Zap className="w-6 h-6 text-[#d4c9bc] mx-auto mb-2" />
                   <p className="text-[12px] font-semibold text-[#1c1410]">No active workflows</p>
-                  <p className="text-[11px] text-[#9e8e7e] mt-0.5">Create a workflow with a Meta Form trigger in Automation first.</p>
+                  <p className="text-[11px] text-[#9e8e7e] mt-0.5 mb-3">Create a workflow with a Meta Form trigger and select this form.</p>
+                  <button
+                    onClick={() => { setTriggerModal(null); navigate('/automation/workflows'); }}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-white text-[11px] font-semibold hover:bg-[#a33a0a] transition-colors"
+                  >
+                    <Zap className="w-3 h-3" /> Go to Automation
+                  </button>
                 </div>
               ) : (
                 <div className="relative">
@@ -1689,21 +1700,31 @@ export default function MetaFormsPage() {
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#9e8e7e] pointer-events-none" />
                 </div>
               )}
-              <div className="flex gap-2 mt-5">
-                <button
-                  onClick={() => setTriggerModal(null)}
-                  className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#faf8f6] transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => handlePushToAutomation(triggerModal, 'old', triggerWorkflowId || undefined)}
-                  disabled={triggerWorkflows.length === 0 || !triggerWorkflowId}
-                  className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white disabled:opacity-40 transition-all"
-                  style={triggerWorkflowId ? { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' } : { background: '#d1cbc7' }}
-                >
-                  Run Workflow
-                </button>
+              <div className="flex flex-col gap-2 mt-5">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setTriggerModal(null)}
+                    className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handlePushToAutomation(triggerModal, 'old', triggerWorkflowId || undefined)}
+                    disabled={!triggerWorkflowId}
+                    className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white disabled:opacity-40 transition-all"
+                    style={triggerWorkflowId ? { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' } : { background: '#d1cbc7' }}
+                  >
+                    Run Workflow
+                  </button>
+                </div>
+                {triggerWorkflows.length > 0 && (
+                  <button
+                    onClick={() => handlePushToAutomation(triggerModal, 'old')}
+                    className="w-full py-2 rounded-xl text-[12px] font-medium text-[#7a6b5c] border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                  >
+                    Import to CRM only (no automation)
+                  </button>
+                )}
               </div>
             </div>
           </div>

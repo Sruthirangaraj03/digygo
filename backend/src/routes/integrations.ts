@@ -279,10 +279,10 @@ async function fetchAndInsertAllLeads(tenantId: string, token: string): Promise<
             mapping
           );
 
-          // 2. Check by source_ref — restore if soft-deleted
+          // 2. Check by source_ref — restore if soft-deleted (tenant-scoped to prevent cross-tenant skip)
           const idem = await query(
-            `SELECT id, is_deleted FROM leads WHERE source='meta_form' AND source_ref=$1 LIMIT 1`,
-            [leadgenId]
+            `SELECT id, is_deleted FROM leads WHERE tenant_id=$1 AND source='meta_form' AND source_ref=$2 LIMIT 1`,
+            [tenantId, leadgenId]
           );
           if (idem.rows[0]) {
             if (idem.rows[0].is_deleted) {
@@ -1435,9 +1435,9 @@ router.get('/meta/forms/:formId/workflows', checkPermission('meta_forms:edit'), 
       if (!trigger) continue;
       if (!['meta_form', 'form_submitted', 'lead_created'].includes(trigger.actionType ?? '')) continue;
       const cfgForms = trigger.config?.forms as string[] | undefined;
-      if (cfgForms && cfgForms.length > 0) {
-        if (!cfgForms.includes(formId) && !cfgForms.includes(formName)) continue;
-      }
+      // Empty form list = inactive by design (bug-fix #7) — exclude from picker
+      if (!cfgForms || cfgForms.length === 0) continue;
+      if (!cfgForms.includes(formId) && !cfgForms.includes(formName)) continue;
       matching.push({ id: wf.id, name: wf.name });
     }
     res.json(matching);
@@ -1470,7 +1470,8 @@ router.post('/meta/forms/:formId/push-automation', checkPermission('meta_forms:e
     const mf = mfRes.rows[0];
     const mapping: Array<{ fb_field: string; crm_field: string }> = mf.field_mapping ?? [];
 
-    // Collect matching workflow names for the response (informational only)
+    // Collect matching workflows — must have meta_form/form_submitted/lead_created trigger
+    // AND must have this form's id or name in their form list (empty list = never fires).
     const wfRes = await query(
       `SELECT id, name, nodes FROM workflows WHERE tenant_id=$1 AND status='active'`,
       [tenantId]
@@ -1482,10 +1483,18 @@ router.post('/meta/forms/:formId/push-automation', checkPermission('meta_forms:e
       if (!trigger) continue;
       if (!['meta_form', 'form_submitted', 'lead_created'].includes(trigger.actionType ?? '')) continue;
       const cfgForms = trigger.config?.forms as string[] | undefined;
-      if (cfgForms && cfgForms.length > 0) {
-        if (!cfgForms.includes(formId) && !cfgForms.includes(mf.form_name)) continue;
-      }
+      // For form triggers: empty form list = inactive by design (bug-fix #7) — skip
+      if (!cfgForms || cfgForms.length === 0) continue;
+      if (!cfgForms.includes(formId) && !cfgForms.includes(mf.form_name)) continue;
       matchingWFs.push({ id: wf.id, name: wf.name });
+    }
+
+    // Validate selectedWorkflowId up-front so we can return a clear error immediately
+    // instead of silently producing Done:0 when the workflow was deactivated between
+    // modal-open and the user clicking "Run Workflow".
+    if (selectedWorkflowId && !matchingWFs.find((w) => w.id === selectedWorkflowId)) {
+      res.status(400).json({ error: 'The selected workflow is no longer active or does not match this form. Reopen the picker to choose a current workflow.' });
+      return;
     }
     // Use page access token for lead retrieval — Meta requires it for /{formId}/leads
     const pageTokenMap = await buildPageTokenMap(token);
@@ -1601,8 +1610,16 @@ router.post('/meta/forms/:formId/push-automation', checkPermission('meta_forms:e
                WHERE l.id=$1 AND l.tenant_id=$2 AND l.is_deleted=FALSE`,
               [lead.id, tenantId]
             );
-            if (!leadRes.rows[0]) continue;
+            if (!leadRes.rows[0]) { totalSkipped++; continue; }
             const leadCtx = { ...leadRes.rows[0], form_id: lead.form_id, form_name: lead.form_name };
+
+            // Manual push = intentional re-run — supersede any prior execution so the
+            // unique constraint never blocks re-entry regardless of allow_reentry setting.
+            await query(
+              `UPDATE workflow_executions SET status='superseded'
+               WHERE workflow_id=$1 AND lead_id=$2 AND status IN ('running','completed','skipped','superseded')`,
+              [wf.id, lead.id]
+            ).catch(() => null);
 
             const execRes = await query(
               `INSERT INTO workflow_executions
@@ -1642,7 +1659,7 @@ router.post('/meta/forms/:formId/push-automation', checkPermission('meta_forms:e
       [mf.form_id, tenantId, mf.id]
     ).catch(() => null);
 
-    res.json({ pushed: crmLeads.length, created, existing, workflows: matchingWFs, done: totalDone, skipped: totalSkipped, failed: totalFailed });
+    res.json({ pushed: crmLeads.length, created, existing, workflows: wfsToRun, done: totalDone, skipped: totalSkipped, failed: totalFailed });
   } catch (err: any) {
     console.error('[push-automation]', err);
     res.status(500).json({ error: err.message ?? 'Server error' });
