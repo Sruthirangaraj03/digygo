@@ -1635,15 +1635,16 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
                         <X className="w-4 h-4" />
                       </button>
                     </div>
-                    <div className="flex border-b px-2 gap-1 overflow-x-auto">
+                    <div className="flex px-2 gap-1 overflow-x-auto shrink-0">
                       {uaTabs.map((tab) => (
                         <button key={tab.id} type="button"
                           onClick={() => setVarTab(tab.id)}
-                          className={`text-xs font-semibold px-3 py-2.5 whitespace-nowrap transition-colors border-b-2 -mb-px ${varTab === tab.id ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                          className={`text-xs font-semibold px-3 py-2 whitespace-nowrap transition-colors ${varTab === tab.id ? 'text-primary border-b-2 border-primary' : 'text-gray-500 hover:text-gray-700 border-b-2 border-transparent'}`}>
                           {tab.label}
                         </button>
                       ))}
                     </div>
+                    <div className="border-b" />
                     <div className="flex-1 overflow-y-auto p-2">
                       {(uaTabs.find((t) => t.id === varTab)?.fields ?? []).map((f) => (
                         <button key={f.variable} type="button"
