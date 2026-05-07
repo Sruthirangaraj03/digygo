@@ -458,8 +458,32 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
       </>)}
 
       {node.actionType === 'contact_tagged' && (<>
-        <FieldRow label="Tag">
-          <input className={inputCls} placeholder="Enter tag name (leave empty for any tag)" value={(cfg.tag as string) ?? ''} onChange={sel('tag')} />
+        <FieldRow label="Tags (optional)" hint="Fires when any of these tags is added. Leave empty to fire for any tag.">
+          <div className="w-full border border-border rounded-lg px-3 py-2 min-h-10 flex flex-wrap gap-1.5 items-center bg-card">
+            {((cfg.tags as string[]) ?? []).map((t) => (
+              <span key={t} className="flex items-center gap-1 bg-muted text-foreground text-xs px-2 py-1 rounded-full">
+                {t}
+                <button onClick={() => onUpdate({ config: { ...cfg, tags: ((cfg.tags as string[]) ?? []).filter((x) => x !== t) } })}>
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+            <select
+              value=""
+              onChange={(e) => {
+                if (!e.target.value) return;
+                const existing = (cfg.tags as string[]) ?? [];
+                if (existing.includes(e.target.value)) return;
+                onUpdate({ config: { ...cfg, tags: [...existing, e.target.value] } });
+              }}
+              className="flex-1 min-w-[120px] text-[12px] bg-transparent outline-none text-[#7a6b5c] cursor-pointer"
+            >
+              <option value="">+ Add tag...</option>
+              {tags.filter((t) => !((cfg.tags as string[]) ?? []).includes(t.name)).map((t) => (
+                <option key={t.id} value={t.name}>{t.name}</option>
+              ))}
+            </select>
+          </div>
         </FieldRow>
       </>)}
 

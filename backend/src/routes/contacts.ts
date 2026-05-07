@@ -63,6 +63,17 @@ router.post('/', checkPermission('contacts:create'), checkUsage('contacts'), asy
 // PATCH /api/contacts/:id
 router.patch('/:id', checkPermission('contacts:edit'), async (req: AuthRequest, res: Response) => {
   const { name, email, phone, company, tags } = req.body;
+
+  // Fetch current tags BEFORE update so we can compute what was actually added
+  let oldTags: string[] = [];
+  if (tags !== undefined) {
+    const cur = await query(
+      'SELECT tags FROM contacts WHERE id=$1 AND tenant_id=$2',
+      [req.params.id, req.user!.tenantId]
+    ).catch(() => null);
+    oldTags = (cur?.rows[0]?.tags as string[]) ?? [];
+  }
+
   const fields: string[] = [];
   const params: any[] = [];
   if (name    !== undefined) { params.push(name);    fields.push(`name=$${params.length}`); }
@@ -80,15 +91,29 @@ router.patch('/:id', checkPermission('contacts:edit'), async (req: AuthRequest, 
     if (!result.rows[0]) { res.status(404).json({ error: 'Not found' }); return; }
     const contact = result.rows[0];
     res.json(contact);
-    const lead = { id: contact.lead_id, name: contact.name, email: contact.email, phone: contact.phone };
-    const isTagUpdate = tags !== undefined;
-    const triggerType = isTagUpdate ? 'contact_tagged' : 'contact_updated';
-    // Determine which field changed (first key present in request body)
-    const changedField = isTagUpdate ? '' : (['name','email','phone','company'].find((k) => req.body[k] !== undefined) ?? '');
-    const tagAdded = isTagUpdate ? (Array.isArray(tags) ? (tags as string[])[0] ?? '' : '') : '';
-    setImmediate(() => triggerWorkflows(triggerType, lead, req.user!.tenantId!, req.user!.userId,
-      { triggerContext: { fieldChanged: changedField, tag: tagAdded } }
-    ).catch(() => null));
+    // Use lead_id if linked, otherwise fall back to contact's own id so variable
+    // interpolation (name/email/phone) still works in non-lead workflow actions
+    const leadCtx = { id: contact.lead_id ?? contact.id, name: contact.name, email: contact.email, phone: contact.phone };
+
+    if (tags !== undefined) {
+      // Only fire contact_tagged for tags that were newly added (not removals)
+      const newTags = Array.isArray(tags) ? (tags as string[]) : [];
+      const addedTags = newTags.filter((t) => !oldTags.includes(t));
+      if (addedTags.length > 0) {
+        setImmediate(() => {
+          for (const addedTag of addedTags) {
+            triggerWorkflows('contact_tagged', leadCtx, req.user!.tenantId!, req.user!.userId,
+              { triggerContext: { tag: addedTag } }
+            ).catch(() => null);
+          }
+        });
+      }
+    } else {
+      const changedField = ['name','email','phone','company'].find((k) => req.body[k] !== undefined) ?? '';
+      setImmediate(() => triggerWorkflows('contact_updated', leadCtx, req.user!.tenantId!, req.user!.userId,
+        { triggerContext: { fieldChanged: changedField } }
+      ).catch(() => null));
+    }
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 

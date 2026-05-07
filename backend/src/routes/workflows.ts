@@ -1738,8 +1738,11 @@ export async function triggerWorkflows(
       }
 
       if (triggerType === 'contact_tagged') {
-        const cfgTag = (triggerNode.config?.tag as string) ?? '';
-        if (cfgTag && cfgTag !== (ctx.tag ?? '')) continue;
+        // Support cfg.tags (new multi-tag array) and cfg.tag (old single-tag string)
+        const cfgTags: string[] = Array.isArray(triggerNode.config?.tags)
+          ? (triggerNode.config!.tags as string[])
+          : (triggerNode.config?.tag as string) ? [(triggerNode.config!.tag as string)] : [];
+        if (cfgTags.length > 0 && !cfgTags.includes(ctx.tag ?? '')) continue;
       }
 
       if (['appointment_booked','appointment_cancelled','appointment_rescheduled',
