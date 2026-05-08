@@ -2549,10 +2549,32 @@ publicWorkflowRouter.post('/:workflowId/execute', async (req: any, res: any) => 
     // Execute nodes asynchronously
     setImmediate(async () => {
       try {
+        // Enforce allow_reentry
+        if (!wf.allow_reentry) {
+          const existing = await query(
+            `SELECT id FROM workflow_executions
+             WHERE workflow_id=$1 AND lead_id=$2 AND status IN ('running','completed') LIMIT 1`,
+            [workflowId, lead.id]
+          );
+          if (existing.rows[0]) {
+            await query(
+              `INSERT INTO workflow_executions (workflow_id, lead_id, tenant_id, lead_name, trigger_type, status, enrolled_at, completed_at)
+               VALUES ($1,$2,$3,$4,'api','skipped',NOW(),NOW())`,
+              [workflowId, lead.id, tenantId, lead.name ?? '']
+            ).catch(() => null);
+            return;
+          }
+        } else {
+          await query(
+            `UPDATE workflow_executions SET status='superseded'
+             WHERE workflow_id=$1 AND lead_id=$2 AND status IN ('running','completed')`,
+            [workflowId, lead.id]
+          );
+        }
         const execIns = await query(
-          `INSERT INTO workflow_executions (workflow_id, lead_id, tenant_id, status, started_at)
-           VALUES ($1, $2, $3, 'running', NOW()) RETURNING id`,
-          [workflowId, lead.id, tenantId]
+          `INSERT INTO workflow_executions (workflow_id, lead_id, tenant_id, lead_name, trigger_type, status, enrolled_at)
+           VALUES ($1, $2, $3, $4, 'api', 'running', NOW()) RETURNING id`,
+          [workflowId, lead.id, tenantId, lead.name ?? '']
         );
         const executionId = execIns.rows[0].id;
         const nodes: WFNode[] = wf.nodes ?? [];
