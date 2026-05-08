@@ -35,6 +35,16 @@ function sendWAText(phoneNumberId: string, token: string, toPhone: string, text:
   });
 }
 
+function interpolateBroadcast(template: string, member: { name: string | null; phone: string | null; email: string | null }): string {
+  const parts = (member.name ?? '').split(' ');
+  const firstName = parts[0] ?? '';
+  return template
+    .replace(/\{first_name\}/g, firstName)
+    .replace(/\{full_name\}/g, member.name ?? '')
+    .replace(/\{phone\}/g, member.phone ?? '')
+    .replace(/\{email\}/g, member.email ?? '');
+}
+
 const router = Router();
 router.use(requireAuth);
 router.use(requireTenant);
@@ -221,7 +231,7 @@ router.post('/:id/members/filter', checkPermission('contact_groups:manage'), asy
       return;
     }
 
-    const leads = await query(`SELECT id FROM leads l ${where} LIMIT 5000`, params);
+    const leads = await query(`SELECT l.* FROM leads l ${where} LIMIT 5000`, params);
     let added = 0;
     for (const lead of leads.rows) {
       const r = await query(
@@ -230,7 +240,18 @@ router.post('/:id/members/filter', checkPermission('contact_groups:manage'), asy
          ON CONFLICT (group_id, lead_id) DO NOTHING`,
         [req.params.id, lead.id]
       );
-      added += r.rowCount ?? 0;
+      if ((r.rowCount ?? 0) > 0) {
+        added++;
+        if (tenantId) {
+          const gid = req.params.id;
+          const leadSnap = { ...lead };
+          setImmediate(() =>
+            triggerWorkflows('contact_group_added', leadSnap, tenantId!, req.user!.userId, {
+              triggerContext: { group_id: gid },
+            }).catch(() => null)
+          );
+        }
+      }
     }
     res.json({ added, total: leads.rows.length });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
@@ -324,7 +345,7 @@ router.post('/:id/broadcast', checkPermission('contact_groups:manage'), async (r
       for (const m of members) {
         if (!m.phone) { skipped++; continue; }
         try {
-          const resp = await sendWAText(phone_number_id, waToken, m.phone, message.trim());
+          const resp = await sendWAText(phone_number_id, waToken, m.phone, interpolateBroadcast(message.trim(), m));
           if (resp?.error) {
             failed++;
             errors.push(`${m.name}: ${resp.error.message}`);
@@ -344,11 +365,12 @@ router.post('/:id/broadcast', checkPermission('contact_groups:manage'), async (r
       for (const m of members) {
         if (!m.email) { skipped++; continue; }
         try {
+          const interpolated = interpolateBroadcast(message.trim(), m);
           await sendEmail({
             to: m.email,
             subject: subject.trim(),
-            html: message.trim().replace(/\n/g, '<br>'),
-            text: message.trim(),
+            html: interpolated.replace(/\n/g, '<br>'),
+            text: interpolated,
           });
           sent++;
         } catch (err: any) {

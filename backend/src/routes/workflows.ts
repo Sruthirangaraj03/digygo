@@ -770,14 +770,25 @@ export async function executeNodes(
         // ── Remove from Contact Group ──────────────────────────────────────────
         case 'remove_contact': {
           const groupId = (node.config.group_id ?? '') as string;
-          if (!groupId) { status = 'skipped'; message = 'remove_contact: no group configured'; break; }
+          if (!groupId) {
+            if (node.config.targetList) {
+              status = 'failed'; message = 'remove_contact: action needs reconfiguration — open this node and select a Contact Group from the dropdown';
+            } else {
+              status = 'skipped'; message = 'remove_contact: no group configured';
+            }
+            break;
+          }
           if (!lead.id) { status = 'skipped'; message = 'remove_contact: no lead ID'; break; }
+          const rcGrp = await query(
+            `SELECT name FROM contact_groups WHERE id=$1::uuid AND tenant_id=$2::uuid`,
+            [groupId, tenantId]
+          );
+          if (!rcGrp.rows[0]) { status = 'skipped'; message = 'remove_contact: group not found or belongs to another tenant'; break; }
           await query(
             `DELETE FROM contact_group_members WHERE group_id=$1::uuid AND lead_id=$2::uuid`,
             [groupId, lead.id]
           );
-          const grpName = await query(`SELECT name FROM contact_groups WHERE id=$1::uuid`, [groupId]);
-          message = `Removed from group: ${grpName.rows[0]?.name ?? groupId}`;
+          message = `Removed from group: ${rcGrp.rows[0].name}`;
           break;
         }
 
@@ -1464,7 +1475,14 @@ export async function executeNodes(
         case 'contact_group': {
           const groupAction = (node.config.groupAction ?? 'add') as string;
           const groupId     = (node.config.group_id ?? '') as string;
-          if (!groupId) { status = 'skipped'; message = 'contact_group: no group configured — open the action node and select a group'; break; }
+          if (!groupId) {
+            if (node.config.targetList) {
+              status = 'failed'; message = 'contact_group: action needs reconfiguration — open this node and select a Contact Group from the dropdown';
+            } else {
+              status = 'skipped'; message = 'contact_group: no group configured — open the action node and select a group';
+            }
+            break;
+          }
           if (!lead.id) { status = 'skipped'; message = 'contact_group: no lead ID'; break; }
 
           const grpCheck = await query(
@@ -1481,19 +1499,31 @@ export async function executeNodes(
             );
             message = `Removed from group: ${grpLabel}`;
           } else if (groupAction === 'move') {
-            // Remove from ALL groups for this tenant, then add to target
-            await query(
-              `DELETE FROM contact_group_members
-               WHERE lead_id=$1::uuid
-                 AND group_id IN (SELECT id FROM contact_groups WHERE tenant_id=$2::uuid)`,
-              [lead.id, tenantId]
-            );
+            const sourceGroupId = (node.config.source_group_id ?? '') as string;
+            if (sourceGroupId) {
+              await query(
+                `DELETE FROM contact_group_members WHERE group_id=$1::uuid AND lead_id=$2::uuid`,
+                [sourceGroupId, lead.id]
+              );
+            } else {
+              await query(
+                `DELETE FROM contact_group_members
+                 WHERE lead_id=$1::uuid
+                   AND group_id IN (SELECT id FROM contact_groups WHERE tenant_id=$2::uuid)`,
+                [lead.id, tenantId]
+              );
+            }
             await query(
               `INSERT INTO contact_group_members (group_id, lead_id, added_by)
                VALUES ($1::uuid, $2::uuid, 'workflow') ON CONFLICT DO NOTHING`,
               [groupId, lead.id]
             );
             message = `Moved to group: ${grpLabel}`;
+            setImmediate(() =>
+              triggerWorkflows('contact_group_added', lead, tenantId, safeUserId ?? userId, {
+                triggerContext: { group_id: groupId },
+              }).catch(() => null)
+            );
           } else {
             // add
             const r = await query(
@@ -1501,7 +1531,16 @@ export async function executeNodes(
                VALUES ($1::uuid, $2::uuid, 'workflow') ON CONFLICT (group_id, lead_id) DO NOTHING`,
               [groupId, lead.id]
             );
-            message = (r.rowCount ?? 0) > 0 ? `Added to group: ${grpLabel}` : `Already in group: ${grpLabel} (skipped)`;
+            if ((r.rowCount ?? 0) > 0) {
+              message = `Added to group: ${grpLabel}`;
+              setImmediate(() =>
+                triggerWorkflows('contact_group_added', lead, tenantId, safeUserId ?? userId, {
+                  triggerContext: { group_id: groupId },
+                }).catch(() => null)
+              );
+            } else {
+              message = `Already in group: ${grpLabel} (skipped)`;
+            }
           }
           break;
         }

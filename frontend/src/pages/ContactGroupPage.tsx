@@ -292,13 +292,16 @@ export default function ContactGroupPage() {
       setOpenLead(lead);
     } else {
       // construct minimal Lead from member data if not in store
-      const [firstName = m.lead_name, lastName = ''] = m.lead_name.split(' ');
+      const nameParts = (m.lead_name ?? '').trim().split(' ');
+      const firstName = nameParts[0] ?? '';
+      const lastName  = nameParts.slice(1).join(' ');
       setOpenLead({
         id: m.lead_id, firstName, lastName,
         email: m.email ?? '', phone: m.phone ?? '',
-        stage: m.stage_name ?? '', stageId: '', pipelineId: '',
-        assignedTo: '', source: m.source ?? '',
-        tags: m.tags ?? [], score: 0, dealValue: 0,
+        stage: m.stage_name ?? '', stageId: '',
+        pipelineId: '', assignedTo: '', assignedName: '',
+        source: m.source ?? '', tags: m.tags ?? [],
+        score: 0, dealValue: 0,
         createdAt: m.added_at, lastActivity: m.added_at,
         notes: [],
       });
@@ -306,10 +309,11 @@ export default function ContactGroupPage() {
   };
 
   // ── After add members (refresh) ─────────────────────────────────────────────
-  const handleMembersAdded = async (added: number) => {
+  const handleMembersAdded = async (_added: number) => {
     setShowAddMembers(false);
     if (!selectedGroupId) return;
-    setGroups((p) => p.map((g) => g.id === selectedGroupId ? { ...g, member_count: g.member_count + added } : g));
+    // Re-fetch groups to get accurate server-side member_count (avoids drift from ON CONFLICT skips)
+    fetchGroups();
     setMembersLoading(true);
     api.get<GroupMember[]>(`/api/contact-groups/${selectedGroupId}/members`)
       .then(setMembers)
@@ -610,7 +614,7 @@ export default function ContactGroupPage() {
                               className="w-4 h-4 accent-primary cursor-pointer shrink-0" />
                           )}
                           <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-[11px] font-bold text-primary shrink-0">
-                            {(m.lead_name ?? '?')[0].toUpperCase()}
+                            {((m.lead_name || '?')[0] ?? '?').toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-[13px] font-semibold text-[#1c1410] truncate">{m.lead_name}</p>

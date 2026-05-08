@@ -1491,8 +1491,25 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
         </FieldRow>
       )}
 
+      {/* Contact Group Access (deprecated) */}
+      {node.actionType === 'contact_group_access' && (
+        <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-amber-800">This action is deprecated</p>
+            <p className="text-xs text-amber-700 mt-1">Contact Group Access no longer has any effect. Replace this node with the <strong>Contact Group</strong> action to add, move, or remove contacts from a group.</p>
+          </div>
+        </div>
+      )}
+
       {/* Contact Group */}
       {node.actionType === 'contact_group' && (<>
+        {(cfg.targetList && !(cfg.group_id as string)) && (
+          <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 mb-1">
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-red-800"><span className="font-semibold">Reconfiguration required.</span> This action was set up before Contact Groups existed. Select a group below to re-activate it.</p>
+          </div>
+        )}
         <FieldRow label="Action">
           <select className={selectCls} value={(cfg.groupAction as string) ?? 'add'} onChange={sel('groupAction')}>
             <option value="add">Add to group</option>
@@ -1500,7 +1517,15 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
             <option value="remove">Remove from group</option>
           </select>
         </FieldRow>
-        <FieldRow label="Contact Group" required>
+        {(cfg.groupAction as string) === 'move' && (
+          <FieldRow label="From group (optional)" hint="Leave blank to remove from all groups before moving.">
+            <select className={selectCls} value={(cfg.source_group_id as string) ?? ''} onChange={sel('source_group_id')}>
+              <option value="">All groups (sweep)</option>
+              {(contactGroups ?? []).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          </FieldRow>
+        )}
+        <FieldRow label={(cfg.groupAction as string) === 'remove' ? 'Remove from group' : 'Target group'} required>
           <select className={selectCls} value={(cfg.group_id as string) ?? ''} onChange={sel('group_id')}>
             <option value="">Choose a group...</option>
             {(contactGroups ?? []).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
@@ -1554,6 +1579,12 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
 
       {/* Remove Contact */}
       {node.actionType === 'remove_contact' && (<>
+        {(cfg.targetList && !(cfg.group_id as string)) && (
+          <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 mb-1">
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-red-800"><span className="font-semibold">Reconfiguration required.</span> Select a Contact Group below to re-activate this action.</p>
+          </div>
+        )}
         <FieldRow label="Remove from Group" required>
           <select className={selectCls} value={(cfg.group_id as string) ?? ''} onChange={sel('group_id')}>
             <option value="">Choose a group...</option>
