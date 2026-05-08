@@ -9,6 +9,7 @@ import { sendEmail, isSmtpConfigured } from '../services/email';
 import { decrypt } from '../utils/crypto';
 import { maskPhone } from '../utils/phone';
 import { emitToTenant } from '../socket';
+import { backfillCustomFields, cleanFieldKey } from '../utils/customFields';
 
 const router = Router();
 router.use(requireAuth);
@@ -2496,11 +2497,14 @@ publicWorkflowRouter.post('/:workflowId/execute', async (req: any, res: any) => 
       return;
     }
 
-    // Build extra custom fields from remaining body keys
+    // Build extra custom fields from remaining body keys — clean {%...%} wrappers from keys
     const reservedKeys = new Set(['api_token','contact_email','contact_phone','contact_name','email','phone','name']);
     const extraFields: Record<string,string> = {};
     for (const [k, v] of Object.entries(body)) {
-      if (!reservedKeys.has(k)) extraFields[k] = String(v);
+      if (!reservedKeys.has(k)) {
+        const cleanKey = cleanFieldKey(k);
+        if (cleanKey) extraFields[cleanKey] = String(v);
+      }
     }
 
     // Find or create lead
@@ -2520,15 +2524,15 @@ publicWorkflowRouter.post('/:workflowId/execute', async (req: any, res: any) => 
 
     if (existing.rows[0]) {
       lead = existing.rows[0];
-      // Merge extra custom fields onto existing lead
+      // Write extra fields to lead_field_values (proper storage) + keep JSONB in sync
       if (Object.keys(extraFields).length > 0) {
         const merged = { ...(lead.custom_fields ?? {}), ...extraFields };
         await query(`UPDATE leads SET custom_fields=$1, updated_at=NOW() WHERE id=$2`, [JSON.stringify(merged), lead.id]);
         lead.custom_fields = merged;
+        await backfillCustomFields(lead.id, tenantId, extraFields);
       }
     } else {
-      // Create new lead
-      const nameParts = contactName ? contactName.split(' ') : [''];
+      // Create new lead with clean-key JSONB
       const cfJson = Object.keys(extraFields).length > 0 ? JSON.stringify(extraFields) : '{}';
       const ins = await query(
         `INSERT INTO leads (tenant_id, name, email, phone, source, custom_fields, created_at, updated_at)
@@ -2537,6 +2541,10 @@ publicWorkflowRouter.post('/:workflowId/execute', async (req: any, res: any) => 
         [tenantId, contactName || contactEmail || contactPhone, contactEmail, contactPhone, cfJson]
       );
       lead = ins.rows[0];
+      // Write to lead_field_values immediately so fields appear in the UI
+      if (Object.keys(extraFields).length > 0) {
+        await backfillCustomFields(lead.id, tenantId, extraFields);
+      }
     }
 
     // Respond immediately

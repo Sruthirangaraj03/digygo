@@ -8,6 +8,7 @@ import { CreateLeadSchema, UpdateLeadSchema } from '../schemas/lead.schema';
 import { normalizePhone, maskPhone } from '../utils/phone';
 import { triggerWorkflows } from './workflows';
 import { decrypt } from '../utils/crypto';
+import { backfillCustomFields, cleanFieldKey } from '../utils/customFields';
 import { parseMetaFieldData } from '../utils/meta';
 import https from 'https';
 import { emitToTenant } from '../socket';
@@ -757,25 +758,26 @@ router.get('/:id/activities', async (req: AuthRequest, res: Response) => {
 router.get('/:id/fields', async (req: AuthRequest, res: Response) => {
   const { tenantId } = req.user!;
   const leadId = req.params.id;
-  try {
-    const result = await query(
-      `SELECT lfv.*, cf.name AS field_name, cf.type AS field_type, cf.slug
-       FROM lead_field_values lfv
-       JOIN custom_fields cf ON cf.id = lfv.field_id
-       WHERE lfv.lead_id = $1 AND lfv.tenant_id = $2`,
-      [leadId, tenantId]
-    );
 
-    // Auto-backfill: if no custom field data and lead is from Custom Form,
-    // look up the matching form submission and re-apply field mapping
-    if (result.rows.length === 0) {
+  const fetchRows = () => query(
+    `SELECT lfv.*, cf.name AS field_name, cf.type AS field_type, cf.slug
+     FROM lead_field_values lfv
+     JOIN custom_fields cf ON cf.id = lfv.field_id
+     WHERE lfv.lead_id = $1 AND lfv.tenant_id = $2`,
+    [leadId, tenantId]
+  ).then(r => r.rows);
+
+  try {
+    let rows = await fetchRows();
+
+    // Auto-backfill from Custom Form submission (if no rows yet)
+    if (rows.length === 0) {
       const leadRes = await query(
         `SELECT email, phone FROM leads WHERE id=$1 AND tenant_id=$2 AND source='Custom Form'`,
         [leadId, tenantId]
       );
       const lead = leadRes.rows[0];
       if (lead) {
-        // Find a submission whose data contains this lead's email or phone
         const subRes = await query(
           `SELECT fs.data, fs.form_id FROM form_submissions fs
            WHERE fs.tenant_id=$1
@@ -784,43 +786,31 @@ router.get('/:id/fields', async (req: AuthRequest, res: Response) => {
           [tenantId, `%${lead.email || '__none__'}%`, `%${lead.phone || '__none__'}%`]
         );
         const sub = subRes.rows[0];
-        if (sub && sub.form_id) {
-          const formRes = await query(
-            `SELECT fields FROM custom_forms WHERE id=$1`,
-            [sub.form_id]
-          );
+        if (sub?.form_id) {
+          const formRes = await query(`SELECT fields FROM custom_forms WHERE id=$1`, [sub.form_id]);
           const formFields: Array<{ mapTo: string; label: string }> = formRes.rows[0]?.fields ?? [];
           const data: Record<string, string> = typeof sub.data === 'string' ? JSON.parse(sub.data) : sub.data;
-          const customFieldsData: Record<string, string> = {};
+          const toFill: Record<string, string> = {};
           for (const field of formFields) {
             if (!field.mapTo || ['first_name','last_name','name','full_name','email','phone'].includes(field.mapTo)) continue;
             const value = data[field.label] ?? data[field.mapTo] ?? '';
-            if (value) customFieldsData[field.mapTo] = value;
+            if (value) toFill[field.mapTo] = value;
           }
-          if (Object.keys(customFieldsData).length > 0) {
-            await backfillCustomFields(leadId, tenantId!, customFieldsData);
-            // Re-fetch after backfill
-            const refetch = await query(
-              `SELECT lfv.*, cf.name AS field_name, cf.type AS field_type, cf.slug
-               FROM lead_field_values lfv
-               JOIN custom_fields cf ON cf.id = lfv.field_id
-               WHERE lfv.lead_id = $1 AND lfv.tenant_id = $2`,
-              [leadId, tenantId]
-            );
-            res.json(refetch.rows);
-            return;
+          if (Object.keys(toFill).length > 0) {
+            await backfillCustomFields(leadId, tenantId!, toFill);
+            rows = await fetchRows();
           }
         }
       }
     }
 
-    // Auto-backfill for Meta Form leads
-    if (result.rows.length === 0) {
+    // Auto-backfill from Meta Form (if still no rows)
+    if (rows.length === 0) {
       try {
         const metaLeadRes = await query(
-          `SELECT l.meta_form_id, l.source_ref
-           FROM leads l
-           WHERE l.id=$1 AND l.tenant_id=$2 AND l.source='meta_form' AND l.meta_form_id IS NOT NULL AND l.source_ref IS NOT NULL`,
+          `SELECT l.meta_form_id, l.source_ref FROM leads l
+           WHERE l.id=$1 AND l.tenant_id=$2 AND l.source='meta_form'
+             AND l.meta_form_id IS NOT NULL AND l.source_ref IS NOT NULL`,
           [leadId, tenantId]
         );
         const metaLead = metaLeadRes.rows[0];
@@ -836,21 +826,12 @@ router.get('/:id/fields', async (req: AuthRequest, res: Response) => {
           if (form?.field_mapping && form?.access_token) {
             const token = decrypt(form.access_token);
             const mapping: Array<{ fb_field: string; crm_field: string }> = form.field_mapping ?? [];
-            // Fetch this specific lead's field_data from Meta API
             const metaData = await metaGraphGet(`/${metaLead.source_ref}?fields=field_data`, token).catch(() => null);
             if (metaData?.field_data) {
               const { customValues } = parseMetaFieldData(metaData.field_data, mapping);
               if (Object.keys(customValues).length > 0) {
                 await backfillCustomFields(leadId, tenantId!, customValues);
-                const refetch = await query(
-                  `SELECT lfv.*, cf.name AS field_name, cf.type AS field_type, cf.slug
-                   FROM lead_field_values lfv
-                   JOIN custom_fields cf ON cf.id = lfv.field_id
-                   WHERE lfv.lead_id = $1 AND lfv.tenant_id = $2`,
-                  [leadId, tenantId]
-                );
-                res.json(refetch.rows);
-                return;
+                rows = await fetchRows();
               }
             }
           }
@@ -860,7 +841,29 @@ router.get('/:id/fields', async (req: AuthRequest, res: Response) => {
       }
     }
 
-    res.json(result.rows);
+    // Always merge leads.custom_fields JSONB — catches API trigger, imports, and any other source
+    try {
+      const leadRow = await query(
+        `SELECT custom_fields FROM leads WHERE id=$1 AND tenant_id=$2`,
+        [leadId, tenantId]
+      );
+      const jsonb: Record<string, any> = leadRow.rows[0]?.custom_fields ?? {};
+      const existingSlugs = new Set(rows.map((r: any) => r.slug));
+      const toFill: Record<string, string> = {};
+      for (const [rawKey, val] of Object.entries(jsonb)) {
+        if (!val) continue;
+        const slug = cleanFieldKey(rawKey);
+        if (slug && !existingSlugs.has(slug)) toFill[slug] = String(val);
+      }
+      if (Object.keys(toFill).length > 0) {
+        await backfillCustomFields(leadId, tenantId!, toFill);
+        rows = await fetchRows();
+      }
+    } catch (e) {
+      console.error('[jsonb fields merge]', e);
+    }
+
+    res.json(rows);
   } catch (err) {
     console.error('[GET /:id/fields]', err);
     res.status(500).json({ error: 'Server error' });
@@ -880,34 +883,6 @@ function metaGraphGet(path: string, token: string): Promise<any> {
   });
 }
 
-async function backfillCustomFields(leadId: string, tenantId: string, customFieldsData: Record<string, string>) {
-  for (const [slug, value] of Object.entries(customFieldsData)) {
-    if (!value) continue;
-    try {
-      let cfRes = await query('SELECT id FROM custom_fields WHERE tenant_id=$1 AND slug=$2 LIMIT 1', [tenantId, slug]);
-      if (!cfRes.rows[0]) {
-        const fieldName = slug.split(/[_\-]+/).map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-        try {
-          cfRes = await query(
-            `INSERT INTO custom_fields (tenant_id, name, type, slug, required) VALUES ($1,$2,'Single Line',$3,false) RETURNING id`,
-            [tenantId, fieldName, slug]
-          );
-        } catch {
-          cfRes = await query('SELECT id FROM custom_fields WHERE tenant_id=$1 AND slug=$2 LIMIT 1', [tenantId, slug]);
-        }
-      }
-      if (cfRes.rows[0]?.id) {
-        await query(
-          `INSERT INTO lead_field_values (lead_id, tenant_id, field_id, value)
-           VALUES ($1,$2,$3,$4) ON CONFLICT (lead_id, field_id) DO UPDATE SET value=$4, updated_at=NOW()`,
-          [leadId, tenantId, cfRes.rows[0].id, value]
-        );
-      }
-    } catch (err) {
-      console.error('[backfillCustomFields]', slug, err);
-    }
-  }
-}
 
 // PATCH /api/leads/:id/fields — upsert one or many field values
 router.patch('/:id/fields', async (req: AuthRequest, res: Response) => {
