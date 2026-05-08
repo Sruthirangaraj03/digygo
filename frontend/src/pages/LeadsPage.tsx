@@ -3155,11 +3155,22 @@ function mapApiLeadsToStore(rows: any[], stageMap: Record<string, string>): Lead
 }
 
 const LEAD_EXPORT_FIELDS = [
-  { key: 'name', label: 'Name' }, { key: 'email', label: 'Email' },
-  { key: 'phone', label: 'Phone' }, { key: 'source', label: 'Source' },
-  { key: 'quality', label: 'Quality' }, { key: 'pipeline_name', label: 'Pipeline' },
-  { key: 'stage_name', label: 'Stage' }, { key: 'assigned_name', label: 'Assigned To' },
-  { key: 'tags', label: 'Tags' }, { key: 'created_at', label: 'Created At' },
+  { key: 'name', label: 'Name' },
+  { key: 'email', label: 'Email' },
+  { key: 'phone', label: 'Phone' },
+  { key: 'source', label: 'Source' },
+  { key: 'quality', label: 'Quality' },
+  { key: 'pipeline_name', label: 'Pipeline' },
+  { key: 'stage_name', label: 'Stage' },
+  { key: 'assigned_name', label: 'Assigned To' },
+  { key: 'tags', label: 'Tags' },
+  { key: 'created_at', label: 'Created At' },
+  { key: 'deal_value', label: 'Deal Value' },
+  { key: 'notes', label: 'Notes' },
+  { key: 'lead_updated_at', label: 'Last Updated' },
+  { key: 'next_followup_date', label: 'Next Follow-up Date' },
+  { key: 'followup_status', label: 'Follow-up Status' },
+  { key: 'team_member_names', label: 'Team Members' },
 ];
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────

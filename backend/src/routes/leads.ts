@@ -202,6 +202,21 @@ const LEAD_FIELDS: Record<string, string> = {
   name: 'Name', email: 'Email', phone: 'Phone', source: 'Source',
   quality: 'Quality', pipeline_name: 'Pipeline', stage_name: 'Stage',
   assigned_name: 'Assigned To', tags: 'Tags', created_at: 'Created At',
+  deal_value: 'Deal Value', notes: 'Notes', lead_updated_at: 'Last Updated',
+  next_followup_date: 'Next Follow-up Date', followup_status: 'Follow-up Status',
+  team_member_names: 'Team Members',
+};
+
+const LEAD_SOURCE_LABELS: Record<string, string> = {
+  manual: 'Manual', meta_form: 'Meta Form', custom_form: 'Custom Form',
+  calendar_booking: 'Calendar Booking', whatsapp: 'WhatsApp', api: 'API',
+  import: 'Import', landing_page: 'Landing Page', referral: 'Referral',
+  website: 'Website', phone_call: 'Phone Call', email: 'Email',
+  social_media: 'Social Media', paid_ad: 'Paid Ad', event: 'Event',
+};
+
+const LEAD_QUALITY_LABELS: Record<string, string> = {
+  hot: 'Hot', warm: 'Warm', cold: 'Cold', unqualified: 'Unqualified',
 };
 
 router.get('/export', checkPermission('leads:export'), async (req: AuthRequest, res: Response) => {
@@ -226,8 +241,19 @@ router.get('/export', checkPermission('leads:export'), async (req: AuthRequest, 
   }
 
   let sql = `
-    SELECT l.*, ps.name AS stage_name, p.name AS pipeline_name,
-           u.name AS assigned_name
+    SELECT l.*,
+           ps.name AS stage_name,
+           p.name AS pipeline_name,
+           u.name AS assigned_name,
+           l.custom_fields->>'lead_quality' AS quality,
+           l.updated_at AS lead_updated_at,
+           (SELECT string_agg(u2.name, ', ') FROM users u2 WHERE u2.id = ANY(l.team_members)) AS team_member_names,
+           (SELECT MIN(f.due_at) FROM lead_followups f WHERE f.lead_id = l.id AND f.completed = FALSE) AS next_followup_date,
+           (SELECT CASE
+              WHEN MIN(f.due_at) IS NULL THEN 'None'
+              WHEN MIN(f.due_at) < NOW() THEN 'Overdue'
+              ELSE 'Pending'
+            END FROM lead_followups f WHERE f.lead_id = l.id AND f.completed = FALSE) AS followup_status
     FROM leads l
     LEFT JOIN pipeline_stages ps ON ps.id = l.stage_id
     LEFT JOIN pipelines p ON p.id = l.pipeline_id
@@ -259,8 +285,14 @@ router.get('/export', checkPermission('leads:export'), async (req: AuthRequest, 
         let val = row[f];
         if (f === 'phone' && shouldMaskPhone) val = maskPhone(val);
         if (f === 'tags' && Array.isArray(val)) val = val.join(', ');
-        if (f === 'created_at' && val) val = new Date(val).toLocaleString();
-        out[LEAD_FIELDS[f]] = val ?? '';
+        if ((f === 'created_at' || f === 'lead_updated_at') && val) val = new Date(val).toLocaleString();
+        if (f === 'next_followup_date' && val) val = new Date(val).toLocaleString();
+        if (f === 'deal_value' && val !== null && val !== undefined) val = Number(val);
+        if (f === 'source' && val)
+          val = LEAD_SOURCE_LABELS[val] ?? val.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+        if (f === 'quality' && val)
+          val = LEAD_QUALITY_LABELS[val] ?? val;
+        out[LEAD_FIELDS[f]] = (val !== null && val !== undefined && val !== '') ? val : 'No data';
       }
       return out;
     });
