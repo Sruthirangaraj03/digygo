@@ -29,7 +29,7 @@ router.get('/', checkPermission('contacts:read'), async (req: AuthRequest, res: 
     }
 
     const result = await query(
-      `SELECT c.*, l.name AS lead_name FROM contacts c
+      `SELECT c.*, l.name AS lead_name, l.tags FROM contacts c
        LEFT JOIN leads l ON l.id = c.lead_id
        WHERE c.tenant_id = $1${assignedFilter} ORDER BY c.created_at DESC`,
       params
@@ -75,6 +75,7 @@ router.get('/export', checkPermission('contacts:export'), async (req: AuthReques
 
     const result = await query(
       `SELECT c.*,
+        l.tags,
         l.source,
         l.deal_value,
         l.updated_at AS lead_updated_at,
@@ -139,7 +140,7 @@ router.get('/export', checkPermission('contacts:export'), async (req: AuthReques
           val = SOURCE_LABELS[val] ?? val.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
         if (f === 'lead_quality' && val)
           val = QUALITY_LABELS[val] ?? val;
-        out[CONTACT_FIELDS[f]] = val ?? '';
+        out[CONTACT_FIELDS[f]] = (val !== null && val !== undefined && val !== '') ? val : 'No data';
       }
       return out;
     });
@@ -190,7 +191,7 @@ router.post('/', checkPermission('contacts:create'), checkUsage('contacts'), asy
 
 // PATCH /api/contacts/:id
 router.patch('/:id', checkPermission('contacts:edit'), async (req: AuthRequest, res: Response) => {
-  const { name, email, phone, company, tags } = req.body;
+  const { name, email, phone, company } = req.body;
 
   const fields: string[] = [];
   const params: any[] = [];
@@ -198,7 +199,6 @@ router.patch('/:id', checkPermission('contacts:edit'), async (req: AuthRequest, 
   if (email   !== undefined) { params.push(email);   fields.push(`email=$${params.length}`); }
   if (phone   !== undefined) { params.push(phone);   fields.push(`phone=$${params.length}`); }
   if (company !== undefined) { params.push(company); fields.push(`company=$${params.length}`); }
-  if (tags    !== undefined) { params.push(tags);    fields.push(`tags=$${params.length}`); }
   if (!fields.length) { res.status(400).json({ error: 'Nothing to update' }); return; }
   params.push(req.params.id, req.user!.tenantId);
   try {
@@ -210,15 +210,10 @@ router.patch('/:id', checkPermission('contacts:edit'), async (req: AuthRequest, 
     const contact = result.rows[0];
     res.json(contact);
     const leadCtx = { id: contact.lead_id ?? contact.id, name: contact.name, email: contact.email, phone: contact.phone };
-    // contact_tagged is intentionally NOT fired here — tag changes on leads always
-    // go through PATCH /api/leads/:id which is the authoritative path. Firing here
-    // too would cause double-execution for the same lead.
-    if (tags === undefined) {
-      const changedField = ['name','email','phone','company'].find((k) => req.body[k] !== undefined) ?? '';
-      setImmediate(() => triggerWorkflows('contact_updated', leadCtx, req.user!.tenantId!, req.user!.userId,
-        { triggerContext: { fieldChanged: changedField } }
-      ).catch(() => null));
-    }
+    const changedField = ['name','email','phone','company'].find((k) => req.body[k] !== undefined) ?? '';
+    setImmediate(() => triggerWorkflows('contact_updated', leadCtx, req.user!.tenantId!, req.user!.userId,
+      { triggerContext: { fieldChanged: changedField } }
+    ).catch(() => null));
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
