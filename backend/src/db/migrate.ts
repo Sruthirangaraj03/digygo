@@ -55,6 +55,7 @@ const MIGRATIONS = [
   'migration_053_meta_forms_status.sql',
   'migration_054_team_members.sql',
   'migration_055_contact_groups.sql',
+  'migration_056_delay_queue_columns.sql',
 ];
 
 // Split SQL file into individual statements and execute each one separately.
