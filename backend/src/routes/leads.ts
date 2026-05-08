@@ -1009,51 +1009,181 @@ router.get('/export', checkPermission('leads:view_all'), async (req: AuthRequest
   }
 });
 
-// ── CSV Import ─────────────────────────────────────────────────────────────────
+// ── Import Template ────────────────────────────────────────────────────────────
+
+// GET /api/leads/import-template
+router.get('/import-template', checkPermission('leads:create'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { tenantId } = req.user!;
+    const cfResult = await query(
+      'SELECT name, slug FROM custom_fields WHERE tenant_id=$1 ORDER BY created_at ASC',
+      [tenantId]
+    );
+    const customFields = cfResult.rows as Array<{ name: string; slug: string }>;
+
+    const standardHeaders = ['Name', 'Phone', 'Email', 'Source', 'Deal Value', 'Tags', 'Notes', 'Stage'];
+    const allHeaders = [...standardHeaders, ...customFields.map((cf) => cf.name)];
+    const sampleRow = [
+      'John Doe', '+919876543210', 'john@example.com', 'Manual', '50000',
+      'Hot Lead', 'Called twice — very interested', 'New Lead',
+      ...customFields.map(() => ''),
+    ];
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([allHeaders, sampleRow]);
+    ws['!cols'] = allHeaders.map((h) => ({ wch: Math.max(h.length + 4, 16) }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Leads Import');
+
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Disposition', 'attachment; filename="leads_import_template.xlsx"');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buf);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to generate template' });
+  }
+});
+
+// ── Import ─────────────────────────────────────────────────────────────────────
 
 // POST /api/leads/import
 router.post('/import', checkPermission('leads:create'), async (req: AuthRequest, res: Response) => {
   const { tenantId, userId } = req.user!;
-  const { rows, pipeline_id, stage_id } = req.body as {
+  const {
+    rows,
+    pipeline_id,
+    stage_id,
+    duplicate_handling = 'skip',
+  } = req.body as {
     rows: Array<Record<string, string>>;
     pipeline_id?: string;
     stage_id?: string;
+    duplicate_handling?: 'skip' | 'update' | 'create';
   };
+
   if (!Array.isArray(rows) || !rows.length) {
     res.status(400).json({ error: 'rows array required' }); return;
   }
 
-  const imported: string[] = [];
+  // Load custom fields for slug → id lookup
+  const cfResult = await query(
+    'SELECT id, slug FROM custom_fields WHERE tenant_id=$1',
+    [tenantId]
+  );
+  const cfMap: Record<string, string> = {};
+  cfResult.rows.forEach((r: any) => { cfMap[r.slug] = r.id; });
+
+  // Load stages by name for the chosen pipeline
+  const stagesResult = pipeline_id
+    ? await query('SELECT id, name FROM pipeline_stages WHERE pipeline_id=$1', [pipeline_id])
+    : { rows: [] as any[] };
+  const stageByName: Record<string, string> = {};
+  stagesResult.rows.forEach((r: any) => { stageByName[r.name.toLowerCase()] = r.id; });
+
+  let imported = 0, updated = 0, skipped = 0;
   const errors: Array<{ row: number; reason: string }> = [];
 
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    const name  = r.name  ?? r['Full Name'] ?? r['full_name'] ?? '';
-    const email = (r.email ?? r.Email ?? '').toLowerCase().trim();
-    const phone = normalizePhone(r.phone ?? r.Phone ?? '');
+    const name  = (r.name ?? '').trim();
+    const email = (r.email ?? '').toLowerCase().trim();
+    const phone = normalizePhone(r.phone ?? '');
+
     if (!name) { errors.push({ row: i + 1, reason: 'Missing name' }); continue; }
+
+    const source     = (r.source ?? 'Import').trim();
+    const dealValue  = r.deal_value ? parseFloat(String(r.deal_value).replace(/[^0-9.]/g, '')) || 0 : 0;
+    const tags       = r.tags ? String(r.tags).split(',').map((t) => t.trim()).filter(Boolean) : [];
+    const notesText  = (r.notes ?? '').trim();
+
+    // Resolve stage: row's stage name overrides the default stage_id
+    let resolvedStageId: string | null = stage_id ?? null;
+    if (r.stage) {
+      const sid = stageByName[String(r.stage).toLowerCase()];
+      if (sid) resolvedStageId = sid;
+    }
+
+    // Collect custom field values (key = 'custom:slug')
+    const customValues: Record<string, string> = {};
+    for (const key of Object.keys(r)) {
+      if (key.startsWith('custom:')) {
+        const slug = key.slice(7);
+        if (cfMap[slug] && r[key]) customValues[slug] = String(r[key]);
+      }
+    }
+
     try {
-      const res2 = await query(
-        `INSERT INTO leads (tenant_id, name, email, phone, source, pipeline_id, stage_id)
-         VALUES ($1,$2,$3,$4,'CSV Import',$5,$6) RETURNING *`,
-        [tenantId, name, email, phone, pipeline_id ?? null, stage_id ?? null]
-      );
-      const newLead = res2.rows[0];
-      const leadId  = newLead.id;
-      imported.push(leadId);
-      await query(
-        `INSERT INTO lead_activities (lead_id, tenant_id, type, title, created_by)
-         VALUES ($1,$2,'created','Imported via CSV',$3)`,
-        [leadId, tenantId, userId]
-      );
-      sendNewLeadNotification(tenantId!, newLead, userId).catch(() => null);
-      setImmediate(() => triggerWorkflows('lead_created', newLead, tenantId!, userId).catch(() => null));
+      // Duplicate check by phone or email
+      let existingId: string | null = null;
+      if (phone || email) {
+        const check = await query(
+          `SELECT id FROM leads WHERE tenant_id=$1 AND is_deleted=FALSE
+           AND (($2 <> '' AND phone=$2) OR ($3 <> '' AND email=$3)) LIMIT 1`,
+          [tenantId, phone, email]
+        );
+        existingId = check.rows[0]?.id ?? null;
+      }
+
+      if (existingId && duplicate_handling === 'skip') { skipped++; continue; }
+
+      let leadId: string;
+
+      if (existingId && duplicate_handling === 'update') {
+        await query(
+          `UPDATE leads SET name=$2, email=$3, phone=$4, source=$5, deal_value=$6, tags=$7,
+           pipeline_id=COALESCE($8::uuid, pipeline_id), stage_id=COALESCE($9::uuid, stage_id),
+           updated_at=NOW() WHERE id=$1`,
+          [existingId, name, email, phone, source, dealValue, tags,
+           pipeline_id ?? null, resolvedStageId]
+        );
+        leadId = existingId;
+        updated++;
+      } else {
+        const res2 = await query(
+          `INSERT INTO leads (tenant_id, name, email, phone, source, pipeline_id, stage_id, deal_value, tags)
+           VALUES ($1,$2,$3,$4,$5,$6::uuid,$7::uuid,$8,$9) RETURNING *`,
+          [tenantId, name, email, phone, source,
+           pipeline_id ?? null, resolvedStageId, dealValue, tags]
+        );
+        const newLead = res2.rows[0];
+        leadId = newLead.id;
+        imported++;
+        await query(
+          `INSERT INTO lead_activities (lead_id, tenant_id, type, title, created_by)
+           VALUES ($1,$2,'created','Imported',$3)`,
+          [leadId, tenantId, userId]
+        );
+        sendNewLeadNotification(tenantId!, newLead, userId).catch(() => null);
+        setImmediate(() => triggerWorkflows('lead_created', newLead, tenantId!, userId).catch(() => null));
+      }
+
+      // Insert note if provided
+      if (notesText) {
+        await query(
+          `INSERT INTO lead_notes (lead_id, tenant_id, title, content, created_by)
+           VALUES ($1,$2,'Import Note',$3,$4)`,
+          [leadId, tenantId, notesText, userId]
+        );
+      }
+
+      // Insert custom field values
+      for (const [slug, value] of Object.entries(customValues)) {
+        const fieldId = cfMap[slug];
+        if (fieldId) {
+          await query(
+            `INSERT INTO lead_field_values (lead_id, tenant_id, field_id, value)
+             VALUES ($1,$2,$3,$4)
+             ON CONFLICT (lead_id, field_id) DO UPDATE SET value=$4, updated_at=NOW()`,
+            [leadId, tenantId, fieldId, value]
+          );
+        }
+      }
     } catch (err: any) {
-      errors.push({ row: i + 1, reason: err.code === '23505' ? 'Duplicate phone/email' : 'DB error' });
+      errors.push({ row: i + 1, reason: err.code === '23505' ? 'Duplicate' : 'DB error' });
     }
   }
 
-  res.json({ imported: imported.length, errors });
+  res.json({ imported, updated, skipped, errors });
 });
 
 export default router;
