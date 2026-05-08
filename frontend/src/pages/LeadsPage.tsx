@@ -11,7 +11,7 @@ import {
   FileText, User, Tag, DollarSign, ChevronDown, Trash2, Check,
   Mail, Pencil, CheckSquare, RotateCcw, LayoutGrid, List, EyeOff, Eye,
   Star, ChevronRight, ArrowLeft, ArrowRight, Settings, Download, Package, Zap, Copy, ArrowUpDown, Layers,
-  CalendarPlus, MoreHorizontal, UserX, ArrowLeftRight, UserCheck, UserPlus, Circle, Clock,
+  CalendarPlus, MoreHorizontal, UserX, ArrowLeftRight, UserCheck, UserPlus, Circle, Clock, Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
