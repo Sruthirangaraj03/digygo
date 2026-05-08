@@ -320,7 +320,7 @@ async function logStep(
   ).catch((err: any) => console.error('[logStep]', node.actionType, err.message));
 }
 
-interface ExecStats { skipped: number; failed: number }
+interface ExecStats { skipped: number; failed: number; exit?: boolean }
 
 // Leak 5 fix: WhatsApp text send via WABA integration (mirrors conversations.ts pattern)
 function sendWAText(phoneNumberId: string, token: string, toPhone: string, text: string): Promise<any> {
@@ -1085,6 +1085,7 @@ export async function executeNodes(
         case 'remove_workflow': {
           message = 'Contact removed from workflow';
           await logStep(executionId, workflowId, tenantId, node, 'completed', message);
+          stats.exit = true;
           return stats;
         }
 
@@ -1092,6 +1093,7 @@ export async function executeNodes(
         case 'exit_workflow': {
           message = 'Workflow exited early';
           await logStep(executionId, workflowId, tenantId, node, 'completed', message);
+          stats.exit = true;
           return stats;
         }
 
@@ -1346,6 +1348,7 @@ export async function executeNodes(
             const branchStats = await executeNodes(branch, lead, tenantId, userId, executionId, workflowId);
             stats.skipped += branchStats.skipped;
             stats.failed  += branchStats.failed;
+            if (branchStats.exit) { stats.exit = true; }
           }
           break;
         }
@@ -1619,6 +1622,7 @@ export async function executeNodes(
     if (status === 'skipped') stats.skipped++;
     if (status === 'failed') stats.failed++;
     await logStep(executionId, workflowId, tenantId, node, status, message);
+    if (stats.exit) return stats;
 
     // Mirror key automation actions to lead_activities so they appear in the Activity Timeline
     if (status === 'completed' && lead.id && !lead.id.startsWith('test-')) {
