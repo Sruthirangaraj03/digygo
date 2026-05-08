@@ -54,6 +54,7 @@ const MIGRATIONS = [
   'migration_052_is_won_stage.sql',
   'migration_053_meta_forms_status.sql',
   'migration_054_team_members.sql',
+  'migration_055_contact_groups.sql',
 ];
 
 // Split SQL file into individual statements and execute each one separately.

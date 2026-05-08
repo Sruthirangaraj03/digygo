@@ -35,6 +35,7 @@ import pincodeRoutingRoutes   from './routes/pincode_routing';
 import fieldRoutingRoutes     from './routes/field_routing';
 import leadGenerationRoutes   from './routes/leadGeneration';
 import reportsRoutes          from './routes/reports';
+import contactGroupsRoutes    from './routes/contact_groups';
 
 const app        = express();
 const httpServer = createServer(app);
@@ -145,6 +146,7 @@ app.use('/api/pincode-routing',   pincodeRoutingRoutes);
 app.use('/api/field-routing',     fieldRoutingRoutes);
 app.use('/api/lead-generation',   leadGenerationRoutes);
 app.use('/api/reports',           reportsRoutes);
+app.use('/api/contact-groups',    contactGroupsRoutes);
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
