@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Layers, Users, Plus, Search, X, Pencil, Trash2, UserPlus, UserMinus,
-  ChevronRight, Check, FolderPlus, Filter, Loader2, Download,
+  ChevronRight, Check, FolderPlus, Filter, Loader2, Download, Megaphone,
+  MessageCircle, Mail, Send, CheckCircle2, AlertCircle, SkipForward,
 } from 'lucide-react';
 import { useCrmStore } from '@/store/crmStore';
 import { usePermission } from '@/hooks/usePermission';
@@ -102,6 +103,9 @@ export default function ContactGroupPage() {
 
   // Add members modal
   const [showAddMembers, setShowAddMembers] = useState(false);
+
+  // Broadcast modal
+  const [showBroadcast, setShowBroadcast] = useState(false);
 
   const selectedGroup = groups.find((g) => g.id === selectedGroupId) ?? null;
 
@@ -488,6 +492,12 @@ export default function ContactGroupPage() {
                       className="w-8 h-8 rounded-lg flex items-center justify-center text-[#7a6b5c] hover:bg-[#f5ede3] hover:text-primary transition-colors disabled:opacity-40">
                       <Download className="w-3.5 h-3.5" />
                     </button>
+                    <button onClick={() => setShowBroadcast(true)} disabled={selectedGroup.member_count === 0}
+                      title="Broadcast to group"
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-40"
+                      style={{ background: 'linear-gradient(135deg,#7c3aed 0%,#6d28d9 100%)', boxShadow: '0 4px 14px rgba(109,40,217,0.28)' }}>
+                      <Megaphone className="w-3.5 h-3.5" /> Broadcast
+                    </button>
                     <button onClick={() => setShowAddMembers(true)}
                       className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-bold text-white transition-all hover:-translate-y-0.5" style={shadowStyle}>
                       <UserPlus className="w-3.5 h-3.5" /> Add
@@ -833,6 +843,16 @@ export default function ContactGroupPage() {
         />
       )}
 
+      {/* ── BROADCAST MODAL ── */}
+      {showBroadcast && selectedGroup && (
+        <BroadcastModal
+          groupId={selectedGroup.id}
+          groupName={selectedGroup.name}
+          memberCount={selectedGroup.member_count}
+          onClose={() => setShowBroadcast(false)}
+        />
+      )}
+
       {/* ── LEAD DETAIL PANEL ── */}
       {openLead && (
         <LeadDetailPanel
@@ -1074,6 +1094,208 @@ function AddMembersModal({ groupId, groupName, existingLeadIds, leads, pipelines
               </button>
             </div>
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Broadcast Modal ───────────────────────────────────────────────────────────
+interface BroadcastResult { sent: number; failed: number; skipped: number; total: number; errors: string[]; }
+
+function BroadcastModal({ groupId, groupName, memberCount, onClose }: {
+  groupId: string;
+  groupName: string;
+  memberCount: number;
+  onClose: () => void;
+}) {
+  const [tab, setTab]             = useState<'whatsapp' | 'email'>('whatsapp');
+  const [message, setMessage]     = useState('');
+  const [subject, setSubject]     = useState('');
+  const [sending, setSending]     = useState(false);
+  const [result, setResult]       = useState<BroadcastResult | null>(null);
+  const [templates, setTemplates] = useState<{ id: string; name: string; body: string }[]>([]);
+
+  // Load templates for quick-fill
+  useEffect(() => {
+    api.get<any[]>('/api/templates').then((data) => {
+      setTemplates((data ?? []).map((t) => ({ id: t.id, name: t.name, body: t.body ?? '' })));
+    }).catch(() => null);
+  }, []);
+
+  const handleSend = async () => {
+    if (!message.trim()) { toast.error('Message is required'); return; }
+    if (tab === 'email' && !subject.trim()) { toast.error('Subject is required'); return; }
+    setSending(true);
+    setResult(null);
+    try {
+      const res = await api.post<BroadcastResult>(`/api/contact-groups/${groupId}/broadcast`, {
+        type: tab,
+        message: message.trim(),
+        subject: tab === 'email' ? subject.trim() : undefined,
+      });
+      setResult(res);
+    } catch (e: any) {
+      toast.error(e.message ?? 'Broadcast failed');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const canSend = message.trim().length > 0 && (tab === 'whatsapp' || subject.trim().length > 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col" style={{ maxHeight: '85vh' }}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-black/5 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0"
+              style={{ background: 'linear-gradient(135deg,#7c3aed 0%,#6d28d9 100%)' }}>
+              <Megaphone className="w-4.5 h-4.5 w-[18px] h-[18px]" />
+            </div>
+            <div>
+              <h3 className="font-headline font-bold text-[15px] text-[#1c1410]">Broadcast to "{groupName}"</h3>
+              <p className="text-[11px] text-[#7a6b5c] mt-0.5">{memberCount} member{memberCount !== 1 ? 's' : ''} in this group</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c]"><X className="w-4 h-4" /></button>
+        </div>
+
+        {/* Result screen */}
+        {result ? (
+          <div className="flex-1 flex flex-col p-6 gap-4">
+            <p className="text-[14px] font-bold text-[#1c1410] text-center">Broadcast Complete</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="flex flex-col items-center gap-1.5 p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
+                <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+                <span className="font-headline text-[22px] font-bold text-emerald-600">{result.sent}</span>
+                <span className="text-[11px] text-emerald-600 font-semibold">Sent</span>
+              </div>
+              <div className="flex flex-col items-center gap-1.5 p-4 bg-red-50 rounded-2xl border border-red-100">
+                <AlertCircle className="w-6 h-6 text-red-500" />
+                <span className="font-headline text-[22px] font-bold text-red-600">{result.failed}</span>
+                <span className="text-[11px] text-red-600 font-semibold">Failed</span>
+              </div>
+              <div className="flex flex-col items-center gap-1.5 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                <SkipForward className="w-6 h-6 text-gray-400" />
+                <span className="font-headline text-[22px] font-bold text-gray-500">{result.skipped}</span>
+                <span className="text-[11px] text-gray-500 font-semibold">Skipped</span>
+              </div>
+            </div>
+            {result.skipped > 0 && (
+              <p className="text-[11px] text-[#7a6b5c] text-center">
+                {result.skipped} member{result.skipped !== 1 ? 's' : ''} skipped — no {tab === 'whatsapp' ? 'phone number' : 'email address'} on record
+              </p>
+            )}
+            {result.errors.length > 0 && (
+              <div className="bg-red-50 rounded-xl border border-red-100 p-3 max-h-28 overflow-y-auto">
+                <p className="text-[11px] font-bold text-red-600 mb-1.5">Errors:</p>
+                {result.errors.map((e, i) => (
+                  <p key={i} className="text-[11px] text-red-500 leading-relaxed">{e}</p>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-3 mt-auto">
+              <button onClick={() => setResult(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#f5ede3]">
+                Send Again
+              </button>
+              <button onClick={onClose}
+                className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white"
+                style={{ background: 'linear-gradient(135deg,#7c3aed 0%,#6d28d9 100%)' }}>
+                Done
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Channel tabs */}
+            <div className="flex border-b border-black/5 shrink-0">
+              {(['whatsapp', 'email'] as const).map((t) => (
+                <button key={t} onClick={() => setTab(t)}
+                  className={cn('flex-1 py-2.5 text-[12px] font-semibold flex items-center justify-center gap-1.5 transition-colors',
+                    tab === t ? 'text-primary border-b-2 border-primary' : 'text-[#7a6b5c] hover:text-[#1c1410]'
+                  )}>
+                  {t === 'whatsapp'
+                    ? <><MessageCircle className="w-3.5 h-3.5" /> WhatsApp</>
+                    : <><Mail className="w-3.5 h-3.5" /> Email</>}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {/* Template quick-fill */}
+              {templates.length > 0 && (
+                <div>
+                  <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Use a template</label>
+                  <select onChange={(e) => {
+                    const t = templates.find((x) => x.id === e.target.value);
+                    if (t) setMessage(t.body);
+                  }} defaultValue=""
+                    className="w-full border border-black/10 rounded-xl px-3.5 py-2.5 text-[13px] outline-none focus:border-primary/40 bg-white">
+                    <option value="">— pick a template —</option>
+                    {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {/* Email subject */}
+              {tab === 'email' && (
+                <div>
+                  <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Subject <span className="text-red-500">*</span></label>
+                  <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Special offer for you"
+                    className="w-full border border-black/10 rounded-xl px-3.5 py-2.5 text-[13px] outline-none focus:border-primary/40 placeholder:text-gray-400" />
+                </div>
+              )}
+
+              {/* Message */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[12px] font-semibold text-[#1c1410]">Message <span className="text-red-500">*</span></label>
+                  <span className="text-[11px] text-[#7a6b5c]">{message.length} chars</span>
+                </div>
+                <textarea value={message} onChange={(e) => setMessage(e.target.value)}
+                  placeholder={tab === 'whatsapp'
+                    ? 'Hi {first_name}, we have an exciting offer for you...'
+                    : 'Dear {full_name},\n\nWe have an update for you...'}
+                  rows={6}
+                  className="w-full border border-black/10 rounded-xl px-3.5 py-2.5 text-[13px] outline-none focus:border-primary/40 placeholder:text-gray-400 resize-none" />
+                <p className="text-[11px] text-[#7a6b5c] mt-1">
+                  Variables: <code className="bg-gray-100 px-1 rounded text-[10px]">{'{first_name}'}</code>{' '}
+                  <code className="bg-gray-100 px-1 rounded text-[10px]">{'{full_name}'}</code>{' '}
+                  <code className="bg-gray-100 px-1 rounded text-[10px]">{'{phone}'}</code>{' '}
+                  <code className="bg-gray-100 px-1 rounded text-[10px]">{'{email}'}</code>
+                </p>
+              </div>
+
+              {/* Warning for large groups */}
+              {memberCount > 100 && (
+                <div className="flex items-start gap-2 p-3 bg-amber-50 rounded-xl border border-amber-100">
+                  <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                  <p className="text-[12px] text-amber-700">
+                    This group has <strong>{memberCount}</strong> members. The broadcast may take a moment to complete.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-black/5 flex gap-3 shrink-0">
+              <button onClick={onClose}
+                className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#f5ede3]">
+                Cancel
+              </button>
+              <button onClick={handleSend} disabled={!canSend || sending}
+                className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white flex items-center justify-center gap-2 transition-all hover:-translate-y-0.5 disabled:opacity-60"
+                style={{ background: 'linear-gradient(135deg,#7c3aed 0%,#6d28d9 100%)', boxShadow: canSend && !sending ? '0 4px 14px rgba(109,40,217,0.28)' : undefined }}>
+                {sending
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending...</>
+                  : <><Send className="w-3.5 h-3.5" /> Send to {memberCount} member{memberCount !== 1 ? 's' : ''}</>}
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>

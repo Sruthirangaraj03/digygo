@@ -1,7 +1,38 @@
 import { Router, Response } from 'express';
+import https from 'https';
 import { query } from '../db';
 import { requireAuth, requireTenant, AuthRequest } from '../middleware/auth';
 import { checkPermission } from '../middleware/permissions';
+import { sendEmail, isSmtpConfigured } from '../services/email';
+import { decrypt } from '../utils/crypto';
+
+function sendWAText(phoneNumberId: string, token: string, toPhone: string, text: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify({
+      messaging_product: 'whatsapp',
+      to: toPhone.replace(/\D/g, ''),
+      type: 'text',
+      text: { body: text },
+    });
+    const req = https.request({
+      hostname: 'graph.facebook.com',
+      path: `/v17.0/${phoneNumberId}/messages`,
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+    }, (res) => {
+      let data = '';
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => { try { resolve(JSON.parse(data)); } catch { reject(new Error('Invalid JSON from WhatsApp API')); } });
+    });
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
 
 const router = Router();
 router.use(requireAuth);
@@ -227,6 +258,93 @@ router.delete('/:id/members/:leadId', checkPermission('contact_groups:manage'), 
       [req.params.id, req.params.leadId]
     );
     res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// POST /api/contact-groups/:id/broadcast — send WhatsApp or email to all members
+router.post('/:id/broadcast', checkPermission('contact_groups:manage'), async (req: AuthRequest, res: Response) => {
+  const { type, message, subject } = req.body;
+  if (!type || !['whatsapp', 'email'].includes(type)) {
+    res.status(400).json({ error: 'type must be "whatsapp" or "email"' }); return;
+  }
+  if (!message?.trim()) {
+    res.status(400).json({ error: 'message is required' }); return;
+  }
+  if (type === 'email' && !subject?.trim()) {
+    res.status(400).json({ error: 'subject is required for email broadcast' }); return;
+  }
+
+  try {
+    const { tenantId } = req.user!;
+    const grp = await query(
+      `SELECT id, name FROM contact_groups WHERE id=$1::uuid AND tenant_id=$2::uuid`,
+      [req.params.id, tenantId]
+    );
+    if (!grp.rows[0]) { res.status(404).json({ error: 'Not found' }); return; }
+
+    // Fetch members with phone + email
+    const membersRes = await query(
+      `SELECT l.id, l.name, l.phone, l.email
+       FROM contact_group_members cgm
+       JOIN leads l ON l.id = cgm.lead_id AND l.is_deleted = FALSE
+       WHERE cgm.group_id = $1::uuid`,
+      [req.params.id]
+    );
+    const members = membersRes.rows;
+    const total = members.length;
+    let sent = 0, failed = 0, skipped = 0;
+    const errors: string[] = [];
+
+    if (type === 'whatsapp') {
+      const wabaRes = await query(
+        `SELECT phone_number_id, access_token FROM waba_integrations
+         WHERE tenant_id=$1::uuid AND is_active=TRUE LIMIT 1`,
+        [tenantId]
+      );
+      if (!wabaRes.rows[0]) {
+        res.status(400).json({ error: 'WhatsApp (WABA) integration not configured or inactive' }); return;
+      }
+      const { phone_number_id, access_token: encToken } = wabaRes.rows[0];
+      const waToken = decrypt(encToken);
+
+      for (const m of members) {
+        if (!m.phone) { skipped++; continue; }
+        try {
+          const resp = await sendWAText(phone_number_id, waToken, m.phone, message.trim());
+          if (resp?.error) {
+            failed++;
+            errors.push(`${m.name}: ${resp.error.message}`);
+          } else {
+            sent++;
+          }
+        } catch (err: any) {
+          failed++;
+          errors.push(`${m.name}: ${err.message}`);
+        }
+      }
+    } else {
+      // email
+      if (!isSmtpConfigured()) {
+        res.status(400).json({ error: 'SMTP not configured — set SMTP_HOST, SMTP_USER, SMTP_PASS in environment' }); return;
+      }
+      for (const m of members) {
+        if (!m.email) { skipped++; continue; }
+        try {
+          await sendEmail({
+            to: m.email,
+            subject: subject.trim(),
+            html: message.trim().replace(/\n/g, '<br>'),
+            text: message.trim(),
+          });
+          sent++;
+        } catch (err: any) {
+          failed++;
+          errors.push(`${m.name}: ${err.message}`);
+        }
+      }
+    }
+
+    res.json({ sent, failed, skipped, total, errors: errors.slice(0, 20) });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
