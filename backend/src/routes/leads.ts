@@ -573,7 +573,7 @@ router.patch('/:id', checkPermission('leads:edit'), validate(UpdateLeadSchema), 
       if (removed.length > 0) {
         await query(
           `INSERT INTO lead_activities (lead_id, tenant_id, type, title, created_by)
-           VALUES ($1,$2,'tag_added',$3,$4)`,
+           VALUES ($1,$2,'tag_removed',$3,$4)`,
           [req.params.id, tenantId, `Tags removed: ${removed.join(', ')}`, userId]
         );
       }

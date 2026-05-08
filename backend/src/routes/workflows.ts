@@ -2246,6 +2246,22 @@ router.post('/:id/test', checkPermission('automation:manage'), async (req: AuthR
 
     const enrichedLead = await enrichLead(lead);
 
+    // For contact_tagged trigger: check current lead tags against configured tags
+    const triggerNode = nodes.find((n: WFNode) => n.type === 'trigger');
+    if (triggerNode?.actionType === 'contact_tagged') {
+      const cfgTags: string[] = Array.isArray(triggerNode.config?.tags)
+        ? (triggerNode.config!.tags as string[])
+        : (triggerNode.config?.tag as string) ? [(triggerNode.config!.tag as string)] : [];
+      if (cfgTags.length > 0) {
+        const leadTags: string[] = Array.isArray(enrichedLead.tags) ? (enrichedLead.tags as string[]) : [];
+        const hasTag = leadTags.some((t) => cfgTags.includes(t));
+        if (!hasTag) {
+          res.json({ skipped: true, reason: `Lead does not have any of the required tags: ${cfgTags.join(', ')}` });
+          return;
+        }
+      }
+    }
+
     // Create a test execution record
     const execResult = await query(
       `INSERT INTO workflow_executions
@@ -2355,6 +2371,18 @@ router.post('/:id/bulk-trigger', checkPermission('automation:manage'), async (re
           );
           if (!leadRes.rows[0]) return;
           const enrichedLead = await enrichLead(leadRes.rows[0] as LeadContext);
+
+          // For contact_tagged trigger: skip leads that don't currently have a configured tag
+          const bulkTriggerNode = nodes.find((n: WFNode) => n.type === 'trigger');
+          if (bulkTriggerNode?.actionType === 'contact_tagged') {
+            const cfgTags: string[] = Array.isArray(bulkTriggerNode.config?.tags)
+              ? (bulkTriggerNode.config!.tags as string[])
+              : (bulkTriggerNode.config?.tag as string) ? [(bulkTriggerNode.config!.tag as string)] : [];
+            if (cfgTags.length > 0) {
+              const leadTags: string[] = Array.isArray(enrichedLead.tags) ? (enrichedLead.tags as string[]) : [];
+              if (!leadTags.some((t) => cfgTags.includes(t))) return;
+            }
+          }
 
           const execRes = await query(
             `INSERT INTO workflow_executions
