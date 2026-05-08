@@ -191,6 +191,28 @@ router.post('/:id/members/filter', checkPermission('contact_groups:manage'), asy
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
+// POST /api/contact-groups/:id/members/bulk-remove — remove multiple members at once
+router.post('/:id/members/bulk-remove', checkPermission('contact_groups:manage'), async (req: AuthRequest, res: Response) => {
+  const { lead_ids } = req.body;
+  if (!Array.isArray(lead_ids) || lead_ids.length === 0) {
+    res.status(400).json({ error: 'lead_ids array required' }); return;
+  }
+  try {
+    const { tenantId } = req.user!;
+    const grp = await query(
+      `SELECT id FROM contact_groups WHERE id=$1::uuid AND tenant_id=$2::uuid`,
+      [req.params.id, tenantId]
+    );
+    if (!grp.rows[0]) { res.status(404).json({ error: 'Not found' }); return; }
+    const result = await query(
+      `DELETE FROM contact_group_members
+       WHERE group_id = $1::uuid AND lead_id = ANY($2::uuid[])`,
+      [req.params.id, lead_ids]
+    );
+    res.json({ removed: result.rowCount ?? 0 });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
 // DELETE /api/contact-groups/:id/members/:leadId
 router.delete('/:id/members/:leadId', checkPermission('contact_groups:manage'), async (req: AuthRequest, res: Response) => {
   try {

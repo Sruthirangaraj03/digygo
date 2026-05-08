@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Layers, Users, Plus, Search, X, Pencil, Trash2, UserPlus, UserMinus,
-  ChevronRight, Check, FolderPlus, Filter, Loader2,
+  ChevronRight, Check, FolderPlus, Filter, Loader2, Download,
 } from 'lucide-react';
 import { useCrmStore } from '@/store/crmStore';
 import { usePermission } from '@/hooks/usePermission';
@@ -9,6 +9,8 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+import { Lead } from '@/data/mockData';
+import { LeadDetailPanel } from './LeadsPage';
 
 const gradStyle   = { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' };
 const shadowStyle = { ...gradStyle, boxShadow: '0 4px 14px rgba(234,88,12,0.28)' };
@@ -64,6 +66,14 @@ export default function ContactGroupPage() {
   const [members, setMembers]             = useState<GroupMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
 
+  // Member search + bulk select
+  const [memberSearch, setMemberSearch]   = useState('');
+  const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
+  const [bulkRemoving, setBulkRemoving]   = useState(false);
+
+  // Lead detail panel
+  const [openLead, setOpenLead]           = useState<Lead | null>(null);
+
   // Create modal
   const [showCreate, setShowCreate]       = useState(false);
   const [createStep, setCreateStep]       = useState<1 | 2>(1);
@@ -88,11 +98,15 @@ export default function ContactGroupPage() {
   const [editingId, setEditingId]         = useState<string | null>(null);
   const [editName, setEditName]           = useState('');
   const [editDesc, setEditDesc]           = useState('');
+  const [editColor, setEditColor]         = useState(GROUP_COLORS[0]);
 
   // Add members modal
   const [showAddMembers, setShowAddMembers] = useState(false);
 
   const selectedGroup = groups.find((g) => g.id === selectedGroupId) ?? null;
+
+  // Clear selection when group changes
+  useEffect(() => { setSelectedMembers(new Set()); setMemberSearch(''); }, [selectedGroupId]);
 
   // ── Fetch groups ────────────────────────────────────────────────────────────
   const fetchGroups = async () => {
@@ -117,6 +131,17 @@ export default function ContactGroupPage() {
       .catch(() => toast.error('Failed to load members'))
       .finally(() => setMembersLoading(false));
   }, [selectedGroupId]);
+
+  // ── Filtered members (search) ───────────────────────────────────────────────
+  const filteredMembers = useMemo(() => {
+    const q = memberSearch.trim().toLowerCase();
+    if (!q) return members;
+    return members.filter((m) =>
+      m.lead_name.toLowerCase().includes(q) ||
+      (m.email ?? '').toLowerCase().includes(q) ||
+      (m.phone ?? '').includes(q)
+    );
+  }, [members, memberSearch]);
 
   // ── Create ──────────────────────────────────────────────────────────────────
   const cfHasFilter = !!(cfPipelineId || cfStageId || cfTags.length || cfSource || cfDateFrom || cfDateTo);
@@ -174,11 +199,18 @@ export default function ContactGroupPage() {
   };
 
   // ── Edit ────────────────────────────────────────────────────────────────────
+  const startEdit = (g: ContactGroup) => {
+    setEditingId(g.id);
+    setEditName(g.name);
+    setEditDesc(g.description);
+    setEditColor(g.color);
+  };
+
   const saveEdit = async (id: string) => {
     if (!editName.trim()) { toast.error('Name is required'); return; }
     try {
-      await api.patch(`/api/contact-groups/${id}`, { name: editName.trim(), description: editDesc.trim() });
-      setGroups((p) => p.map((g) => g.id === id ? { ...g, name: editName.trim(), description: editDesc.trim() } : g));
+      await api.patch(`/api/contact-groups/${id}`, { name: editName.trim(), description: editDesc.trim(), color: editColor });
+      setGroups((p) => p.map((g) => g.id === id ? { ...g, name: editName.trim(), description: editDesc.trim(), color: editColor } : g));
       setEditingId(null);
       toast.success('Group updated');
     } catch { toast.error('Failed to update group'); }
@@ -195,14 +227,78 @@ export default function ContactGroupPage() {
     } catch { toast.error('Failed to delete group'); }
   };
 
-  // ── Remove member ────────────────────────────────────────────────────────────
+  // ── Remove single member ────────────────────────────────────────────────────
   const removeMember = async (groupId: string, leadId: string) => {
     try {
       await api.delete(`/api/contact-groups/${groupId}/members/${leadId}`);
       setMembers((p) => p.filter((m) => m.lead_id !== leadId));
       setGroups((p) => p.map((g) => g.id === groupId ? { ...g, member_count: g.member_count - 1 } : g));
+      setSelectedMembers((p) => { const n = new Set(p); n.delete(leadId); return n; });
       toast.success('Member removed');
     } catch { toast.error('Failed to remove member'); }
+  };
+
+  // ── Bulk remove ─────────────────────────────────────────────────────────────
+  const handleBulkRemove = async () => {
+    if (selectedMembers.size === 0 || !selectedGroupId) return;
+    if (!window.confirm(`Remove ${selectedMembers.size} member(s) from this group?`)) return;
+    setBulkRemoving(true);
+    try {
+      const lead_ids = Array.from(selectedMembers);
+      const res = await api.post<{ removed: number }>(`/api/contact-groups/${selectedGroupId}/members/bulk-remove`, { lead_ids });
+      setMembers((p) => p.filter((m) => !selectedMembers.has(m.lead_id)));
+      setGroups((p) => p.map((g) => g.id === selectedGroupId ? { ...g, member_count: g.member_count - res.removed } : g));
+      setSelectedMembers(new Set());
+      toast.success(`${res.removed} member(s) removed`);
+    } catch { toast.error('Failed to remove members'); }
+    finally { setBulkRemoving(false); }
+  };
+
+  // ── Export CSV ──────────────────────────────────────────────────────────────
+  const handleExportCSV = () => {
+    if (!selectedGroup || members.length === 0) return;
+    const header = ['Name', 'Email', 'Phone', 'Pipeline', 'Stage', 'Source', 'Tags', 'Added By', 'Added At'];
+    const rows = members.map((m) => [
+      m.lead_name ?? '',
+      m.email ?? '',
+      m.phone ?? '',
+      m.pipeline_name ?? '',
+      m.stage_name ?? '',
+      m.source ?? '',
+      (m.tags ?? []).join('; '),
+      m.added_by ?? '',
+      m.added_at ? format(new Date(m.added_at), 'dd MMM yyyy HH:mm') : '',
+    ]);
+    const csv = [header, ...rows]
+      .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `${selectedGroup.name.replace(/[^a-z0-9]/gi, '_')}_members.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── Click member → lead detail panel ───────────────────────────────────────
+  const handleMemberClick = (m: GroupMember) => {
+    const lead = leads.find((l) => l.id === m.lead_id);
+    if (lead) {
+      setOpenLead(lead);
+    } else {
+      // construct minimal Lead from member data if not in store
+      const [firstName = m.lead_name, lastName = ''] = m.lead_name.split(' ');
+      setOpenLead({
+        id: m.lead_id, firstName, lastName,
+        email: m.email ?? '', phone: m.phone ?? '',
+        stage: m.stage_name ?? '', stageId: '', pipelineId: '',
+        assignedTo: '', source: m.source ?? '',
+        tags: m.tags ?? [], score: 0, dealValue: 0,
+        createdAt: m.added_at, lastActivity: m.added_at,
+        notes: [],
+      });
+    }
   };
 
   // ── After add members (refresh) ─────────────────────────────────────────────
@@ -236,6 +332,7 @@ export default function ContactGroupPage() {
 
   const totalMembers = groups.reduce((s, g) => s + g.member_count, 0);
   const emptyGroups  = groups.filter((g) => g.member_count === 0).length;
+  const allFilteredSelected = filteredMembers.length > 0 && filteredMembers.every((m) => selectedMembers.has(m.lead_id));
 
   if (!canRead) {
     return (
@@ -323,6 +420,13 @@ export default function ContactGroupPage() {
                           className="w-full text-[13px] font-semibold border border-primary/30 rounded-lg px-2.5 py-1.5 outline-none focus:border-primary/50" />
                         <input value={editDesc} onChange={(e) => setEditDesc(e.target.value)} placeholder="Description"
                           className="w-full text-[12px] text-[#7a6b5c] border border-black/10 rounded-lg px-2.5 py-1.5 outline-none focus:border-primary/30" />
+                        <div className="flex gap-1.5 flex-wrap">
+                          {GROUP_COLORS.map((c) => (
+                            <button key={c} onClick={() => setEditColor(c)}
+                              className={cn('w-5 h-5 rounded-full transition-all', editColor === c ? 'ring-2 ring-offset-1 ring-[#1c1410] scale-110' : 'hover:scale-110')}
+                              style={{ backgroundColor: c }} />
+                          ))}
+                        </div>
                         <div className="flex gap-1.5">
                           <button onClick={() => saveEdit(g.id)} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white bg-primary hover:bg-primary/90"><Check className="w-3 h-3" /> Save</button>
                           <button onClick={() => setEditingId(null)} className="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-[#7a6b5c] hover:bg-[#f5ede3]">Cancel</button>
@@ -349,7 +453,7 @@ export default function ContactGroupPage() {
         </div>
 
         {/* Detail panel */}
-        <div className="bg-white rounded-2xl border border-black/[0.06] overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+        <div className="bg-white rounded-2xl border border-black/[0.06] overflow-hidden flex flex-col" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
           {!selectedGroup ? (
             <div className="flex flex-col items-center justify-center py-24 text-center px-6">
               <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
@@ -360,7 +464,8 @@ export default function ContactGroupPage() {
             </div>
           ) : (
             <>
-              <div className="px-6 py-5 border-b border-black/[0.04] flex items-center justify-between gap-4">
+              {/* Panel header */}
+              <div className="px-6 py-5 border-b border-black/[0.04] flex items-center justify-between gap-4 shrink-0">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: selectedGroup.color + '18' }}>
                     <Layers className="w-5 h-5" style={{ color: selectedGroup.color }} />
@@ -374,9 +479,14 @@ export default function ContactGroupPage() {
                 </div>
                 {canManage && (
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <button onClick={() => { setEditingId(selectedGroup.id); setEditName(selectedGroup.name); setEditDesc(selectedGroup.description); }}
+                    <button onClick={() => startEdit(selectedGroup)}
                       className="w-8 h-8 rounded-lg flex items-center justify-center text-[#7a6b5c] hover:bg-[#f5ede3] hover:text-primary transition-colors">
                       <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={handleExportCSV} disabled={members.length === 0}
+                      title="Export CSV"
+                      className="w-8 h-8 rounded-lg flex items-center justify-center text-[#7a6b5c] hover:bg-[#f5ede3] hover:text-primary transition-colors disabled:opacity-40">
+                      <Download className="w-3.5 h-3.5" />
                     </button>
                     <button onClick={() => setShowAddMembers(true)}
                       className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-bold text-white transition-all hover:-translate-y-0.5" style={shadowStyle}>
@@ -390,6 +500,39 @@ export default function ContactGroupPage() {
                 )}
               </div>
 
+              {/* Members search bar */}
+              {members.length > 0 && (
+                <div className="px-6 py-3 border-b border-black/[0.04] shrink-0">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#b09e8d]" />
+                    <input value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)}
+                      placeholder="Search members by name, email, phone..."
+                      className="w-full pl-9 pr-9 py-2 text-[13px] bg-[#faf8f6] border border-black/[0.06] rounded-xl outline-none focus:border-primary/30 placeholder:text-gray-400" />
+                    {memberSearch && (
+                      <button onClick={() => setMemberSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#b09e8d] hover:text-[#7a6b5c]">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Bulk action bar */}
+              {selectedMembers.size > 0 && canManage && (
+                <div className="px-6 py-2.5 bg-primary/5 border-b border-primary/10 flex items-center gap-3 shrink-0">
+                  <span className="text-[12px] font-semibold text-primary">{selectedMembers.size} selected</span>
+                  <div className="flex-1" />
+                  <button onClick={() => setSelectedMembers(new Set())}
+                    className="text-[12px] text-[#7a6b5c] hover:text-[#1c1410] transition-colors">Clear</button>
+                  <button onClick={handleBulkRemove} disabled={bulkRemoving}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold text-white bg-red-500 hover:bg-red-600 transition-colors disabled:opacity-60">
+                    {bulkRemoving ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserMinus className="w-3 h-3" />}
+                    Remove {selectedMembers.size}
+                  </button>
+                </div>
+              )}
+
+              {/* Members list */}
               {membersLoading ? (
                 <div className="flex justify-center py-16"><Loader2 className="w-5 h-5 animate-spin text-primary/40" /></div>
               ) : members.length === 0 ? (
@@ -406,30 +549,78 @@ export default function ContactGroupPage() {
                     </button>
                   )}
                 </div>
+              ) : filteredMembers.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center px-6">
+                  <Search className="w-8 h-8 text-[#c4b09e] mb-2" />
+                  <p className="text-[13px] font-semibold text-[#1c1410]">No members match</p>
+                  <p className="text-[12px] text-[#7a6b5c] mt-0.5">Try a different search term.</p>
+                </div>
               ) : (
-                <div className="divide-y divide-black/[0.04] max-h-[500px] overflow-y-auto">
-                  {members.map((m) => (
-                    <div key={m.id} className="flex items-center gap-3 px-6 py-3.5 hover:bg-[#faf8f6] transition-colors">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-[11px] font-bold text-primary shrink-0">
-                        {(m.lead_name ?? '?')[0].toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[13px] font-semibold text-[#1c1410] truncate">{m.lead_name}</p>
-                        <p className="text-[11px] text-[#7a6b5c] truncate">{m.email || m.phone}</p>
-                      </div>
-                      <div className="hidden sm:flex flex-col items-end gap-0.5 shrink-0">
-                        {m.pipeline_name && <span className="text-[10px] text-[#7a6b5c] bg-[#faf8f6] px-2 py-0.5 rounded-full">{m.pipeline_name}</span>}
-                        {m.stage_name    && <span className="text-[10px] text-primary/70 bg-primary/5 px-2 py-0.5 rounded-full">{m.stage_name}</span>}
-                      </div>
-                      <span className="text-[10px] text-[#9e8c7c] hidden md:block capitalize">{m.added_by}</span>
-                      {canManage && (
-                        <button onClick={() => removeMember(selectedGroup.id, m.lead_id)}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#c4b09e] hover:bg-red-50 hover:text-red-500 transition-colors shrink-0">
-                          <UserMinus className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                <div className="flex-1 overflow-y-auto">
+                  {/* Select-all header row */}
+                  {canManage && (
+                    <div className="flex items-center gap-3 px-6 py-2.5 border-b border-black/[0.04] bg-[#faf8f6]">
+                      <input type="checkbox" checked={allFilteredSelected}
+                        onChange={() => {
+                          if (allFilteredSelected) {
+                            setSelectedMembers((p) => {
+                              const n = new Set(p);
+                              filteredMembers.forEach((m) => n.delete(m.lead_id));
+                              return n;
+                            });
+                          } else {
+                            setSelectedMembers((p) => {
+                              const n = new Set(p);
+                              filteredMembers.forEach((m) => n.add(m.lead_id));
+                              return n;
+                            });
+                          }
+                        }}
+                        className="w-4 h-4 accent-primary cursor-pointer" />
+                      <span className="text-[11px] text-[#7a6b5c] font-semibold">
+                        {allFilteredSelected ? 'Deselect all' : `Select all ${filteredMembers.length}`}
+                      </span>
                     </div>
-                  ))}
+                  )}
+                  <div className="divide-y divide-black/[0.04]">
+                    {filteredMembers.map((m) => {
+                      const checked = selectedMembers.has(m.lead_id);
+                      return (
+                        <div key={m.id}
+                          className="flex items-center gap-3 px-6 py-3.5 hover:bg-[#faf8f6] transition-colors cursor-pointer"
+                          onClick={() => handleMemberClick(m)}>
+                          {canManage && (
+                            <input type="checkbox" checked={checked}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={() => setSelectedMembers((p) => {
+                                const n = new Set(p);
+                                if (checked) n.delete(m.lead_id); else n.add(m.lead_id);
+                                return n;
+                              })}
+                              className="w-4 h-4 accent-primary cursor-pointer shrink-0" />
+                          )}
+                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-[11px] font-bold text-primary shrink-0">
+                            {(m.lead_name ?? '?')[0].toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[13px] font-semibold text-[#1c1410] truncate">{m.lead_name}</p>
+                            <p className="text-[11px] text-[#7a6b5c] truncate">{m.email || m.phone}</p>
+                          </div>
+                          <div className="hidden sm:flex flex-col items-end gap-0.5 shrink-0">
+                            {m.pipeline_name && <span className="text-[10px] text-[#7a6b5c] bg-[#faf8f6] px-2 py-0.5 rounded-full">{m.pipeline_name}</span>}
+                            {m.stage_name    && <span className="text-[10px] text-primary/70 bg-primary/5 px-2 py-0.5 rounded-full">{m.stage_name}</span>}
+                          </div>
+                          <span className="text-[10px] text-[#9e8c7c] hidden md:block capitalize">{m.added_by}</span>
+                          {canManage && (
+                            <button onClick={(e) => { e.stopPropagation(); removeMember(selectedGroup.id, m.lead_id); }}
+                              className="w-7 h-7 rounded-lg flex items-center justify-center text-[#c4b09e] hover:bg-red-50 hover:text-red-500 transition-colors shrink-0">
+                              <UserMinus className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </>
@@ -641,6 +832,17 @@ export default function ContactGroupPage() {
           onClose={() => setShowAddMembers(false)}
         />
       )}
+
+      {/* ── LEAD DETAIL PANEL ── */}
+      {openLead && (
+        <LeadDetailPanel
+          lead={openLead}
+          onClose={() => setOpenLead(null)}
+          onLeadUpdated={(id, updates) =>
+            setOpenLead((prev) => prev ? { ...prev, ...updates } : prev)
+          }
+        />
+      )}
     </div>
   );
 }
@@ -801,7 +1003,6 @@ function AddMembersModal({ groupId, groupName, existingLeadIds, leads, pipelines
         {tab === 'filter' && (
           <div className="flex flex-col flex-1 overflow-hidden">
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              {/* Pipeline */}
               <div>
                 <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Pipeline</label>
                 <select value={pipelineId} onChange={(e) => { setPipelineId(e.target.value); setStageId(''); setPreviewCount(null); }}
@@ -810,7 +1011,6 @@ function AddMembersModal({ groupId, groupName, existingLeadIds, leads, pipelines
                   {pipelines.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
-              {/* Stage */}
               <div>
                 <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Stage</label>
                 <select value={stageId} onChange={(e) => { setStageId(e.target.value); setPreviewCount(null); }}
@@ -820,7 +1020,6 @@ function AddMembersModal({ groupId, groupName, existingLeadIds, leads, pipelines
                   {availableStages.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
-              {/* Tags */}
               <div>
                 <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Tags</label>
                 <div className="flex flex-wrap gap-1.5">
@@ -835,7 +1034,6 @@ function AddMembersModal({ groupId, groupName, existingLeadIds, leads, pipelines
                   {tagNames.length === 0 && <p className="text-[12px] text-[#7a6b5c]">No tags available</p>}
                 </div>
               </div>
-              {/* Source */}
               <div>
                 <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Source</label>
                 <select value={source} onChange={(e) => { setSource(e.target.value); setPreviewCount(null); }}
@@ -844,7 +1042,6 @@ function AddMembersModal({ groupId, groupName, existingLeadIds, leads, pipelines
                   {SOURCES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
               </div>
-              {/* Date range */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Created From</label>
@@ -857,8 +1054,6 @@ function AddMembersModal({ groupId, groupName, existingLeadIds, leads, pipelines
                     className="w-full border border-black/10 rounded-xl px-3.5 py-2.5 text-[13px] outline-none focus:border-primary/40" />
                 </div>
               </div>
-
-              {/* Preview result */}
               {previewCount !== null && (
                 <div className="flex items-center gap-2 p-3 bg-primary/5 rounded-xl border border-primary/20">
                   <Users className="w-4 h-4 text-primary shrink-0" />
