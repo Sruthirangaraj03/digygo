@@ -27,6 +27,24 @@ router.get('/', checkPermission('contact_groups:read'), async (req: AuthRequest,
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
+// POST /api/contact-groups/filter-count — preview count with no group ID (used by create modal)
+router.post('/filter-count', checkPermission('contact_groups:read'), async (req: AuthRequest, res: Response) => {
+  const { pipeline_id, stage_id, tags, source, date_from, date_to } = req.body;
+  try {
+    const { tenantId } = req.user!;
+    const params: any[] = [tenantId];
+    let where = `WHERE l.tenant_id = $1::uuid AND l.is_deleted = FALSE`;
+    if (pipeline_id)  { params.push(pipeline_id);  where += ` AND l.pipeline_id = $${params.length}::uuid`; }
+    if (stage_id)     { params.push(stage_id);     where += ` AND l.stage_id = $${params.length}::uuid`; }
+    if (tags?.length) { params.push(tags);          where += ` AND l.tags && $${params.length}::text[]`; }
+    if (source)       { params.push(source);        where += ` AND l.source = $${params.length}`; }
+    if (date_from)    { params.push(date_from);     where += ` AND l.created_at >= $${params.length}`; }
+    if (date_to)      { params.push(date_to);       where += ` AND l.created_at <= ($${params.length}::date + interval '1 day')`; }
+    const result = await query(`SELECT COUNT(*)::int AS count FROM leads l ${where}`, params);
+    res.json({ count: result.rows[0].count });
+  } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
 // POST /api/contact-groups
 router.post('/', checkPermission('contact_groups:manage'), async (req: AuthRequest, res: Response) => {
   const { name, description = '', color = '#ea580c' } = req.body;

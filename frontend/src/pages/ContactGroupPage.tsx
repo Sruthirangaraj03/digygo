@@ -73,6 +73,16 @@ export default function ContactGroupPage() {
   const [createSearch, setCreateSearch]   = useState('');
   const [createSelected, setCreateSelected] = useState<string[]>([]);
   const [creating, setCreating]           = useState(false);
+  // Create modal — filter tab
+  const [createTab, setCreateTab]         = useState<'search' | 'filter'>('search');
+  const [cfPipelineId, setCfPipelineId]   = useState('');
+  const [cfStageId, setCfStageId]         = useState('');
+  const [cfTags, setCfTags]               = useState<string[]>([]);
+  const [cfSource, setCfSource]           = useState('');
+  const [cfDateFrom, setCfDateFrom]       = useState('');
+  const [cfDateTo, setCfDateTo]           = useState('');
+  const [cfPreviewCount, setCfPreviewCount] = useState<number | null>(null);
+  const [cfPreviewing, setCfPreviewing]   = useState(false);
 
   // Edit inline
   const [editingId, setEditingId]         = useState<string | null>(null);
@@ -109,6 +119,21 @@ export default function ContactGroupPage() {
   }, [selectedGroupId]);
 
   // ── Create ──────────────────────────────────────────────────────────────────
+  const cfHasFilter = !!(cfPipelineId || cfStageId || cfTags.length || cfSource || cfDateFrom || cfDateTo);
+
+  const handleCreateFilterPreview = async () => {
+    setCfPreviewing(true); setCfPreviewCount(null);
+    try {
+      const res = await api.post<{ count: number }>('/api/contact-groups/filter-count', {
+        pipeline_id: cfPipelineId || undefined, stage_id: cfStageId || undefined,
+        tags: cfTags.length ? cfTags : undefined, source: cfSource || undefined,
+        date_from: cfDateFrom || undefined, date_to: cfDateTo || undefined,
+      });
+      setCfPreviewCount(res.count);
+    } catch { toast.error('Preview failed'); }
+    finally { setCfPreviewing(false); }
+  };
+
   const handleCreate = async () => {
     if (!createName.trim()) { toast.error('Name is required'); return; }
     setCreating(true);
@@ -116,12 +141,22 @@ export default function ContactGroupPage() {
       const group = await api.post<ContactGroup>('/api/contact-groups', {
         name: createName.trim(), description: createDesc.trim(), color: createColor,
       });
-      if (createSelected.length > 0) {
-        await api.post(`/api/contact-groups/${group.id}/members`, { lead_ids: createSelected });
-        group.member_count = createSelected.length;
+      let memberCount = 0;
+      if (createTab === 'search' && createSelected.length > 0) {
+        const r = await api.post<{ added: number }>(`/api/contact-groups/${group.id}/members`, { lead_ids: createSelected });
+        memberCount = r.added;
+      } else if (createTab === 'filter' && cfHasFilter) {
+        const r = await api.post<{ added: number; total: number }>(`/api/contact-groups/${group.id}/members/filter`, {
+          pipeline_id: cfPipelineId || undefined, stage_id: cfStageId || undefined,
+          tags: cfTags.length ? cfTags : undefined, source: cfSource || undefined,
+          date_from: cfDateFrom || undefined, date_to: cfDateTo || undefined,
+          preview: false,
+        });
+        memberCount = r.added;
       }
+      group.member_count = memberCount;
       setGroups((p) => [{ ...group }, ...p]);
-      toast.success(`"${group.name}" created with ${createSelected.length} member(s)`);
+      toast.success(`"${group.name}" created${memberCount > 0 ? ` with ${memberCount} member(s)` : ' (empty)'}`);
       resetCreate();
     } catch (e: any) {
       toast.error(e.message ?? 'Failed to create group');
@@ -133,6 +168,9 @@ export default function ContactGroupPage() {
   const resetCreate = () => {
     setShowCreate(false); setCreateStep(1); setCreateName(''); setCreateDesc('');
     setCreateColor(GROUP_COLORS[0]); setCreateSelected([]); setCreateSearch('');
+    setCreateTab('search');
+    setCfPipelineId(''); setCfStageId(''); setCfTags([]); setCfSource('');
+    setCfDateFrom(''); setCfDateTo(''); setCfPreviewCount(null);
   };
 
   // ── Edit ────────────────────────────────────────────────────────────────────
@@ -444,49 +482,144 @@ export default function ContactGroupPage() {
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col" style={{ maxHeight: '70vh' }}>
-                <div className="px-6 pt-4 pb-3 space-y-3 shrink-0">
-                  <div className="flex items-center gap-2 p-3 bg-[#faf8f6] rounded-xl border border-black/[0.04]">
+              <div className="flex flex-col" style={{ maxHeight: '75vh' }}>
+                {/* Group name chip */}
+                <div className="px-6 pt-4 pb-0 shrink-0">
+                  <div className="flex items-center gap-2 p-3 bg-[#faf8f6] rounded-xl border border-black/[0.04] mb-3">
                     <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: createColor + '18' }}>
                       <Layers className="w-3.5 h-3.5" style={{ color: createColor }} />
                     </div>
                     <span className="text-[13px] font-bold text-[#1c1410]">{createName}</span>
-                    {createSelected.length > 0 && (
+                    {createTab === 'search' && createSelected.length > 0 && (
                       <span className="ml-auto text-[11px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">{createSelected.length} selected</span>
                     )}
-                  </div>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#b09e8d]" />
-                    <input value={createSearch} onChange={(e) => setCreateSearch(e.target.value)} placeholder="Search contacts..."
-                      className="w-full pl-9 pr-4 py-2.5 text-[13px] bg-white border border-black/10 rounded-xl outline-none focus:border-primary/40 placeholder:text-gray-400" />
+                    {createTab === 'filter' && cfPreviewCount !== null && (
+                      <span className="ml-auto text-[11px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">{cfPreviewCount} leads</span>
+                    )}
                   </div>
                 </div>
-                <div className="flex-1 overflow-y-auto divide-y divide-black/[0.04] px-2">
-                  {filteredCreateLeads.map((l) => {
-                    const checked = createSelected.includes(l.id);
-                    return (
-                      <label key={l.id} className="flex items-center gap-3 px-4 py-3 hover:bg-[#faf8f6] cursor-pointer rounded-xl transition-colors">
-                        <input type="checkbox" checked={checked}
-                          onChange={() => setCreateSelected((p) => checked ? p.filter((x) => x !== l.id) : [...p, l.id])}
-                          className="w-4 h-4 accent-primary" />
-                        <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
-                          {l.firstName[0]}{l.lastName[0]}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[13px] font-semibold text-[#1c1410] truncate">{l.firstName} {l.lastName}</p>
-                          <p className="text-[11px] text-[#7a6b5c] truncate">{l.email || l.phone}</p>
-                        </div>
-                        <span className="text-[10px] text-[#7a6b5c] bg-[#faf8f6] px-2 py-0.5 rounded-full">{l.source}</span>
-                      </label>
-                    );
-                  })}
-                  {filteredCreateLeads.length === 0 && <p className="text-center py-8 text-[13px] text-[#7a6b5c]">No contacts found.</p>}
+                {/* Tabs */}
+                <div className="flex border-b border-black/5 shrink-0 px-6">
+                  {(['search', 'filter'] as const).map((t) => (
+                    <button key={t} onClick={() => setCreateTab(t)}
+                      className={cn('flex-1 py-2.5 text-[12px] font-semibold flex items-center justify-center gap-1.5 transition-colors',
+                        createTab === t ? 'text-primary border-b-2 border-primary' : 'text-[#7a6b5c] hover:text-[#1c1410]'
+                      )}>
+                      {t === 'search' ? <><Search className="w-3.5 h-3.5" /> Search & Select</> : <><Filter className="w-3.5 h-3.5" /> From Pipeline / Filter</>}
+                    </button>
+                  ))}
                 </div>
+
+                {/* Search tab */}
+                {createTab === 'search' && (<>
+                  <div className="px-6 pt-3 pb-2 shrink-0">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#b09e8d]" />
+                      <input value={createSearch} onChange={(e) => setCreateSearch(e.target.value)} placeholder="Search contacts..."
+                        className="w-full pl-9 pr-4 py-2.5 text-[13px] bg-white border border-black/10 rounded-xl outline-none focus:border-primary/40 placeholder:text-gray-400" />
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto divide-y divide-black/[0.04] px-2">
+                    {filteredCreateLeads.map((l) => {
+                      const checked = createSelected.includes(l.id);
+                      return (
+                        <label key={l.id} className="flex items-center gap-3 px-4 py-3 hover:bg-[#faf8f6] cursor-pointer rounded-xl transition-colors">
+                          <input type="checkbox" checked={checked}
+                            onChange={() => setCreateSelected((p) => checked ? p.filter((x) => x !== l.id) : [...p, l.id])}
+                            className="w-4 h-4 accent-primary" />
+                          <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
+                            {l.firstName[0]}{l.lastName[0]}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[13px] font-semibold text-[#1c1410] truncate">{l.firstName} {l.lastName}</p>
+                            <p className="text-[11px] text-[#7a6b5c] truncate">{l.email || l.phone}</p>
+                          </div>
+                          <span className="text-[10px] text-[#7a6b5c] bg-[#faf8f6] px-2 py-0.5 rounded-full">{l.source}</span>
+                        </label>
+                      );
+                    })}
+                    {filteredCreateLeads.length === 0 && <p className="text-center py-8 text-[13px] text-[#7a6b5c]">No contacts found.</p>}
+                  </div>
+                </>)}
+
+                {/* Filter tab */}
+                {createTab === 'filter' && (
+                  <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                    <div>
+                      <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Pipeline</label>
+                      <select value={cfPipelineId} onChange={(e) => { setCfPipelineId(e.target.value); setCfStageId(''); setCfPreviewCount(null); }}
+                        className="w-full border border-black/10 rounded-xl px-3.5 py-2.5 text-[13px] outline-none focus:border-primary/40 bg-white">
+                        <option value="">Any pipeline</option>
+                        {pipelines.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Stage</label>
+                      <select value={cfStageId} onChange={(e) => { setCfStageId(e.target.value); setCfPreviewCount(null); }}
+                        disabled={!cfPipelineId}
+                        className="w-full border border-black/10 rounded-xl px-3.5 py-2.5 text-[13px] outline-none focus:border-primary/40 bg-white disabled:opacity-50">
+                        <option value="">Any stage</option>
+                        {(pipelines.find((p: any) => p.id === cfPipelineId)?.stages ?? []).map((s: any) => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Tags</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {allTags.map((t: any) => { const tag = typeof t === 'string' ? t : t.name; return (
+                          <button key={tag} onClick={() => { setCfTags((p) => p.includes(tag) ? p.filter((x) => x !== tag) : [...p, tag]); setCfPreviewCount(null); }}
+                            className={cn('px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors',
+                              cfTags.includes(tag) ? 'bg-primary text-white border-primary' : 'bg-white text-[#7a6b5c] border-black/10 hover:border-primary/30'
+                            )}>{tag}</button>
+                        ); })}
+                        {allTags.length === 0 && <p className="text-[12px] text-[#7a6b5c]">No tags available</p>}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Source</label>
+                      <select value={cfSource} onChange={(e) => { setCfSource(e.target.value); setCfPreviewCount(null); }}
+                        className="w-full border border-black/10 rounded-xl px-3.5 py-2.5 text-[13px] outline-none focus:border-primary/40 bg-white">
+                        <option value="">Any source</option>
+                        {SOURCES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Created From</label>
+                        <input type="date" value={cfDateFrom} onChange={(e) => { setCfDateFrom(e.target.value); setCfPreviewCount(null); }}
+                          className="w-full border border-black/10 rounded-xl px-3.5 py-2.5 text-[13px] outline-none focus:border-primary/40" />
+                      </div>
+                      <div>
+                        <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">Created To</label>
+                        <input type="date" value={cfDateTo} onChange={(e) => { setCfDateTo(e.target.value); setCfPreviewCount(null); }}
+                          className="w-full border border-black/10 rounded-xl px-3.5 py-2.5 text-[13px] outline-none focus:border-primary/40" />
+                      </div>
+                    </div>
+                    {cfPreviewCount !== null && (
+                      <div className="flex items-center gap-2 p-3 bg-primary/5 rounded-xl border border-primary/20">
+                        <Users className="w-4 h-4 text-primary shrink-0" />
+                        <p className="text-[13px] font-semibold text-primary">{cfPreviewCount} lead(s) match your filter</p>
+                      </div>
+                    )}
+                    <button onClick={handleCreateFilterPreview} disabled={cfPreviewing}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#f5ede3] disabled:opacity-60 transition-colors">
+                      {cfPreviewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Filter className="w-3.5 h-3.5" />}
+                      Preview Count
+                    </button>
+                  </div>
+                )}
+
+                {/* Footer */}
                 <div className="px-6 py-4 border-t border-black/5 flex gap-3 shrink-0">
                   <button onClick={() => setCreateStep(1)} className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#f5ede3]">Back</button>
                   <button onClick={handleCreate} disabled={creating}
                     className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-60" style={shadowStyle}>
-                    {creating ? 'Creating...' : createSelected.length > 0 ? `Create with ${createSelected.length} member(s)` : 'Create Empty Group'}
+                    {creating ? 'Creating...'
+                      : createTab === 'search' && createSelected.length > 0 ? `Create with ${createSelected.length} member(s)`
+                      : createTab === 'filter' && cfPreviewCount !== null ? `Create with ${cfPreviewCount} lead(s)`
+                      : createTab === 'filter' && cfHasFilter ? 'Create with Filter'
+                      : 'Create Empty Group'}
                   </button>
                 </div>
               </div>
