@@ -253,7 +253,13 @@ router.get('/export', checkPermission('leads:export'), async (req: AuthRequest, 
               WHEN MIN(f.due_at) IS NULL THEN 'None'
               WHEN MIN(f.due_at) < NOW() THEN 'Overdue'
               ELSE 'Pending'
-            END FROM lead_followups f WHERE f.lead_id = l.id AND f.completed = FALSE) AS followup_status
+            END FROM lead_followups f WHERE f.lead_id = l.id AND f.completed = FALSE) AS followup_status,
+           (SELECT string_agg(
+              '[' || TO_CHAR(n.created_at, 'DD-Mon-YYYY HH12:MI AM') || '] ' ||
+              COALESCE(un.name, 'System') || ': ' ||
+              COALESCE(NULLIF(TRIM(n.title), '') || ' — ', '') || COALESCE(n.content, ''),
+              E'\n' ORDER BY n.created_at ASC
+            ) FROM lead_notes n LEFT JOIN users un ON un.id = n.created_by WHERE n.lead_id = l.id) AS notes
     FROM leads l
     LEFT JOIN pipeline_stages ps ON ps.id = l.stage_id
     LEFT JOIN pipelines p ON p.id = l.pipeline_id
