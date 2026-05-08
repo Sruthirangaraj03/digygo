@@ -1748,6 +1748,115 @@ function EditLeadModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
   );
 }
 
+// ─── Edit Fields Drawer ─────────────────────────────────────────────────────────
+
+type FieldDef = { id: string; name: string; slug: string; type: string };
+
+function EditFieldsDrawer({ lead, onClose, onSaved }: {
+  lead: Lead;
+  onClose: () => void;
+  onSaved: (fields: { label: string; value: string; fieldId: string }[]) => void;
+}) {
+  const [fieldDefs, setFieldDefs] = useState<FieldDef[]>([]);
+  const [values, setValues]       = useState<Record<string, string>>({});
+  const [saving, setSaving]       = useState(false);
+  const [loading, setLoading]     = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      api.get<FieldDef[]>('/api/fields/custom'),
+      api.get<any[]>(`/api/leads/${lead.id}/fields`),
+    ]).then(([defs, vals]) => {
+      setFieldDefs(defs ?? []);
+      const map: Record<string, string> = {};
+      (lead.customFields ?? []).forEach((f) => { if (f.fieldId) map[f.fieldId] = f.value; });
+      (vals ?? []).forEach((v: any) => { map[v.field_id] = v.value ?? ''; });
+      setValues(map);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, [lead.id]);
+
+  const handleSave = async () => {
+    const entries = Object.entries(values).filter(([, v]) => v.trim() !== '');
+    if (!entries.length) { onClose(); return; }
+    setSaving(true);
+    try {
+      await api.patch(`/api/leads/${lead.id}/fields`, {
+        values: entries.map(([field_id, value]) => ({ field_id, value })),
+      });
+      const updated = fieldDefs
+        .filter((d) => values[d.id] !== undefined && values[d.id] !== '')
+        .map((d) => ({ label: d.name, value: values[d.id], fieldId: d.id }));
+      onSaved(updated);
+      toast.success('Fields saved');
+      onClose();
+    } catch {
+      toast.error('Failed to save fields');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const activeDefs = fieldDefs.filter((d) => (d as any).is_active !== false);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex">
+      <div className="fixed inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative ml-auto w-full max-w-md bg-white h-full flex flex-col shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-black/5">
+          <div>
+            <h3 className="font-headline font-bold text-[15px] text-[#1c1410]">Edit Fields</h3>
+            <p className="text-[11px] text-[#7a6b5c] mt-0.5">{activeDefs.length} fields available</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f5ede3] transition-colors">
+            <X className="w-4 h-4 text-[#7a6b5c]" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {loading ? (
+            <div className="flex items-center justify-center py-16 text-[13px] text-[#7a6b5c]">Loading fields…</div>
+          ) : activeDefs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
+              <FileText className="w-8 h-8 text-[#c2410c]/30" />
+              <p className="text-[13px] font-semibold text-[#1c1410]">No fields defined yet</p>
+              <p className="text-[12px] text-[#7a6b5c]">Go to Settings → Fields to create custom fields</p>
+            </div>
+          ) : (
+            activeDefs.map((def) => (
+              <div key={def.id}>
+                <label className="block text-[12px] font-semibold text-[#1c1410] mb-1.5">{def.name}</label>
+                <input
+                  value={values[def.id] ?? ''}
+                  onChange={(e) => setValues((prev) => ({ ...prev, [def.id]: e.target.value }))}
+                  placeholder={`Enter ${def.name.toLowerCase()}…`}
+                  className="w-full px-3 py-2 rounded-lg border border-black/10 bg-white text-[13px] text-[#1c1410] placeholder:text-[#7a6b5c]/60 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/40 transition-colors"
+                />
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-black/5 flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-lg text-[13px] font-semibold text-[#7a6b5c] hover:bg-gray-100 transition-colors border border-black/10">
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || loading}
+            className="flex-1 py-2.5 rounded-lg text-[13px] font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 12px rgba(234,88,12,0.25)' }}
+          >
+            {saving ? 'Saving…' : 'Save Fields'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Additional Info Section (pipeline questionnaire) ──────────────────────────
 function AdditionalInfoSection({ lead, onUpdate }: { lead: Lead; onUpdate: (fields: { label: string; value: string }[]) => void }) {
   const { additionalFields } = useCrmStore();
@@ -1944,6 +2053,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
   const canDeleteLead = usePermission('leads:delete');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showCustomFields, setShowCustomFields] = useState(false);
+  const [showEditFields,   setShowEditFields]   = useState(false);
 
   useEffect(() => {
     api.get<any[]>(`/api/leads/${lead.id}/notes`).then(setLeadNotes).catch(() => null);
@@ -2200,30 +2310,42 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
                 </div>
               )}
 
-              {/* Additional custom fields — collapsed by default */}
-              {lead.customFields && lead.customFields.length > 0 && (
-                <div>
+              {/* Additional custom fields */}
+              <div>
+                <div className="flex items-center justify-between">
                   <button
                     onClick={() => setShowCustomFields((v) => !v)}
                     className="flex items-center gap-1.5 text-[12px] font-semibold text-primary hover:text-[#c2410c] transition-colors"
                   >
                     <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${showCustomFields ? 'rotate-90' : ''}`} />
-                    Additional Fields ({lead.customFields.length})
+                    Additional Fields {lead.customFields && lead.customFields.length > 0 ? `(${lead.customFields.length})` : ''}
                   </button>
-                  {showCustomFields && (
-                    <div className="mt-2 space-y-2 pl-1">
-                      {lead.customFields.map((f, i) => (
+                  {canEditLead && (
+                    <button
+                      onClick={() => setShowEditFields(true)}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-[#7a6b5c] hover:text-[#c2410c] transition-colors px-2 py-1 rounded-lg hover:bg-[#f5ede3]"
+                    >
+                      <Pencil className="w-3 h-3" /> Edit Fields
+                    </button>
+                  )}
+                </div>
+                {showCustomFields && (
+                  <div className="mt-2 space-y-2 pl-1">
+                    {lead.customFields && lead.customFields.length > 0 ? (
+                      lead.customFields.map((f, i) => (
                         <div key={i} className="flex items-start gap-3">
                           <FileText className="w-4 h-4 text-[#7a6b5c] shrink-0 mt-0.5" />
                           <span className="text-[13px] text-[#1c1410] font-medium flex-1 break-words">
                             <span className="text-[#7a6b5c]">{f.label}:</span> {f.value}
                           </span>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+                      ))
+                    ) : (
+                      <p className="text-[12px] text-[#7a6b5c] pl-1 italic">No field values yet — click Edit Fields to add</p>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Lead Quality */}
               {lead.leadQuality && (
@@ -2469,6 +2591,16 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
     </div>
     </div>
     {showNoteModal && <NoteModal leadId={lead.id} onClose={() => setShowNoteModal(false)} onCreated={(n) => setLeadNotes((prev) => [n, ...prev])} />}
+    {showEditFields && (
+      <EditFieldsDrawer
+        lead={lead}
+        onClose={() => setShowEditFields(false)}
+        onSaved={(fields) => {
+          updateLead(lead.id, { customFields: fields });
+          setShowCustomFields(true);
+        }}
+      />
+    )}
     {showPipelineModal && <QuickEditModal lead={lead} onClose={() => setShowPipelineModal(false)} onSaved={(updates) => onLeadUpdated?.(lead.id, updates)} />}
     {showFuModal && <FollowUpModal leadId={lead.id} onClose={() => setShowFuModal(false)}
       onCreated={(fu) => {
