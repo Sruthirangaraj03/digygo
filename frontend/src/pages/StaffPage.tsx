@@ -774,118 +774,150 @@ export default function StaffPage() {
   };
 
   return (
-    <div className="space-y-8">
-      {tab === 'team' && canManageStaff && (
-        <div className="flex justify-end">
-          <Button className="btn-hover" onClick={() => setShowInviteModal(true)}>
-            <Plus className="w-4 h-4 mr-1" /> New Staff
-          </Button>
-        </div>
-      )}
+    <div className="space-y-6">
 
       {/* Team Tab */}
       {tab === 'team' && (
-        <div className="bg-white rounded-2xl border border-black/5 card-shadow overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-black/5 bg-[#faf8f6]">
-                  {['Member', 'Status', 'Leads', 'Last Active', 'Actions'].map((h) => (
-                    <th key={h} className="text-left text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] px-4 py-3 whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {staff.map((s) => (
-                  <tr key={s.id} className="border-b border-black/5 last:border-0 hover:bg-[#faf8f6] transition-colors">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold shrink-0', s.status === 'active' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground')}>
-                          {s.avatar}
-                        </div>
-                        <div>
-                          <p className={cn('text-sm font-medium', s.status === 'inactive' && 'text-muted-foreground')}>{s.name}</p>
-                          <p className="text-[11px] text-[#7a6b5c]">{s.email}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className={cn('w-2 h-2 rounded-full shrink-0', s.status === 'active' ? 'bg-green-500' : 'bg-muted-foreground')} />
-                        <span className="text-sm text-foreground capitalize">{s.status}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-foreground">{s.leadsAssigned}</td>
-                    <td className="px-4 py-3 text-[13px] text-[#7a6b5c] whitespace-nowrap">{formatDistanceToNow(new Date(s.lastActive), { addSuffix: true })}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 relative">
-                        {canManageStaff && (
-                          <button
-                            onClick={() => setEditMember(s)}
-                            className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-colors"
-                            title="Edit member"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                        )}
-                        {canManageStaff && (
-                          <button
-                            onClick={() => setPermsMember(s)}
-                            className="p-1.5 rounded-md hover:bg-orange-50 text-muted-foreground hover:text-[#c2410c] transition-colors"
-                            title="Edit permissions"
-                          >
-                            <ShieldCheck className="w-4 h-4" />
-                          </button>
-                        )}
-                        {canManageStaff && (
-                          <div className="relative">
-                            <button
-                              onClick={() => setOpenMenuId(openMenuId === s.id ? null : s.id)}
-                              className="p-1.5 rounded-md hover:bg-[#f5ede3] text-muted-foreground hover:text-foreground transition-colors"
-                              title="More actions"
-                            >
-                              <MoreHorizontal className="w-4 h-4" />
-                            </button>
-                            {openMenuId === s.id && (
-                              <>
-                                <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
-                                <div className="absolute right-0 top-9 bg-card border border-black/5 rounded-xl shadow-xl z-50 w-48 py-1">
-                                  {s.status === 'pending' && (
-                                    <button
-                                      onClick={() => {
-                                        api.post(`/api/settings/staff/${s.id}/resend-invite`, {})
-                                          .then(() => toast.success(`Invite resent to ${s.email}`))
-                                          .catch(() => toast.error('Failed to resend invite'));
-                                        setOpenMenuId(null);
-                                      }}
-                                      className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-[#f5ede3] transition-colors text-foreground"
-                                    >
-                                      <Mail className="w-4 h-4" />
-                                      Resend Invite
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => { setDeactivateMember(s); setOpenMenuId(null); }}
-                                    className={cn('w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors', s.status === 'active' ? 'hover:bg-red-50 text-destructive' : 'hover:bg-green-50 text-green-700')}
-                                  >
-                                    {s.status === 'active' ? <UserMinus className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
-                                    {s.status === 'active' ? 'Deactivate' : 'Reactivate'}
-                                  </button>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="space-y-5">
+          {/* Header */}
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h3 className="font-headline text-[17px] font-bold text-[#1c1410]">Team Members</h3>
+              <p className="text-[12px] text-[#7a6b5c] mt-0.5">
+                {staff.filter((s) => s.status === 'active').length} active
+                {staff.filter((s) => s.status === 'inactive').length > 0 && ` · ${staff.filter((s) => s.status === 'inactive').length} inactive`}
+              </p>
+            </div>
+            {canManageStaff && (
+              <Button className="btn-hover shrink-0" onClick={() => setShowInviteModal(true)}>
+                <Plus className="w-4 h-4 mr-1" /> New Staff
+              </Button>
+            )}
           </div>
-          <div className="px-4 py-3 border-t border-black/5 bg-[#faf8f6] flex items-center justify-between">
-            <p className="text-[11px] text-[#7a6b5c]">{staff.filter((s) => s.status === 'active').length} active · {staff.filter((s) => s.status === 'inactive').length} inactive</p>
-          </div>
+
+          {/* Staff list */}
+          {staff.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-[#ede8e2] flex flex-col items-center justify-center py-20 gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-[#f5ede3] flex items-center justify-center">
+                <User className="w-6 h-6 text-[#c2410c]" />
+              </div>
+              <p className="text-[14px] font-bold text-[#1c1410]">No team members yet</p>
+              <p className="text-[12px] text-[#7a6b5c]">Add your first staff member to get started</p>
+              {canManageStaff && (
+                <Button className="btn-hover mt-1" onClick={() => setShowInviteModal(true)}>
+                  <Plus className="w-4 h-4 mr-1" /> New Staff
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-black/5 card-shadow divide-y divide-black/5">
+              {staff.map((s) => (
+                <div key={s.id} className="flex items-center gap-4 px-5 py-4 hover:bg-[#faf8f6] transition-colors">
+
+                  {/* Avatar */}
+                  <div className={cn(
+                    'w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0',
+                    s.status === 'active' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
+                  )}>
+                    {s.avatar}
+                  </div>
+
+                  {/* Name + email + status */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className={cn('text-sm font-semibold', s.status === 'inactive' ? 'text-muted-foreground' : 'text-[#1c1410]')}>
+                        {s.name}
+                      </p>
+                      <span className={cn(
+                        'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold',
+                        s.status === 'active' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500',
+                      )}>
+                        <span className={cn('w-1.5 h-1.5 rounded-full', s.status === 'active' ? 'bg-green-500' : 'bg-gray-400')} />
+                        {s.status === 'active' ? 'Active' : s.status === 'pending' ? 'Pending' : 'Inactive'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#7a6b5c] truncate mt-0.5">{s.email}</p>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="hidden md:flex items-center gap-6 shrink-0">
+                    <div className="text-center w-14">
+                      <p className="text-sm font-semibold text-[#1c1410]">{s.leadsAssigned}</p>
+                      <p className="text-[10px] text-[#7a6b5c] mt-0.5">Leads</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[12px] font-medium text-[#1c1410] whitespace-nowrap">
+                        {formatDistanceToNow(new Date(s.lastActive), { addSuffix: true })}
+                      </p>
+                      <p className="text-[10px] text-[#7a6b5c] mt-0.5">Last Active</p>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  {canManageStaff && (
+                    <div className="flex items-center gap-1 shrink-0 ml-2">
+                      <button
+                        onClick={() => setEditMember(s)}
+                        className="p-2 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-[#c2410c] transition-colors"
+                        title="Edit member"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setPermsMember(s)}
+                        className="p-2 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-[#c2410c] transition-colors"
+                        title="Edit permissions"
+                      >
+                        <ShieldCheck className="w-4 h-4" />
+                      </button>
+                      <div className="relative">
+                        <button
+                          onClick={() => setOpenMenuId(openMenuId === s.id ? null : s.id)}
+                          className="p-2 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-foreground transition-colors"
+                          title="More actions"
+                        >
+                          <MoreHorizontal className="w-4 h-4" />
+                        </button>
+                        {openMenuId === s.id && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
+                            <div className="absolute right-0 top-10 bg-white border border-black/8 rounded-xl shadow-lg z-50 w-44 py-1 overflow-hidden">
+                              {s.status === 'pending' && (
+                                <button
+                                  onClick={() => {
+                                    api.post(`/api/settings/staff/${s.id}/resend-invite`, {})
+                                      .then(() => toast.success(`Invite resent to ${s.email}`))
+                                      .catch(() => toast.error('Failed to resend invite'));
+                                    setOpenMenuId(null);
+                                  }}
+                                  className="w-full text-left px-3 py-2.5 text-sm flex items-center gap-2.5 hover:bg-[#faf8f6] transition-colors text-[#1c1410]"
+                                >
+                                  <Mail className="w-4 h-4 text-[#7a6b5c]" />
+                                  Resend Invite
+                                </button>
+                              )}
+                              <button
+                                onClick={() => { setDeactivateMember(s); setOpenMenuId(null); }}
+                                className={cn(
+                                  'w-full text-left px-3 py-2.5 text-sm flex items-center gap-2.5 transition-colors',
+                                  s.status === 'active' ? 'hover:bg-red-50 text-red-600' : 'hover:bg-green-50 text-green-700',
+                                )}
+                              >
+                                {s.status === 'active'
+                                  ? <UserMinus className="w-4 h-4" />
+                                  : <UserCheck className="w-4 h-4" />}
+                                {s.status === 'active' ? 'Deactivate' : 'Reactivate'}
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
