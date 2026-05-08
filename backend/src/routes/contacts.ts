@@ -42,6 +42,17 @@ router.get('/', checkPermission('contacts:read'), async (req: AuthRequest, res: 
 const CONTACT_FIELDS: Record<string, string> = {
   name: 'Name', email: 'Email', phone: 'Phone', company: 'Company',
   tags: 'Tags', created_at: 'Created At',
+  source: 'Source',
+  assigned_name: 'Assigned To',
+  pipeline_name: 'Pipeline',
+  stage_name: 'Stage',
+  lead_quality: 'Lead Quality',
+  deal_value: 'Deal Value',
+  last_activity: 'Last Activity',
+  next_followup_date: 'Next Follow-up Date',
+  followup_status: 'Follow-up Status',
+  team_member_names: 'Team Members',
+  lead_updated_at: 'Last Updated',
 };
 
 router.get('/export', checkPermission('contacts:export'), async (req: AuthRequest, res: Response) => {
@@ -59,13 +70,33 @@ router.get('/export', checkPermission('contacts:export'), async (req: AuthReques
     let assignedFilter = '';
     if (onlyAssigned) {
       params.push(userId);
-      assignedFilter = ` AND l.assigned_to = $${params.length}`;
+      assignedFilter = ` AND (l.assigned_to = $${params.length}::uuid OR $${params.length}::uuid = ANY(l.team_members))`;
     }
 
     const result = await query(
-      `SELECT c.* FROM contacts c
-       LEFT JOIN leads l ON l.id = c.lead_id
-       WHERE c.tenant_id = $1${assignedFilter} ORDER BY c.created_at DESC LIMIT 10000`,
+      `SELECT c.*,
+        l.source,
+        l.deal_value,
+        l.updated_at AS lead_updated_at,
+        l.custom_fields->>'lead_quality' AS lead_quality,
+        u.name AS assigned_name,
+        p.name AS pipeline_name,
+        ps.name AS stage_name,
+        l.updated_at AS last_activity,
+        (SELECT string_agg(u2.name, ', ') FROM users u2 WHERE u2.id = ANY(l.team_members)) AS team_member_names,
+        (SELECT MIN(f.due_at) FROM lead_followups f WHERE f.lead_id = l.id AND f.completed = FALSE) AS next_followup_date,
+        (SELECT CASE
+           WHEN MIN(f.due_at) IS NULL THEN 'None'
+           WHEN MIN(f.due_at) < NOW() THEN 'Overdue'
+           ELSE 'Pending'
+         END FROM lead_followups f WHERE f.lead_id = l.id AND f.completed = FALSE) AS followup_status
+       FROM contacts c
+       LEFT JOIN leads l ON l.id = c.lead_id AND l.is_deleted = FALSE
+       LEFT JOIN users u ON u.id = l.assigned_to
+       LEFT JOIN pipelines p ON p.id = l.pipeline_id
+       LEFT JOIN pipeline_stages ps ON ps.id = l.stage_id
+       WHERE c.tenant_id = $1${assignedFilter}
+       ORDER BY c.created_at DESC LIMIT 10000`,
       params
     );
 
@@ -76,7 +107,12 @@ router.get('/export', checkPermission('contacts:export'), async (req: AuthReques
       for (const f of selectedFields) {
         let val = row[f];
         if (f === 'tags' && Array.isArray(val)) val = val.join(', ');
-        if (f === 'created_at' && val) val = new Date(val).toLocaleString();
+        if ((f === 'created_at' || f === 'lead_updated_at' || f === 'last_activity') && val)
+          val = new Date(val).toLocaleString();
+        if (f === 'next_followup_date' && val)
+          val = new Date(val).toLocaleString();
+        if (f === 'deal_value' && val !== null && val !== undefined)
+          val = Number(val);
         out[CONTACT_FIELDS[f]] = val ?? '';
       }
       return out;
