@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   Plus, Pencil, ShieldCheck, User, X, Check, MoreHorizontal,
-  Mail, UserMinus, UserCheck, Upload, ChevronDown, Eye, EyeOff,
+  Mail, UserMinus, UserCheck, Upload, ChevronDown, Eye, EyeOff, Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -375,6 +375,49 @@ function DeactivateDialog({ member, onClose, onConfirm }: { member: StaffMember;
   );
 }
 
+// ── Delete Confirm Modal ───────────────────────────────────────────────────────
+
+function DeleteConfirmModal({ member, onClose, onConfirm }: { member: StaffMember; onClose: () => void; onConfirm: () => void }) {
+  const [typed, setTyped] = useState('');
+  const confirmed = typed.trim().toLowerCase() === member.name.trim().toLowerCase();
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+      <div className="bg-card rounded-2xl border border-black/5 w-full max-w-sm shadow-2xl p-6">
+        <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+          <Trash2 className="w-5 h-5 text-red-600" />
+        </div>
+        <h3 className="font-headline font-bold text-[#1c1410] text-center mb-1">Delete {member.name}?</h3>
+        <p className="text-[13px] text-[#7a6b5c] text-center mb-5">
+          This will permanently remove their account and revoke all access. Their assigned leads will become unassigned. This cannot be undone.
+        </p>
+        <div className="mb-5">
+          <p className="text-[12px] text-[#7a6b5c] mb-1.5">
+            Type <span className="font-semibold text-[#1c1410]">{member.name}</span> to confirm
+          </p>
+          <Input
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            placeholder={member.name}
+            className="text-sm"
+            autoFocus
+          />
+        </div>
+        <div className="flex gap-3">
+          <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
+          <Button
+            variant="destructive"
+            className="flex-1"
+            disabled={!confirmed}
+            onClick={onConfirm}
+          >
+            Delete
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Permissions Modal ──────────────────────────────────────────────────────────
 
 function PermissionsModal({ member, onClose }: { member: StaffMember; onClose: () => void }) {
@@ -688,7 +731,7 @@ function PermCheckbox({ checked, onChange }: { checked: boolean; onChange: () =>
 }
 
 export default function StaffPage() {
-  const { staff: storeStaff, addStaff, updateStaff, deactivateStaff } = useCrmStore();
+  const { staff: storeStaff, addStaff, updateStaff, deactivateStaff, removeStaff } = useCrmStore();
   const [staff, setStaff] = useState<StaffMember[]>(storeStaff);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -704,6 +747,7 @@ export default function StaffPage() {
 
   const [editMember,       setEditMember]       = useState<StaffMember | null>(null);
   const [deactivateMember, setDeactivateMember] = useState<StaffMember | null>(null);
+  const [deleteMember,     setDeleteMember]     = useState<StaffMember | null>(null);
   const [permsMember,      setPermsMember]      = useState<StaffMember | null>(null);
   const [openMenuId,       setOpenMenuId]       = useState<string | null>(null);
 
@@ -771,6 +815,19 @@ export default function StaffPage() {
       toast.error(err.message ?? 'Failed to update staff');
     }
     setDeactivateMember(null);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteMember) return;
+    try {
+      await api.delete(`/api/settings/staff/${deleteMember.id}`);
+      setStaff((prev) => prev.filter((m) => m.id !== deleteMember.id));
+      removeStaff(deleteMember.id);
+      toast.success(`${deleteMember.name} has been deleted`);
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to delete staff member');
+    }
+    setDeleteMember(null);
   };
 
   return (
@@ -908,6 +965,14 @@ export default function StaffPage() {
                                   : <UserCheck className="w-4 h-4" />}
                                 {s.status === 'active' ? 'Deactivate' : 'Reactivate'}
                               </button>
+                              <div className="border-t border-black/5 my-1" />
+                              <button
+                                onClick={() => { setDeleteMember(s); setOpenMenuId(null); }}
+                                className="w-full text-left px-3 py-2.5 text-sm flex items-center gap-2.5 hover:bg-red-50 text-red-600 transition-colors"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                Delete
+                              </button>
                             </div>
                           </>
                         )}
@@ -1015,6 +1080,7 @@ export default function StaffPage() {
       {showInviteModal && <StaffModal onClose={() => setShowInviteModal(false)} onSave={handleInvite} />}
       {editMember && <StaffModal initial={editMember} onClose={() => setEditMember(null)} onSave={handleEdit} />}
       {deactivateMember && <DeactivateDialog member={deactivateMember} onClose={() => setDeactivateMember(null)} onConfirm={handleDeactivate} />}
+      {deleteMember && <DeleteConfirmModal member={deleteMember} onClose={() => setDeleteMember(null)} onConfirm={handleDelete} />}
       {permsMember && <PermissionsModal member={permsMember} onClose={() => setPermsMember(null)} />}
     </div>
   );

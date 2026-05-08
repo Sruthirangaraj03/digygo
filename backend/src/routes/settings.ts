@@ -385,27 +385,40 @@ router.delete('/staff/:id/permissions', checkPermission('staff:manage'), async (
 // DELETE /api/settings/staff/:id — deactivate + revoke active session (#59)
 router.delete('/staff/:id', checkPermission('staff:manage'), async (req: AuthRequest, res: Response) => {
   try {
-    const ownerCheck = await query(
-      `SELECT role FROM users WHERE id=$1 AND tenant_id=$2`,
+    const staffRow = await query(
+      `SELECT id, name, role FROM users WHERE id=$1::uuid AND tenant_id=$2::uuid`,
       [req.params.id, req.user!.tenantId]
     );
-    if (!ownerCheck.rows[0]) { res.status(404).json({ error: 'User not found' }); return; }
-    if (ownerCheck.rows[0].role === 'owner') {
-      res.status(403).json({ error: 'Cannot deactivate the business owner account' }); return;
+    if (!staffRow.rows[0]) { res.status(404).json({ error: 'User not found' }); return; }
+    if (staffRow.rows[0].role === 'owner') {
+      res.status(403).json({ error: 'Cannot delete the business owner account' }); return;
     }
+    if (req.params.id === req.user!.userId) {
+      res.status(403).json({ error: 'You cannot delete your own account' }); return;
+    }
+    // Unassign all leads belonging to this staff member
     await query(
-      `UPDATE users
-         SET is_active=FALSE, refresh_token_hash=NULL, refresh_token_prefix=NULL
-       WHERE id=$1 AND tenant_id=$2`,
+      `UPDATE leads SET assigned_to=NULL, updated_at=NOW()
+       WHERE assigned_to=$1::uuid AND tenant_id=$2::uuid`,
+      [req.params.id, req.user!.tenantId]
+    );
+    // Delete permissions row
+    await query(`DELETE FROM user_permissions WHERE user_id=$1::uuid`, [req.params.id]);
+    // Hard-delete the user
+    await query(
+      `DELETE FROM users WHERE id=$1::uuid AND tenant_id=$2::uuid`,
       [req.params.id, req.user!.tenantId]
     );
     query(
       `INSERT INTO audit_log (actor_id, target_tenant_id, target_user_id, action)
-       VALUES ($1,$2,$3,'deactivate_staff')`,
+       VALUES ($1,$2,$3,'delete_staff')`,
       [req.user!.userId, req.user!.tenantId, req.params.id]
     ).catch(() => {});
     res.json({ success: true });
-  } catch { res.status(500).json({ error: 'Server error' }); }
+  } catch (err) {
+    console.error('[DELETE /staff/:id]', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // POST /api/settings/staff/:id/revoke-session — force logout without deactivating (#7)

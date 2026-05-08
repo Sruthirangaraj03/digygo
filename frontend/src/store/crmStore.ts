@@ -139,6 +139,7 @@ interface CrmState {
   addStaff: (member: StaffMember) => void;
   updateStaff: (id: string, updates: Partial<StaffMember>) => void;
   deactivateStaff: (id: string) => void;
+  removeStaff: (id: string) => void;
 
   // Pipeline actions
   addPipeline: (pipeline: Pipeline) => Promise<void>;
@@ -334,6 +335,7 @@ export const useCrmStore = create<CrmState>((set) => ({
   addStaff: (member) => set((s) => ({ staff: [...s.staff, member] })),
   updateStaff: (id, updates) => set((s) => ({ staff: s.staff.map((m) => m.id === id ? { ...m, ...updates } : m) })),
   deactivateStaff: (id) => set((s) => ({ staff: s.staff.map((m) => m.id === id ? { ...m, status: m.status === 'active' ? 'inactive' as const : 'active' as const } : m) })),
+  removeStaff: (id) => set((s) => ({ staff: s.staff.filter((m) => m.id !== id) })),
 
   // Pipeline actions
   addPipeline: async (pipeline) => {
