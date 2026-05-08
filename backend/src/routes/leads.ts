@@ -139,18 +139,23 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 // GET /api/leads/tags — all unique tags used across tenant leads (for workflow editor dropdown)
 router.get('/tags', async (req: AuthRequest, res: Response) => {
   try {
+    // tags is TEXT[] — use UNNEST, not jsonb_array_elements_text
     const result = await query(
-      `SELECT DISTINCT jsonb_array_elements_text(tags) AS tag
-       FROM leads
-       WHERE tenant_id = $1 AND is_deleted = FALSE
+      `SELECT DISTINCT tag
+       FROM leads,
+            UNNEST(tags) AS tag
+       WHERE tenant_id = $1
+         AND is_deleted = FALSE
          AND tags IS NOT NULL
-         AND jsonb_typeof(tags) = 'array'
-         AND jsonb_array_length(tags) > 0
+         AND cardinality(tags) > 0
+         AND tag IS NOT NULL
+         AND tag <> ''
        ORDER BY tag`,
       [req.user!.tenantId]
     );
     res.json(result.rows.map((r: any) => r.tag as string));
-  } catch {
+  } catch (err: any) {
+    console.error('[GET /leads/tags]', err.code, err.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
