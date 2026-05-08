@@ -748,9 +748,8 @@ export async function executeNodes(
           break;
         }
 
-        // ── Remove from CRM / Remove Contact ──────────────────────────────────
-        case 'remove_from_crm':
-        case 'remove_contact': {
+        // ── Remove from CRM (soft-delete lead) ────────────────────────────────
+        case 'remove_from_crm': {
           if (lead.id && !lead.id.startsWith('test-')) {
             await query(
               `UPDATE leads SET is_deleted=TRUE, updated_at=NOW() WHERE id=$1 AND tenant_id=$2`,
@@ -758,14 +757,27 @@ export async function executeNodes(
             );
             const vDel = await query('SELECT is_deleted FROM leads WHERE id=$1 AND tenant_id=$2', [lead.id, tenantId]);
             if (!vDel.rows[0]?.is_deleted) {
-              status = 'failed'; message = 'remove_contact: lead was not marked as deleted';
+              status = 'failed'; message = 'remove_from_crm: lead was not marked as deleted';
             } else {
-              message = 'Lead removed';
+              message = 'Lead removed from CRM';
             }
           } else if (lead.id?.startsWith('test-')) {
-            status = 'skipped';
-            message = 'remove_contact: test contact is not a real CRM lead';
+            status = 'skipped'; message = 'remove_from_crm: test contact is not a real CRM lead';
           }
+          break;
+        }
+
+        // ── Remove from Contact Group ──────────────────────────────────────────
+        case 'remove_contact': {
+          const groupId = (node.config.group_id ?? '') as string;
+          if (!groupId) { status = 'skipped'; message = 'remove_contact: no group configured'; break; }
+          if (!lead.id) { status = 'skipped'; message = 'remove_contact: no lead ID'; break; }
+          await query(
+            `DELETE FROM contact_group_members WHERE group_id=$1::uuid AND lead_id=$2::uuid`,
+            [groupId, lead.id]
+          );
+          const grpName = await query(`SELECT name FROM contact_groups WHERE id=$1::uuid`, [groupId]);
+          message = `Removed from group: ${grpName.rows[0]?.name ?? groupId}`;
           break;
         }
 
@@ -1448,77 +1460,56 @@ export async function executeNodes(
           break;
         }
 
-        // ── Contact Group (add/remove/move via tags) ───────────────────────────
+        // ── Contact Group (add/remove/move via real contact_group_members table) ─
         case 'contact_group': {
-          const groupAction  = (node.config.groupAction  ?? 'add') as string;
-          const groupName    = interpolate((node.config.targetList ?? node.config.group ?? '') as string, lead);
-          if (!groupName)  { status = 'skipped'; message = 'contact_group: no list/group name configured'; break; }
-          if (!lead.id)    { status = 'skipped'; message = 'contact_group: no lead ID'; break; }
+          const groupAction = (node.config.groupAction ?? 'add') as string;
+          const groupId     = (node.config.group_id ?? '') as string;
+          if (!groupId) { status = 'skipped'; message = 'contact_group: no group configured — open the action node and select a group'; break; }
+          if (!lead.id) { status = 'skipped'; message = 'contact_group: no lead ID'; break; }
 
-          // Represent groups as tags with a "group:" prefix
-          const groupTag = `group:${groupName}`;
+          const grpCheck = await query(
+            `SELECT id, name FROM contact_groups WHERE id=$1::uuid AND tenant_id=$2::uuid`,
+            [groupId, tenantId]
+          );
+          if (!grpCheck.rows[0]) { status = 'skipped'; message = 'contact_group: group not found or belongs to another tenant'; break; }
+          const grpLabel = grpCheck.rows[0].name as string;
 
           if (groupAction === 'remove') {
             await query(
-              `UPDATE leads SET tags=array_remove(tags, $1::text), updated_at=NOW() WHERE id=$2 AND tenant_id=$3`,
-              [groupTag, lead.id, tenantId]
+              `DELETE FROM contact_group_members WHERE group_id=$1::uuid AND lead_id=$2::uuid`,
+              [groupId, lead.id]
             );
-            const vGrpRm = await query('SELECT tags FROM leads WHERE id=$1 AND tenant_id=$2', [lead.id, tenantId]);
-            if ((vGrpRm.rows[0]?.tags ?? []).includes(groupTag)) {
-              status = 'failed'; message = `contact_group: tag "${groupTag}" still present after remove`;
-            } else {
-              message = `Removed from group: ${groupName}`;
-            }
+            message = `Removed from group: ${grpLabel}`;
           } else if (groupAction === 'move') {
+            // Remove from ALL groups for this tenant, then add to target
             await query(
-              `UPDATE leads SET
-                 tags = array_append(
-                   array(SELECT unnest(tags) WHERE unnest NOT LIKE 'group:%'),
-                   $1::text
-                 ),
-                 updated_at=NOW()
-               WHERE id=$2 AND tenant_id=$3`,
-              [groupTag, lead.id, tenantId]
+              `DELETE FROM contact_group_members
+               WHERE lead_id=$1::uuid
+                 AND group_id IN (SELECT id FROM contact_groups WHERE tenant_id=$2::uuid)`,
+              [lead.id, tenantId]
             );
-            const vGrpMv = await query('SELECT tags FROM leads WHERE id=$1 AND tenant_id=$2', [lead.id, tenantId]);
-            if (!(vGrpMv.rows[0]?.tags ?? []).includes(groupTag)) {
-              status = 'failed'; message = `contact_group: tag "${groupTag}" not found after move`;
-            } else {
-              message = `Moved to group: ${groupName}`;
-            }
+            await query(
+              `INSERT INTO contact_group_members (group_id, lead_id, added_by)
+               VALUES ($1::uuid, $2::uuid, 'workflow') ON CONFLICT DO NOTHING`,
+              [groupId, lead.id]
+            );
+            message = `Moved to group: ${grpLabel}`;
           } else {
             // add
-            await query(
-              `UPDATE leads SET tags=array_append(tags, $1::text), updated_at=NOW()
-               WHERE id=$2 AND tenant_id=$3 AND NOT ($1=ANY(tags))`,
-              [groupTag, lead.id, tenantId]
+            const r = await query(
+              `INSERT INTO contact_group_members (group_id, lead_id, added_by)
+               VALUES ($1::uuid, $2::uuid, 'workflow') ON CONFLICT (group_id, lead_id) DO NOTHING`,
+              [groupId, lead.id]
             );
-            const vGrpAdd = await query('SELECT tags FROM leads WHERE id=$1 AND tenant_id=$2', [lead.id, tenantId]);
-            if (!(vGrpAdd.rows[0]?.tags ?? []).includes(groupTag)) {
-              status = 'failed'; message = `contact_group: tag "${groupTag}" not found after add`;
-            } else {
-              message = `Added to group: ${groupName}`;
-            }
+            message = (r.rowCount ?? 0) > 0 ? `Added to group: ${grpLabel}` : `Already in group: ${grpLabel} (skipped)`;
           }
           break;
         }
 
-        // ── Contact Group Access ───────────────────────────────────────────────
+        // ── Contact Group Access (deprecated — no-op) ──────────────────────────
         case 'contact_group_access': {
-          const group = interpolate((node.config.group ?? '') as string, lead);
-          if (!group || !lead.id) { status = 'skipped'; message = 'contact_group_access: no group or lead ID'; break; }
-          const accessTag = `access:${group}`;
-          await query(
-            `UPDATE leads SET tags=array_append(tags, $1::text), updated_at=NOW()
-             WHERE id=$2 AND tenant_id=$3 AND NOT ($1=ANY(tags))`,
-            [accessTag, lead.id, tenantId]
-          );
-          const vAccess = await query('SELECT tags FROM leads WHERE id=$1 AND tenant_id=$2', [lead.id, tenantId]);
-          if (!(vAccess.rows[0]?.tags ?? []).includes(accessTag)) {
-            status = 'failed'; message = `contact_group_access: access tag "${accessTag}" not found after update`;
-          } else {
-            message = `Access granted: ${group}`;
-          }
+          status = 'skipped';
+          message = 'contact_group_access: deprecated — replace with the Contact Group action';
           break;
         }
 
@@ -1714,6 +1705,7 @@ export interface TriggerContext {
   messageBody?:  string;   // for inbox_message keyword matching
   apptType?:     string;   // for appointment_* triggers (event type name)
   calendarId?:   string;   // for calendar_form_submitted (booking_link.id)
+  group_id?:     string;   // for contact_group_added trigger
 }
 
 export async function triggerWorkflows(
@@ -1789,6 +1781,12 @@ export async function triggerWorkflows(
       if (triggerType === 'contact_created') {
         const cfgSource = (triggerNode.config?.source as string) ?? '';
         if (cfgSource && cfgSource !== (ctx.source ?? '')) continue;
+      }
+
+      if (triggerType === 'contact_group_added') {
+        const cfgGroupId = (triggerNode.config?.group_id as string) ?? '';
+        // blank = fires for any group; set = only fires for that specific group
+        if (cfgGroupId && cfgGroupId !== (ctx.group_id ?? '')) continue;
       }
 
       if (triggerType === 'contact_updated') {

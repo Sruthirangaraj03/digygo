@@ -5,6 +5,7 @@ import { requireAuth, requireTenant, AuthRequest } from '../middleware/auth';
 import { checkPermission } from '../middleware/permissions';
 import { sendEmail, isSmtpConfigured } from '../services/email';
 import { decrypt } from '../utils/crypto';
+import { triggerWorkflows } from './workflows';
 
 function sendWAText(phoneNumberId: string, token: string, toPhone: string, text: string): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -175,7 +176,20 @@ router.post('/:id/members', checkPermission('contact_groups:manage'), async (req
          ON CONFLICT (group_id, lead_id) DO NOTHING`,
         [req.params.id, leadId, added_by]
       );
-      added += r.rowCount ?? 0;
+      if ((r.rowCount ?? 0) > 0) {
+        added++;
+        const leadRow = await query(
+          `SELECT * FROM leads WHERE id=$1::uuid AND tenant_id=$2::uuid AND is_deleted=FALSE`,
+          [leadId, tenantId]
+        );
+        if (leadRow.rows[0] && tenantId) {
+          setImmediate(() =>
+            triggerWorkflows('contact_group_added', leadRow.rows[0], tenantId!, req.user!.userId, {
+              triggerContext: { group_id: req.params.id },
+            }).catch(() => null)
+          );
+        }
+      }
     }
     res.json({ added });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }

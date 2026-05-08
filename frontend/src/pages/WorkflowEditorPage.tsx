@@ -44,6 +44,7 @@ const TRIGGER_CATEGORIES: TriggerCategory[] = [
       { id: 'stage_changed', label: 'Stage Changed', Icon: ArrowLeftRight, sourceId: 'crm' },
       { id: 'follow_up', label: 'Follow Up', Icon: History, sourceId: 'crm' },
       { id: 'notes_added', label: 'Notes Added', Icon: FilePlus, sourceId: 'crm' },
+      { id: 'contact_group_added', label: 'Added to Contact Group', Icon: Users, sourceId: 'crm' },
     ],
   },
   {
@@ -131,9 +132,8 @@ const ACTION_LIST: { id: string; label: string; desc: string; category: ActionCa
   // ── Notes & Activities ──────────────────────────────────────────────────────
   { id: 'create_note',          label: 'Add Note',                    desc: 'Add a note to the lead record',                      category: 'Operation',     Icon: FileText,      color: 'bg-lime-100 text-lime-700' },
   // ── Contact Management ──────────────────────────────────────────────────────
-  { id: 'contact_group',        label: 'Contact Group',               desc: 'Copy or move contact to another list',               category: 'Operation',     Icon: Users,         color: 'bg-sky-100 text-sky-600' },
-  { id: 'contact_group_access', label: 'Contact Group Access',        desc: 'Give group access to contact',                      category: 'Operation',     Icon: UserRoundCog,  color: 'bg-sky-100 text-sky-700' },
-  { id: 'remove_contact',       label: 'Remove Contact',              desc: 'Remove contact from selected list',                  category: 'Operation',     Icon: UserX,         color: 'bg-red-100 text-red-700' },
+  { id: 'contact_group',        label: 'Contact Group',               desc: 'Add, move, or remove contact in a contact group',    category: 'Operation',     Icon: Users,         color: 'bg-sky-100 text-sky-600' },
+  { id: 'remove_contact',       label: 'Remove from Group',           desc: 'Remove contact from a specific contact group',       category: 'Operation',     Icon: UserX,         color: 'bg-red-100 text-red-700' },
   { id: 'remove_from_crm',      label: 'Remove from CRM',             desc: 'Remove contact from CRM',                            category: 'Operation',     Icon: FolderX,       color: 'bg-rose-100 text-rose-700' },
   // ── Workflow Control ────────────────────────────────────────────────────────
   { id: 'execute_automation',   label: 'Execute Automation',          desc: 'Can run another automation workflow',                 category: 'Operation',     Icon: Play,          color: 'bg-primary/10 text-primary' },
@@ -287,7 +287,7 @@ type StaffOpt = { id: string; name: string };
 type FormOpt = { id: string; name: string };
 type TemplateOpt = { id: string; name: string; body?: string };
 
-function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff, forms, metaForms, eventTypes, bookingLinks, metaPages, webhookUrls, allowReentry, onToggleReentry, workflowId, apiToken, onRegenerateToken }: {
+function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff, forms, metaForms, eventTypes, bookingLinks, metaPages, webhookUrls, contactGroups, allowReentry, onToggleReentry, workflowId, apiToken, onRegenerateToken }: {
   node: WFNode;
   onUpdate: (updates: Partial<WFNode>) => void;
   onChangeTrigger: () => void;
@@ -299,6 +299,7 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
   bookingLinks: FormOpt[];
   metaPages: FormOpt[];
   webhookUrls: { webhookInbound: string; paymentReceived: string; courseEnrolled: string };
+  contactGroups?: { id: string; name: string }[];
   allowReentry: boolean;
   onToggleReentry: (val: boolean) => void;
   workflowId?: string;
@@ -834,6 +835,16 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
           <input className={inputCls} placeholder="Leave blank to match any course" value={(cfg.course as string) ?? ''} onChange={sel('course')} />
         </FieldRow>
       </>)}
+
+      {/* Contact Group Added trigger */}
+      {node.actionType === 'contact_group_added' && (
+        <FieldRow label="Contact Group" hint="Leave blank to fire when added to any group.">
+          <select className={selectCls} value={(cfg.group_id as string) ?? ''} onChange={sel('group_id')}>
+            <option value="">Any group</option>
+            {(contactGroups ?? []).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        </FieldRow>
+      )}
 
       {(!node.actionType || node.actionType === '') && (
         <div className="py-6 text-center text-sm text-muted-foreground">
@@ -1372,7 +1383,7 @@ function AssignStaffPanel({ cfg, staff, onUpdate }: {
 }
 
 // ── Action Config Panel ────────────────────────────────────────────────────────
-function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workflows, routingSets, onRefreshPipelines, refreshingPipelines }: {
+function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workflows, routingSets, contactGroups, onRefreshPipelines, refreshingPipelines }: {
   node: WFNode;
   onUpdate: (updates: Partial<WFNode>) => void;
   pipelines: PipelineOpt[];
@@ -1380,6 +1391,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
   templates: TemplateOpt[];
   workflows: { id: string; name: string }[];
   routingSets?: { id: string; name: string; match_field: string; match_type: string }[];
+  contactGroups?: { id: string; name: string }[];
   onRefreshPipelines?: () => void;
   refreshingPipelines?: boolean;
 }) {
@@ -1479,28 +1491,27 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
         </FieldRow>
       )}
 
-      {/* Contact Group Access */}
-      {node.actionType === 'contact_group_access' && (
-        <FieldRow label="Select Group">
-          <input className={inputCls} placeholder="Select a group" value={(cfg.group as string) ?? ''} onChange={sel('group')} />
-        </FieldRow>
-      )}
-
       {/* Contact Group */}
       {node.actionType === 'contact_group' && (<>
         <FieldRow label="Action">
           <select className={selectCls} value={(cfg.groupAction as string) ?? 'add'} onChange={sel('groupAction')}>
-            <option value="add">Add to list</option>
-            <option value="move">Move to list</option>
-            <option value="remove">Remove from list</option>
+            <option value="add">Add to group</option>
+            <option value="move">Move to group</option>
+            <option value="remove">Remove from group</option>
           </select>
         </FieldRow>
-        <FieldRow label="Target list" required>
-          <select className={selectCls} value={(cfg.targetList as string) ?? ''} onChange={sel('targetList')}>
-            <option value="">Choose a list</option>
-            {CONTACT_LISTS.map((l) => <option key={l}>{l}</option>)}
+        <FieldRow label="Contact Group" required>
+          <select className={selectCls} value={(cfg.group_id as string) ?? ''} onChange={sel('group_id')}>
+            <option value="">Choose a group...</option>
+            {(contactGroups ?? []).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
           </select>
         </FieldRow>
+        {!(cfg.group_id as string) && (
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-800">No group selected — this action will be skipped at runtime.</p>
+          </div>
+        )}
       </>)}
 
       {/* Change Pipeline Stage */}
@@ -1542,14 +1553,20 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
       )}
 
       {/* Remove Contact */}
-      {node.actionType === 'remove_contact' && (
-        <FieldRow label="Remove from List">
-          <select className={selectCls} value={(cfg.targetList as string) ?? ''} onChange={sel('targetList')}>
-            <option value="">Choose a list</option>
-            {CONTACT_LISTS.map((l) => <option key={l}>{l}</option>)}
+      {node.actionType === 'remove_contact' && (<>
+        <FieldRow label="Remove from Group" required>
+          <select className={selectCls} value={(cfg.group_id as string) ?? ''} onChange={sel('group_id')}>
+            <option value="">Choose a group...</option>
+            {(contactGroups ?? []).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
           </select>
         </FieldRow>
-      )}
+        {!(cfg.group_id as string) && (
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-800">No group selected — this action will be skipped at runtime.</p>
+          </div>
+        )}
+      </>)}
 
       {/* Execute Automation */}
       {node.actionType === 'execute_automation' && (<>
@@ -3652,6 +3669,7 @@ export default function WorkflowEditorPage() {
   const [editorMetaPages, setEditorMetaPages] = useState<FormOpt[]>([]);
   const [editorWebhookUrls, setEditorWebhookUrls] = useState({ webhookInbound: '', paymentReceived: '', courseEnrolled: '' });
   const [editorRoutingSets, setEditorRoutingSets] = useState<{ id: string; name: string; match_field: string; match_type: string }[]>([]);
+  const [editorContactGroups, setEditorContactGroups] = useState<{ id: string; name: string }[]>([]);
   const [refreshingPipelines, setRefreshingPipelines] = useState(false);
 
   const refreshPipelines = () => {
@@ -3696,6 +3714,9 @@ export default function WorkflowEditorPage() {
     }).catch(() => {});
     api.get<any[]>('/api/field-routing/sets').then((rows) => {
       setEditorRoutingSets((rows ?? []).map((r) => ({ id: r.id, name: r.name, match_field: r.match_field, match_type: r.match_type })));
+    }).catch(() => {});
+    api.get<any[]>('/api/contact-groups').then((rows) => {
+      setEditorContactGroups((rows ?? []).map((g) => ({ id: g.id, name: g.name })));
     }).catch(() => {});
     api.get<any[]>('/api/fields/custom').then((rows) => {
       useCrmStore.getState().reorderCustomFields((rows ?? []).map((cf: any) => ({
@@ -4394,10 +4415,10 @@ export default function WorkflowEditorPage() {
 
                     {/* Main config */}
                     {selectedNode.type === 'trigger'
-                      ? <TriggerConfigPanel node={selectedNode} onUpdate={(u) => updateNode(selectedNode.id, u)} onChangeTrigger={() => setShowTriggerPicker(true)} pipelines={editorPipelines} staff={editorStaff} forms={editorForms} metaForms={editorMetaForms} eventTypes={editorEventTypes} bookingLinks={editorBookingLinks} metaPages={editorMetaPages} webhookUrls={editorWebhookUrls} allowReentry={workflow.allowReentry} onToggleReentry={(val) => setWorkflow((w) => ({ ...w, allowReentry: val }))} workflowId={workflow.id} apiToken={workflow.apiToken} onRegenerateToken={handleRegenerateToken} />
+                      ? <TriggerConfigPanel node={selectedNode} onUpdate={(u) => updateNode(selectedNode.id, u)} onChangeTrigger={() => setShowTriggerPicker(true)} pipelines={editorPipelines} staff={editorStaff} forms={editorForms} metaForms={editorMetaForms} eventTypes={editorEventTypes} bookingLinks={editorBookingLinks} metaPages={editorMetaPages} webhookUrls={editorWebhookUrls} contactGroups={editorContactGroups} allowReentry={workflow.allowReentry} onToggleReentry={(val) => setWorkflow((w) => ({ ...w, allowReentry: val }))} workflowId={workflow.id} apiToken={workflow.apiToken} onRegenerateToken={handleRegenerateToken} />
                       : selectedNodeIsCondition
                       ? <ConditionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode('', 'yes', selectedNode.id, u) : updateNode(selectedNode.id, u)} pipelines={editorPipelines} staff={editorStaff} />
-                      : <ActionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode('', 'yes', selectedNode.id, u) : updateNode(selectedNode.id, u)} pipelines={editorPipelines} staff={editorStaff} templates={editorTemplates} workflows={editorWorkflows} routingSets={editorRoutingSets} onRefreshPipelines={refreshPipelines} refreshingPipelines={refreshingPipelines} />
+                      : <ActionConfigPanel node={selectedNode} onUpdate={(u) => selectedBranchCtx ? updateBranchNode('', 'yes', selectedNode.id, u) : updateNode(selectedNode.id, u)} pipelines={editorPipelines} staff={editorStaff} templates={editorTemplates} workflows={editorWorkflows} routingSets={editorRoutingSets} contactGroups={editorContactGroups} onRefreshPipelines={refreshPipelines} refreshingPipelines={refreshingPipelines} />
                     }
                   </>
                 )}
