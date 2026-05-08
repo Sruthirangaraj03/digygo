@@ -414,6 +414,7 @@ router.delete('/staff/:id', checkPermission('staff:manage'), async (req: AuthReq
        VALUES ($1,$2,$3,'delete_staff')`,
       [req.user!.userId, req.user!.tenantId, req.params.id]
     ).catch(() => {});
+    decrementUsage(req.user!.tenantId!, 'staff').catch(() => null);
     res.json({ success: true });
   } catch (err) {
     console.error('[DELETE /staff/:id]', err);
