@@ -2262,12 +2262,22 @@ router.post('/:id/test', checkPermission('automation:manage'), async (req: AuthR
       }
     }
 
+    // Supersede any existing running/completed execution so repeated test runs work
+    const testLeadId = enrichedLead.id?.startsWith('test-') ? null : enrichedLead.id;
+    if (testLeadId) {
+      await query(
+        `UPDATE workflow_executions SET status='superseded'
+         WHERE workflow_id=$1 AND lead_id=$2 AND status IN ('running','completed')`,
+        [wf.id, testLeadId]
+      );
+    }
+
     // Create a test execution record
     const execResult = await query(
       `INSERT INTO workflow_executions
          (workflow_id, tenant_id, lead_id, lead_name, trigger_type, status, enrolled_at)
        VALUES ($1,$2,$3,$4,'test','running',NOW()) RETURNING id`,
-      [wf.id, tenantId, enrichedLead.id?.startsWith('test-') ? null : enrichedLead.id, enrichedLead.name]
+      [wf.id, tenantId, testLeadId, enrichedLead.name]
     );
     const executionId = execResult.rows[0].id;
 
