@@ -1392,9 +1392,9 @@ export async function executeNodes(
             const leadIdForQueue = (lead.id && !lead.id.startsWith('test-')) ? lead.id : null;
             await query(
               `INSERT INTO scheduled_workflow_steps
-                 (workflow_id, execution_id, tenant_id, lead_id, lead_data, remaining_nodes, run_at)
-               VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-              [workflowId, executionId, tenantId, leadIdForQueue, JSON.stringify(lead), JSON.stringify(remaining), runAtIso]
+                 (workflow_id, execution_id, tenant_id, lead_id, lead_data, remaining_nodes, run_at, step_index)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+              [workflowId, executionId, tenantId, leadIdForQueue, JSON.stringify(lead), JSON.stringify(remaining), runAtIso, nodeIdx]
             );
             message = `Delay scheduled: ${delayMinutes}m — ${remaining.length} step(s) queued for ${runAtIso}`;
           } else {
