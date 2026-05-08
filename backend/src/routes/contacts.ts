@@ -102,6 +102,28 @@ router.get('/export', checkPermission('contacts:export'), async (req: AuthReques
 
     const selectedFields = fields ? fields.split(',').filter((f) => CONTACT_FIELDS[f]) : Object.keys(CONTACT_FIELDS);
 
+    const SOURCE_LABELS: Record<string, string> = {
+      manual: 'Manual',
+      meta_form: 'Meta Form',
+      custom_form: 'Custom Form',
+      calendar_booking: 'Calendar Booking',
+      whatsapp: 'WhatsApp',
+      api: 'API',
+      import: 'Import',
+      landing_page: 'Landing Page',
+      referral: 'Referral',
+      website: 'Website',
+      phone_call: 'Phone Call',
+      email: 'Email',
+      social_media: 'Social Media',
+      paid_ad: 'Paid Ad',
+      event: 'Event',
+    };
+
+    const QUALITY_LABELS: Record<string, string> = {
+      hot: 'Hot', warm: 'Warm', cold: 'Cold', unqualified: 'Unqualified',
+    };
+
     const sheetData = result.rows.map((row: any) => {
       const out: Record<string, any> = {};
       for (const f of selectedFields) {
@@ -113,6 +135,10 @@ router.get('/export', checkPermission('contacts:export'), async (req: AuthReques
           val = new Date(val).toLocaleString();
         if (f === 'deal_value' && val !== null && val !== undefined)
           val = Number(val);
+        if (f === 'source' && val)
+          val = SOURCE_LABELS[val] ?? val.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+        if (f === 'lead_quality' && val)
+          val = QUALITY_LABELS[val] ?? val;
         out[CONTACT_FIELDS[f]] = val ?? '';
       }
       return out;
