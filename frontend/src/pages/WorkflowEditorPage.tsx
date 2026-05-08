@@ -448,7 +448,21 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
         <FieldRow label="Contact Source">
           <select className={selectCls} value={(cfg.source as string) ?? ''} onChange={sel('source')}>
             <option value="">Any source</option>
-            {['Meta Form', 'WhatsApp', 'Custom Form', 'Manual Entry', 'API Import'].map((s) => <option key={s}>{s}</option>)}
+            {[
+              { value: 'Manual',           label: 'Manual' },
+              { value: 'meta_form',        label: 'Meta Form' },
+              { value: 'Custom Form',      label: 'Custom Form' },
+              { value: 'WhatsApp',         label: 'WhatsApp' },
+              { value: 'Import',           label: 'Import' },
+              { value: 'landing_page',     label: 'Landing Page' },
+              { value: 'calendar_booking', label: 'Calendar Booking' },
+              { value: 'Referral',         label: 'Referral' },
+              { value: 'Website',          label: 'Website' },
+              { value: 'Phone Call',       label: 'Phone Call' },
+              { value: 'Paid Ad',          label: 'Paid Ad' },
+              { value: 'Social Media',     label: 'Social Media' },
+              { value: 'API',              label: 'API' },
+            ].map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
           </select>
         </FieldRow>
       </>)}
