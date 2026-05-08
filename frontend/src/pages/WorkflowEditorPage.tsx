@@ -1389,7 +1389,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
   pipelines: PipelineOpt[];
   staff: StaffOpt[];
   templates: TemplateOpt[];
-  workflows: { id: string; name: string }[];
+  workflows: { id: string; name: string; status: string }[];
   routingSets?: { id: string; name: string; match_field: string; match_type: string }[];
   contactGroups?: { id: string; name: string }[];
   onRefreshPipelines?: () => void;
@@ -1600,21 +1600,30 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
       </>)}
 
       {/* Execute Automation */}
-      {node.actionType === 'execute_automation' && (<>
-        <FieldRow label="Select Workflow">
-          <select className={selectCls} value={(cfg.workflow_id as string) ?? ''} onChange={sel('workflow_id')}>
-            <option value="">Choose workflow to run...</option>
-            {workflows.length === 0
-              ? <option disabled>No other workflows found</option>
-              : workflows.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)
-            }
-          </select>
-        </FieldRow>
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold">Wait for completion</span>
-          <Switch checked={!!(cfg.waitForCompletion)} onCheckedChange={(v) => onUpdate({ config: { ...cfg, waitForCompletion: v } })} />
-        </div>
-      </>)}
+      {node.actionType === 'execute_automation' && (() => {
+        const selectedWf = workflows.find((w) => w.id === (cfg.workflow_id as string));
+        return (<>
+          <FieldRow label="Select Workflow">
+            <select className={selectCls} value={(cfg.workflow_id as string) ?? ''} onChange={sel('workflow_id')}>
+              <option value="">Choose workflow to run...</option>
+              {workflows.length === 0
+                ? <option disabled>No other workflows found</option>
+                : workflows.map((w) => <option key={w.id} value={w.id}>{w.name}{w.status === 'draft' ? ' (draft)' : ''}</option>)
+              }
+            </select>
+          </FieldRow>
+          {selectedWf?.status === 'draft' && (
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800"><span className="font-semibold">"{selectedWf.name}" is a draft.</span> It will still execute when called, but consider activating it.</p>
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold">Wait for completion</span>
+            <Switch checked={!!(cfg.waitForCompletion)} onCheckedChange={(v) => onUpdate({ config: { ...cfg, waitForCompletion: v } })} />
+          </div>
+        </>);
+      })()}
 
       {/* Update Attributes */}
       {node.actionType === 'update_attributes' && (() => {
@@ -3259,7 +3268,7 @@ function NodeConfigModal({
   metaPages: FormOpt[];
   webhookUrls: { webhookInbound: string; paymentReceived: string; courseEnrolled: string };
   templates: TemplateOpt[];
-  workflows: { id: string; name: string }[];
+  workflows: { id: string; name: string; status: string }[];
   routingSets?: { id: string; name: string; match_field: string; match_type: string }[];
   contactGroups?: { id: string; name: string }[];
   showAIPanel: boolean;
@@ -3695,7 +3704,7 @@ export default function WorkflowEditorPage() {
   const [editorForms, setEditorForms] = useState<FormOpt[]>([]);
   const [editorMetaForms, setEditorMetaForms] = useState<FormOpt[]>([]);
   const [editorTemplates, setEditorTemplates] = useState<TemplateOpt[]>([]);
-  const [editorWorkflows, setEditorWorkflows] = useState<{ id: string; name: string }[]>([]);
+  const [editorWorkflows, setEditorWorkflows] = useState<{ id: string; name: string; status: string }[]>([]);
   const [editorEventTypes, setEditorEventTypes] = useState<FormOpt[]>([]);
   const [editorBookingLinks, setEditorBookingLinks] = useState<FormOpt[]>([]);
   const [editorMetaPages, setEditorMetaPages] = useState<FormOpt[]>([]);
@@ -3733,7 +3742,7 @@ export default function WorkflowEditorPage() {
       setEditorTemplates((rows ?? []).map((t) => ({ id: t.id, name: t.name, body: t.body })));
     }).catch(() => {});
     api.get<any[]>('/api/workflows').then((rows) => {
-      setEditorWorkflows((rows ?? []).filter((w) => w.id !== workflow.id).map((w) => ({ id: w.id, name: w.name })));
+      setEditorWorkflows((rows ?? []).filter((w) => w.id !== workflow.id).map((w) => ({ id: w.id, name: w.name, status: w.status })));
     }).catch(() => {});
     api.get<any[]>('/api/calendar/booking-links').then((rows) => {
       setEditorBookingLinks((rows ?? []).map((bl) => ({ id: bl.id, name: bl.name })));

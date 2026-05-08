@@ -1051,17 +1051,29 @@ export async function executeNodes(
           const targetId = node.config.workflow_id as string;
           if (targetId && lead.id) {
             const targetRes = await query(
-              `SELECT * FROM workflows WHERE id=$1 AND tenant_id=$2 AND status='active'`,
+              `SELECT * FROM workflows WHERE id=$1::uuid AND tenant_id=$2::uuid AND status IN ('active','draft')`,
               [targetId, tenantId]
             );
             if (targetRes.rows[0]) {
               const subNodes: WFNode[] = targetRes.rows[0].nodes ?? [];
-              const subStats = await executeNodes(subNodes, lead, tenantId, userId, executionId, targetId);
+              // Create a dedicated execution record so sub-workflow logs are visible
+              const subExecRes = await query(
+                `INSERT INTO workflow_executions
+                   (workflow_id, tenant_id, lead_id, lead_name, trigger_type, status, enrolled_at)
+                 VALUES ($1,$2,$3,$4,'execute_automation','running',NOW()) RETURNING id`,
+                [targetId, tenantId, lead.id, lead.name ?? null]
+              ).catch(() => null);
+              const subExecId = subExecRes?.rows[0]?.id ?? executionId;
+              const subStats = await executeNodes(subNodes, lead, tenantId, userId, subExecId, targetId);
+              await query(
+                `UPDATE workflow_executions SET status=$1, completed_at=NOW() WHERE id=$2`,
+                [subStats.failed > 0 ? 'failed' : 'completed', subExecId]
+              ).catch(() => null);
               stats.skipped += subStats.skipped;
               stats.failed  += subStats.failed;
               message = `Sub-workflow executed: ${targetRes.rows[0].name}`;
             } else {
-              status = 'skipped'; message = 'execute_automation: target workflow not found or inactive';
+              status = 'skipped'; message = 'execute_automation: target workflow not found or not accessible';
             }
           } else {
             status = 'skipped'; message = 'execute_automation: no workflow_id configured';
