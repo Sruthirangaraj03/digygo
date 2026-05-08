@@ -199,7 +199,8 @@ router.get('/followups', async (req: AuthRequest, res: Response) => {
 
 // GET /api/leads/export
 const LEAD_FIELDS: Record<string, string> = {
-  name: 'Name', email: 'Email', phone: 'Phone', source: 'Source',
+  name: 'Name', email: 'Email', phone: 'Phone', company: 'Company',
+  source: 'Source', status: 'Lead Status',
   quality: 'Quality', pipeline_name: 'Pipeline', stage_name: 'Stage',
   assigned_name: 'Assigned To', tags: 'Tags', created_at: 'Created At',
   deal_value: 'Deal Value', notes: 'Notes', lead_updated_at: 'Last Updated',
@@ -217,6 +218,11 @@ const LEAD_SOURCE_LABELS: Record<string, string> = {
 
 const LEAD_QUALITY_LABELS: Record<string, string> = {
   hot: 'Hot', warm: 'Warm', cold: 'Cold', unqualified: 'Unqualified',
+};
+
+const LEAD_STATUS_LABELS: Record<string, string> = {
+  new: 'New', active: 'Active', contacted: 'Contacted',
+  qualified: 'Qualified', converted: 'Converted', lost: 'Lost',
 };
 
 router.get('/export', checkPermission('leads:export'), async (req: AuthRequest, res: Response) => {
@@ -247,6 +253,7 @@ router.get('/export', checkPermission('leads:export'), async (req: AuthRequest, 
            u.name AS assigned_name,
            l.custom_fields->>'lead_quality' AS quality,
            l.updated_at AS lead_updated_at,
+           (SELECT c.company FROM contacts c WHERE c.lead_id = l.id LIMIT 1) AS company,
            (SELECT string_agg(u2.name, ', ') FROM users u2 WHERE u2.id = ANY(l.team_members)) AS team_member_names,
            (SELECT MIN(f.due_at) FROM lead_followups f WHERE f.lead_id = l.id AND f.completed = FALSE) AS next_followup_date,
            (SELECT CASE
@@ -298,6 +305,8 @@ router.get('/export', checkPermission('leads:export'), async (req: AuthRequest, 
           val = LEAD_SOURCE_LABELS[val] ?? val.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
         if (f === 'quality' && val)
           val = LEAD_QUALITY_LABELS[val] ?? val;
+        if (f === 'status' && val)
+          val = LEAD_STATUS_LABELS[val] ?? val;
         out[LEAD_FIELDS[f]] = (val !== null && val !== undefined && val !== '') ? val : 'No data';
       }
       return out;

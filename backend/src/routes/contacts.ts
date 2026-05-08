@@ -43,6 +43,7 @@ const CONTACT_FIELDS: Record<string, string> = {
   name: 'Name', email: 'Email', phone: 'Phone', company: 'Company',
   tags: 'Tags', created_at: 'Created At',
   source: 'Source',
+  lead_status: 'Lead Status',
   assigned_name: 'Assigned To',
   pipeline_name: 'Pipeline',
   stage_name: 'Stage',
@@ -53,6 +54,7 @@ const CONTACT_FIELDS: Record<string, string> = {
   followup_status: 'Follow-up Status',
   team_member_names: 'Team Members',
   lead_updated_at: 'Last Updated',
+  notes: 'Notes',
 };
 
 router.get('/export', checkPermission('contacts:export'), async (req: AuthRequest, res: Response) => {
@@ -77,6 +79,7 @@ router.get('/export', checkPermission('contacts:export'), async (req: AuthReques
       `SELECT c.*,
         l.tags,
         l.source,
+        l.status AS lead_status,
         l.deal_value,
         l.updated_at AS lead_updated_at,
         l.custom_fields->>'lead_quality' AS lead_quality,
@@ -90,7 +93,13 @@ router.get('/export', checkPermission('contacts:export'), async (req: AuthReques
            WHEN MIN(f.due_at) IS NULL THEN 'None'
            WHEN MIN(f.due_at) < NOW() THEN 'Overdue'
            ELSE 'Pending'
-         END FROM lead_followups f WHERE f.lead_id = l.id AND f.completed = FALSE) AS followup_status
+         END FROM lead_followups f WHERE f.lead_id = l.id AND f.completed = FALSE) AS followup_status,
+        (SELECT string_agg(
+           '[' || TO_CHAR(n.created_at, 'DD-Mon-YYYY HH12:MI AM') || '] ' ||
+           COALESCE(un.name, 'System') || ': ' ||
+           COALESCE(NULLIF(TRIM(n.title), '') || ' — ', '') || COALESCE(n.content, ''),
+           E'\n' ORDER BY n.created_at ASC
+         ) FROM lead_notes n LEFT JOIN users un ON un.id = n.created_by WHERE n.lead_id = l.id) AS notes
        FROM contacts c
        LEFT JOIN leads l ON l.id = c.lead_id AND l.is_deleted = FALSE
        LEFT JOIN users u ON u.id = l.assigned_to
@@ -125,6 +134,11 @@ router.get('/export', checkPermission('contacts:export'), async (req: AuthReques
       hot: 'Hot', warm: 'Warm', cold: 'Cold', unqualified: 'Unqualified',
     };
 
+    const STATUS_LABELS: Record<string, string> = {
+      new: 'New', active: 'Active', contacted: 'Contacted',
+      qualified: 'Qualified', converted: 'Converted', lost: 'Lost',
+    };
+
     const sheetData = result.rows.map((row: any) => {
       const out: Record<string, any> = {};
       for (const f of selectedFields) {
@@ -140,6 +154,8 @@ router.get('/export', checkPermission('contacts:export'), async (req: AuthReques
           val = SOURCE_LABELS[val] ?? val.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
         if (f === 'lead_quality' && val)
           val = QUALITY_LABELS[val] ?? val;
+        if (f === 'lead_status' && val)
+          val = STATUS_LABELS[val] ?? val;
         out[CONTACT_FIELDS[f]] = (val !== null && val !== undefined && val !== '') ? val : 'No data';
       }
       return out;

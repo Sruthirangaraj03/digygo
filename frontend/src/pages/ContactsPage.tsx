@@ -760,10 +760,14 @@ export default function ContactsPage() {
       <ExportModal
         title="Export Contacts"
         fields={[
-          { key: 'name', label: 'Name' }, { key: 'email', label: 'Email' },
-          { key: 'phone', label: 'Phone' }, { key: 'company', label: 'Company' },
-          { key: 'tags', label: 'Tags' }, { key: 'created_at', label: 'Created At' },
+          { key: 'name', label: 'Name' },
+          { key: 'email', label: 'Email' },
+          { key: 'phone', label: 'Phone' },
+          { key: 'company', label: 'Company' },
+          { key: 'tags', label: 'Tags' },
+          { key: 'created_at', label: 'Created At' },
           { key: 'source', label: 'Source' },
+          { key: 'lead_status', label: 'Lead Status' },
           { key: 'assigned_name', label: 'Assigned To' },
           { key: 'pipeline_name', label: 'Pipeline' },
           { key: 'stage_name', label: 'Stage' },
@@ -774,6 +778,7 @@ export default function ContactsPage() {
           { key: 'followup_status', label: 'Follow-up Status' },
           { key: 'team_member_names', label: 'Team Members' },
           { key: 'lead_updated_at', label: 'Last Updated' },
+          { key: 'notes', label: 'Notes' },
         ]}
         buildUrl={(fields, format) => `/api/contacts/export?fields=${fields.join(',')}&format=${format}`}
         filename="contacts"
