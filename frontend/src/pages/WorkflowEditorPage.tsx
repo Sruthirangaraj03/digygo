@@ -3206,7 +3206,7 @@ interface BranchNodeContext {
 // ── Node Config Modal ──────────────────────────────────────────────────────────
 function NodeConfigModal({
   node, branchCtx, onClose, onUpdate, onDelete, onChangeTrigger, onChangeAction,
-  pipelines, staff, forms, metaForms, eventTypes, bookingLinks, metaPages, webhookUrls, templates, workflows, routingSets,
+  pipelines, staff, forms, metaForms, eventTypes, bookingLinks, metaPages, webhookUrls, templates, workflows, routingSets, contactGroups,
   showAIPanel, setShowAIPanel,
   aiPrompt, setAIPrompt, aiTone, setAITone, aiFormat, setAIFormat, aiLength, setAILength,
   onAIGenerate, allowReentry, onToggleReentry, onRefreshPipelines, refreshingPipelines,
@@ -3230,6 +3230,7 @@ function NodeConfigModal({
   templates: TemplateOpt[];
   workflows: { id: string; name: string }[];
   routingSets?: { id: string; name: string; match_field: string; match_type: string }[];
+  contactGroups?: { id: string; name: string }[];
   showAIPanel: boolean;
   setShowAIPanel: (v: boolean) => void;
   aiPrompt: string; setAIPrompt: (v: string) => void;
@@ -3365,10 +3366,10 @@ function NodeConfigModal({
             /* Settings tab */
             <>
               {node.type === 'trigger'
-                ? <TriggerConfigPanel node={node} onUpdate={onUpdate} onChangeTrigger={onChangeTrigger} pipelines={pipelines} staff={staff} forms={forms} metaForms={metaForms} eventTypes={eventTypes} bookingLinks={bookingLinks} metaPages={metaPages} webhookUrls={webhookUrls} allowReentry={allowReentry} onToggleReentry={onToggleReentry} workflowId={workflowId} apiToken={apiToken} onRegenerateToken={onRegenerateToken} />
+                ? <TriggerConfigPanel node={node} onUpdate={onUpdate} onChangeTrigger={onChangeTrigger} pipelines={pipelines} staff={staff} forms={forms} metaForms={metaForms} eventTypes={eventTypes} bookingLinks={bookingLinks} metaPages={metaPages} webhookUrls={webhookUrls} contactGroups={contactGroups} allowReentry={allowReentry} onToggleReentry={onToggleReentry} workflowId={workflowId} apiToken={apiToken} onRegenerateToken={onRegenerateToken} />
                 : node.type === 'condition'
                 ? <ConditionConfigPanel node={node} onUpdate={onUpdate} pipelines={pipelines} staff={staff} />
-                : <ActionConfigPanel node={node} onUpdate={onUpdate} pipelines={pipelines} staff={staff} templates={templates} workflows={workflows} routingSets={routingSets} onRefreshPipelines={onRefreshPipelines} refreshingPipelines={refreshingPipelines} />
+                : <ActionConfigPanel node={node} onUpdate={onUpdate} pipelines={pipelines} staff={staff} templates={templates} workflows={workflows} routingSets={routingSets} contactGroups={contactGroups} onRefreshPipelines={onRefreshPipelines} refreshingPipelines={refreshingPipelines} />
               }
             </>
           )}
@@ -4468,6 +4469,7 @@ export default function WorkflowEditorPage() {
           templates={editorTemplates}
           workflows={editorWorkflows}
           routingSets={editorRoutingSets}
+          contactGroups={editorContactGroups}
           showAIPanel={showAIPanel}
           setShowAIPanel={setShowAIPanel}
           aiPrompt={aiPrompt} setAIPrompt={setAIPrompt}
