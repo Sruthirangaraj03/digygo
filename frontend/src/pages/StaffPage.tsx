@@ -850,18 +850,20 @@ export default function StaffPage() {
                               <>
                                 <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
                                 <div className="absolute right-0 top-9 bg-card border border-black/5 rounded-xl shadow-xl z-50 w-48 py-1">
-                                  <button
-                                    onClick={() => {
-                                      api.post(`/api/settings/staff/${s.id}/resend-invite`, {})
-                                        .then(() => toast.success(`Invite resent to ${s.email}`))
-                                        .catch(() => toast.error('Failed to resend invite'));
-                                      setOpenMenuId(null);
-                                    }}
-                                    className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-[#f5ede3] transition-colors text-foreground"
-                                  >
-                                    <Mail className="w-4 h-4" />
-                                    Resend Invite
-                                  </button>
+                                  {s.status === 'pending' && (
+                                    <button
+                                      onClick={() => {
+                                        api.post(`/api/settings/staff/${s.id}/resend-invite`, {})
+                                          .then(() => toast.success(`Invite resent to ${s.email}`))
+                                          .catch(() => toast.error('Failed to resend invite'));
+                                        setOpenMenuId(null);
+                                      }}
+                                      className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-[#f5ede3] transition-colors text-foreground"
+                                    >
+                                      <Mail className="w-4 h-4" />
+                                      Resend Invite
+                                    </button>
+                                  )}
                                   <button
                                     onClick={() => { setDeactivateMember(s); setOpenMenuId(null); }}
                                     className={cn('w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors', s.status === 'active' ? 'hover:bg-red-50 text-destructive' : 'hover:bg-green-50 text-green-700')}
