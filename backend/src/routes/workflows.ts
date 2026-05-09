@@ -8,7 +8,7 @@ import { checkPlan, checkUsage, incrementUsage } from '../middleware/plan';
 import { sendEmail, isSmtpConfigured } from '../services/email';
 import { decrypt } from '../utils/crypto';
 import { maskPhone } from '../utils/phone';
-import { emitToTenant } from '../socket';
+import { emitToTenant, emitToUser } from '../socket';
 import { backfillCustomFields, cleanFieldKey } from '../utils/customFields';
 
 const router = Router();
@@ -866,10 +866,14 @@ export async function executeNodes(
           if (sendTo === 'specific' && node.config.staff_id) {
             recipientIds = [node.config.staff_id as string];
           } else if (sendTo === 'all') {
+            // Fix 5: exclude owner; Fix 8: exclude the workflow trigger user
             const usersRes = await query(
-              `SELECT id FROM users WHERE tenant_id=$1 AND is_active=TRUE`, [tenantId]
+              `SELECT id FROM users WHERE tenant_id=$1 AND is_active=TRUE AND is_owner IS NOT TRUE`,
+              [tenantId]
             );
-            recipientIds = usersRes.rows.map((u: any) => u.id);
+            recipientIds = usersRes.rows
+              .map((u: any) => u.id)
+              .filter((id: string) => id !== userId);
           } else if (sendTo === 'assigned' && lead.assigned_to) {
             recipientIds = [lead.assigned_to];
           }
@@ -878,10 +882,22 @@ export async function executeNodes(
           for (const uid of recipientIds) {
             const nRes = await query(
               `INSERT INTO notifications (tenant_id, user_id, title, message, type)
-               VALUES ($1,$2,$3,$4,'automation') RETURNING id`,
+               VALUES ($1,$2,$3,$4,'automation') RETURNING id, created_at`,
               [tenantId, uid, notifTitle, msg]
             );
-            if (!nRes.rows[0]?.id) notifFailed++;
+            if (!nRes.rows[0]?.id) {
+              notifFailed++;
+            } else {
+              // Fix 3: emit real-time socket event so recipient sees it immediately
+              emitToUser(uid, 'notification:new', {
+                id:         nRes.rows[0].id,
+                type:       'automation',
+                title:      notifTitle,
+                message:    msg,
+                is_read:    false,
+                created_at: nRes.rows[0].created_at,
+              });
+            }
           }
           if (recipientIds.length === 0) {
             status = 'skipped'; message = `internal_notify: no recipients found (sendTo=${sendTo})`;

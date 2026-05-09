@@ -12,7 +12,7 @@ import { backfillCustomFields, cleanFieldKey } from '../utils/customFields';
 import { parseMetaFieldData } from '../utils/meta';
 import https from 'https';
 import { emitToTenant } from '../socket';
-import { sendNewLeadNotification } from '../utils/notifications';
+import { sendNewLeadNotification, sendLeadAssignedNotification, sendBulkImportNotification } from '../utils/notifications';
 import * as XLSX from 'xlsx';
 
 const router = Router();
@@ -585,6 +585,17 @@ router.patch('/:id', checkPermission('leads:edit'), validate(UpdateLeadSchema), 
       [result.rows[0].id]
     );
     const emitPayload = withName.rows[0] ?? result.rows[0];
+
+    // Fix 6: notify newly assigned staff when assigned_to changes
+    if (old && req.body.assigned_to && req.body.assigned_to !== old.assigned_to) {
+      sendLeadAssignedNotification(
+        tenantId!,
+        { id: result.rows[0].id, name: result.rows[0].name },
+        req.body.assigned_to,
+        userId,
+      ).catch(() => null);
+    }
+
     emitToTenant(tenantId!, 'lead:updated', emitPayload);
     res.json(emitPayload);
   } catch (err) {
@@ -1133,7 +1144,7 @@ router.post('/import', checkPermission('leads:create'), async (req: AuthRequest,
            VALUES ($1,$2,'created','Imported',$3)`,
           [leadId, tenantId, userId]
         );
-        sendNewLeadNotification(tenantId!, newLead, userId).catch(() => null);
+        // Fix 7: notification sent as a single summary after the loop — removed per-lead call here
         setImmediate(() => triggerWorkflows('lead_created', newLead, tenantId!, userId).catch(() => null));
       }
 
@@ -1163,6 +1174,10 @@ router.post('/import', checkPermission('leads:create'), async (req: AuthRequest,
     }
   }
 
+  // Fix 7: single summary notification instead of one per imported lead
+  if (imported > 0) {
+    sendBulkImportNotification(tenantId!, imported, userId!).catch(() => null);
+  }
   res.json({ imported, updated, skipped, errors });
 });
 

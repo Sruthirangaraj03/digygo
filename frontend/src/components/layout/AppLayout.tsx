@@ -11,26 +11,33 @@ export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const initFromApi = useCrmStore((s) => s.initFromApi);
   const addNotification = useCrmStore((s) => s.addNotification);
+  const refreshNotifications = useCrmStore((s) => s.refreshNotifications);
   const { refreshPermissions, isImpersonating } = useAuthStore();
   const location = useLocation();
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Real-time notification delivery
+  // Real-time notification delivery + Fix 14: fetch missed on reconnect
   useEffect(() => {
     const socket = getSocket();
     const handler = (n: any) => {
       addNotification({
         id:      n.id,
-        type:    n.type ?? 'lead_created',
+        type:    n.type ?? 'new_lead',
         message: n.title + (n.message ? `: ${n.message}` : ''),
         time:    n.created_at ?? new Date().toISOString(),
         read:    false,
         avatar:  '🔔',
       });
     };
+    // Fix 14: on reconnect, fetch any notifications missed during the disconnect window
+    const reconnectHandler = () => { refreshNotifications(); };
     socket.on('notification:new', handler);
-    return () => { socket.off('notification:new', handler); };
-  }, [addNotification]);
+    socket.on('connect', reconnectHandler);
+    return () => {
+      socket.off('notification:new', handler);
+      socket.off('connect', reconnectHandler);
+    };
+  }, [addNotification, refreshNotifications]);
 
   // Re-fetch data whenever the user navigates to a new page
   useEffect(() => {

@@ -66,7 +66,11 @@ const PAGE_DISCONNECT: Record<string, { label: string; endpoint: string; confirm
 };
 
 const notifIconColors: Record<string, string> = {
+  new_lead:       'bg-primary/10 text-primary',
   lead_created:   'bg-primary/10 text-primary',
+  assigned:       'bg-blue-100 text-blue-600',
+  automation:     'bg-violet-100 text-violet-600',
+  info:           'bg-gray-100 text-gray-500',
   stage_changed:  'bg-purple-100 text-purple-600',
   new_message:    'bg-emerald-500/10 text-emerald-600',
   follow_up_due:  'bg-orange-500/10 text-orange-500',
@@ -79,7 +83,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
   const [showNotifs, setShowNotifs] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
-  const { notifications, markAllNotificationsRead, markNotificationRead } = useCrmStore();
+  const { notifications, markAllNotificationsRead, markNotificationRead, removeNotification } = useCrmStore();
   const { currentUser, logout, isImpersonating } = useAuthStore();
   const { companyName } = useCompanyStore();
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -234,6 +238,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
                     </div>
                   </div>
 
+                  {/* Fix 12: show up to 20 notifications */}
                   <div className="max-h-80 overflow-y-auto divide-y divide-black/5">
                     {notifications.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-10 gap-2">
@@ -243,32 +248,50 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
                         <p className="text-[13px] font-semibold text-[#8a7c6e]">No notifications</p>
                       </div>
                     ) : (
-                      notifications.slice(0, 10).map((n) => (
-                        <button
+                      notifications.slice(0, 20).map((n) => (
+                        <div
                           key={n.id}
-                          onClick={() => { markNotificationRead(n.id); setShowNotifs(false); }}
                           className={cn(
-                            'w-full flex items-center gap-3 px-5 py-3.5 hover:bg-[#faf8f6] transition-colors text-left',
+                            'group flex items-center gap-3 px-5 py-3.5 hover:bg-[#faf8f6] transition-colors',
                             !n.read && 'bg-primary/[0.03]'
                           )}
                         >
-                          <div className={cn(
-                            'w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold shrink-0',
-                            notifIconColors[n.type] || 'bg-muted text-muted-foreground'
-                          )}>
-                            {n.avatar}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[13px] font-medium text-[#1c1410] line-clamp-2">{n.message}</p>
-                            <p className="text-[11px] text-[#8a7c6e] mt-0.5">
-                              {formatDistanceToNow(new Date(n.time), { addSuffix: true })}
-                            </p>
-                          </div>
-                          {!n.read && <div className="w-2 h-2 rounded-full bg-primary shrink-0" />}
-                        </button>
+                          <button
+                            onClick={() => { markNotificationRead(n.id); setShowNotifs(false); }}
+                            className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                          >
+                            <div className={cn(
+                              'w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold shrink-0',
+                              notifIconColors[n.type] || 'bg-muted text-muted-foreground'
+                            )}>
+                              {n.avatar}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[13px] font-medium text-[#1c1410] line-clamp-2">{n.message}</p>
+                              <p className="text-[11px] text-[#8a7c6e] mt-0.5">
+                                {formatDistanceToNow(new Date(n.time), { addSuffix: true })}
+                              </p>
+                            </div>
+                            {!n.read && <div className="w-2 h-2 rounded-full bg-primary shrink-0" />}
+                          </button>
+                          {/* Fix 15: dismiss button */}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); removeNotification(n.id); }}
+                            className="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-black/5 text-[#8a7c6e] transition-all shrink-0"
+                            title="Dismiss"
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
                       ))
                     )}
                   </div>
+                  {/* Fix 12: show count when there are more than 20 */}
+                  {notifications.length > 20 && (
+                    <div className="px-5 py-2.5 border-t border-black/5 text-center">
+                      <p className="text-[11px] text-[#8a7c6e]">Showing 20 of {notifications.length} — older notifications available in history</p>
+                    </div>
+                  )}
                 </div>
               </>
             )}

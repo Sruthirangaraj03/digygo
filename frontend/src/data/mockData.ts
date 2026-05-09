@@ -87,7 +87,7 @@ export interface CalendarEvent {
 
 export interface Notification {
   id: string;
-  type: 'lead_created' | 'stage_changed' | 'new_message' | 'follow_up_due' | 'appointment';
+  type: 'new_lead' | 'assigned' | 'automation' | 'info' | 'lead_created' | 'stage_changed' | 'new_message' | 'follow_up_due' | 'appointment';
   message: string;
   time: string;
   read: boolean;

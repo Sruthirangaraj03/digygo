@@ -10,6 +10,27 @@ import { SYSTEM_STANDARD_FIELDS } from '@/constants/systemFields';
 
 const SYSTEM_FIELDS_FALLBACK = SYSTEM_STANDARD_FIELDS.map((f) => ({ id: f.id, name: f.name, slug: f.slug, group: f.group }));
 
+// Fix 11: map backend notification type string to the frontend union type
+function mapNotifType(t: string | undefined): Notification['type'] {
+  const known: Record<string, Notification['type']> = {
+    new_lead: 'new_lead', assigned: 'assigned', automation: 'automation', info: 'info',
+    lead_created: 'lead_created', stage_changed: 'stage_changed',
+    new_message: 'new_message', follow_up_due: 'follow_up_due', appointment: 'appointment',
+  };
+  return known[t ?? ''] ?? 'new_lead';
+}
+
+function mapNotifRecord(n: any): Notification {
+  return {
+    id: n.id,
+    type: mapNotifType(n.type),
+    message: n.title + (n.message ? `: ${n.message}` : ''),
+    time: n.created_at ?? new Date().toISOString(),
+    read: n.is_read ?? false,
+    avatar: '🔔',
+  };
+}
+
 export interface LeadActivity {
   id: string;
   leadId: string;
@@ -114,8 +135,10 @@ interface CrmState {
 
   // Notification actions
   addNotification: (n: Notification) => void;
+  removeNotification: (id: string) => void;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
+  refreshNotifications: () => Promise<void>;
 
   // Calendar actions
   addCalendarEvent: (event: CalendarEvent) => void;
@@ -303,7 +326,16 @@ export const useCrmStore = create<CrmState>((set) => ({
   deleteWorkflow: (id) => set((s) => ({ workflows: s.workflows.filter((w) => w.id !== id) })),
 
   // Notification actions
-  addNotification: (n) => set((s) => ({ notifications: [n, ...s.notifications] })),
+  // Fix 4: dedup by id — socket and poll can both deliver the same notification
+  addNotification: (n) => set((s) => {
+    if (s.notifications.some((x) => x.id === n.id)) return s;
+    return { notifications: [n, ...s.notifications] };
+  }),
+  // Fix 15: dismiss (delete) a notification
+  removeNotification: (id) => {
+    set((s) => ({ notifications: s.notifications.filter((n) => n.id !== id) }));
+    api.delete(`/api/notifications/${id}`).catch(() => {});
+  },
   markNotificationRead: (id) => {
     set((s) => ({ notifications: s.notifications.map((n) => n.id === id ? { ...n, read: true } : n) }));
     api.patch(`/api/notifications/${id}/read`, {}).catch(() => {});
@@ -311,6 +343,19 @@ export const useCrmStore = create<CrmState>((set) => ({
   markAllNotificationsRead: () => {
     set((s) => ({ notifications: s.notifications.map((n) => ({ ...n, read: true })) }));
     api.post('/api/notifications/read-all', {}).catch(() => {});
+  },
+  // Fix 14: called on socket reconnect to catch missed notifications
+  refreshNotifications: async () => {
+    try {
+      const notifs = await api.get<any[]>('/api/notifications');
+      const mapped = (notifs ?? []).map((n: any) => mapNotifRecord(n));
+      set((s) => {
+        const fetchedIds = new Set(mapped.map((n) => n.id));
+        // preserve very-recent socket-added notifications not yet in the DB response
+        const socketOnly = s.notifications.filter((n) => !fetchedIds.has(n.id));
+        return { notifications: [...socketOnly, ...mapped] };
+      });
+    } catch {}
   },
 
   // Calendar actions
@@ -569,14 +614,11 @@ export const useCrmStore = create<CrmState>((set) => ({
         messages: [],
       }));
 
-      const mappedNotifications = (notifsRes ?? []).map((n: any) => ({
-        id: n.id,
-        type: 'lead_created' as const,
-        message: n.title + (n.message ? `: ${n.message}` : ''),
-        time: n.created_at ?? new Date().toISOString(),
-        read: n.is_read ?? false,
-        avatar: '🔔',
-      }));
+      // Fix 11: use actual backend type; Fix 4: merge with socket-only entries
+      const fetchedNotifs = (notifsRes ?? []).map((n: any) => mapNotifRecord(n));
+      const fetchedIds = new Set(fetchedNotifs.map((n) => n.id));
+      const socketOnly = get().notifications.filter((n) => !fetchedIds.has(n.id));
+      const mappedNotifications = [...socketOnly, ...fetchedNotifs];
 
       const mappedBookingLinks = (bookingLinksRes ?? []).map((b: any) => ({
         id: b.id,
