@@ -59,7 +59,7 @@ router.post('/send', checkPermission('inbox:send'), async (req: AuthRequest, res
 
     if (lead_id) {
       const leadRes = await query(
-        `SELECT id, first_name || ' ' || last_name AS name, phone FROM leads
+        `SELECT id, name, phone FROM leads
          WHERE id=$1::uuid AND tenant_id=$2::uuid AND is_deleted=FALSE`,
         [lead_id, tenantId],
       );

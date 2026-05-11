@@ -22,9 +22,9 @@ export async function handleInboundMessage(tenantId: string, msg: any): Promise<
 
   if (!text) return;
 
-  // Find matching lead by phone number
+  // Find matching lead by phone number (last 10 digits match)
   const leadRes = await query(
-    `SELECT id, first_name || ' ' || last_name AS name, phone, assigned_to
+    `SELECT id, name, phone, assigned_to
      FROM leads
      WHERE tenant_id=$1::uuid AND is_deleted=FALSE
        AND REGEXP_REPLACE(phone, '[^0-9]', '', 'g') LIKE '%' || RIGHT(REGEXP_REPLACE($2, '[^0-9]', '', 'g'), 10)
@@ -38,22 +38,29 @@ export async function handleInboundMessage(tenantId: string, msg: any): Promise<
 
   // Find or create conversation for this phone/channel
   let convId: string;
-  const existingConv = await query(
-    `SELECT id FROM conversations
-     WHERE tenant_id=$1::uuid AND channel='personal_wa'
-       ${leadId ? 'AND lead_id=$2::uuid' : 'AND lead_id IS NULL AND last_message ILIKE $2'}
-     ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
-    leadId ? [tenantId, leadId] : [tenantId, `%${phone}%`],
-  );
-
-  if (existingConv.rows[0]) {
-    convId = existingConv.rows[0].id;
+  if (leadId) {
+    const existingConv = await query(
+      `SELECT id FROM conversations
+       WHERE tenant_id=$1::uuid AND channel='personal_wa' AND lead_id=$2::uuid
+       ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
+      [tenantId, leadId],
+    );
+    if (existingConv.rows[0]) {
+      convId = existingConv.rows[0].id;
+    } else {
+      const newConv = await query(
+        `INSERT INTO conversations (tenant_id, lead_id, channel, status, unread_count, last_message_at)
+         VALUES ($1::uuid, $2::uuid, 'personal_wa', 'open', 0, NOW()) RETURNING id`,
+        [tenantId, leadId],
+      );
+      convId = newConv.rows[0].id;
+    }
   } else {
+    // Unknown number — create anonymous conversation each time (no lead to link)
     const newConv = await query(
       `INSERT INTO conversations (tenant_id, lead_id, channel, status, unread_count, last_message_at)
-       VALUES ($1::uuid, $2, 'personal_wa', 'open', 0, NOW())
-       RETURNING id`,
-      [tenantId, leadId],
+       VALUES ($1::uuid, NULL, 'personal_wa', 'open', 0, NOW()) RETURNING id`,
+      [tenantId],
     );
     convId = newConv.rows[0].id;
   }
@@ -62,8 +69,8 @@ export async function handleInboundMessage(tenantId: string, msg: any): Promise<
   const wamid = msg.key?.id ?? null;
   const msgRes = await query(
     `INSERT INTO messages (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, status, created_at)
-     VALUES ($1, $2::uuid, $3, 'lead', $4, FALSE, $5, 'delivered', NOW())
-     ON CONFLICT (wamid) DO NOTHING
+     VALUES ($1, $2::uuid, $3, 'customer', $4, FALSE, $5, 'delivered', NOW())
+     ON CONFLICT (wamid) WHERE wamid IS NOT NULL DO NOTHING
      RETURNING *`,
     [convId, tenantId, leadId, text, wamid],
   );
@@ -100,9 +107,9 @@ export async function handleInboundMessage(tenantId: string, msg: any): Promise<
     lead_name: leadName,
     lead_phone: `+${phone}`,
     channel: 'personal_wa',
+    status: 'open',
     last_message: text.slice(0, 200),
     last_message_at: new Date().toISOString(),
-    unread_count: 1,
   });
 
   // Trigger inbox_message workflow if lead exists

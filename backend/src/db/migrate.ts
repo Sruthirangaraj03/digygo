@@ -60,6 +60,7 @@ const MIGRATIONS = [
   'migration_058_delay_queue_step_index.sql',
   'migration_059_notif_lead_id_followup_reminder.sql',
   'migration_060_wa_personal_sessions.sql',
+  'migration_061_conversations_messages_schema.sql',
 ];
 
 // Split SQL file into individual statements and execute each one separately.
