@@ -697,14 +697,25 @@ export default function IntegrationsPage() {
               >
                 <WifiOff className="w-3.5 h-3.5" />Disconnect
               </button>
+            ) : waPersonalStatus === 'connecting' ? (
+              <button
+                className="flex-1 flex items-center justify-center gap-1.5 text-[12px] font-semibold text-white bg-[#128C7E] rounded-lg px-3 py-1.5 hover:bg-[#0f7a6d] transition-colors"
+                onClick={async () => {
+                  try {
+                    await api.delete('/api/whatsapp-personal/disconnect');
+                    setWaPersonalStatus('disconnected', null);
+                  } catch {}
+                  setModal('wa_personal');
+                }}
+              >
+                <QrCode className="w-3.5 h-3.5" />Re-scan QR
+              </button>
             ) : (
               <button
-                className="flex-1 flex items-center justify-center gap-1.5 text-[12px] font-semibold text-white bg-[#128C7E] rounded-lg px-3 py-1.5 hover:bg-[#0f7a6d] transition-colors disabled:opacity-50"
-                disabled={waPersonalStatus === 'connecting'}
+                className="flex-1 flex items-center justify-center gap-1.5 text-[12px] font-semibold text-white bg-[#128C7E] rounded-lg px-3 py-1.5 hover:bg-[#0f7a6d] transition-colors"
                 onClick={() => setModal('wa_personal')}
               >
-                <QrCode className="w-3.5 h-3.5" />
-                {waPersonalStatus === 'connecting' ? 'Connecting…' : 'Connect via QR'}
+                <QrCode className="w-3.5 h-3.5" />Connect via QR
               </button>
             )}
           </div>
