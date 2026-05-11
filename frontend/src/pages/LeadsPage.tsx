@@ -2946,10 +2946,17 @@ function AppointmentModal({ lead, onClose, onBooked }: { lead: Lead; onClose: ()
 }
 
 // ─── Kanban Card ───────────────────────────────────────────────────────────────
-function LeadCard({ lead, onClick, onFollowUp, onNote, onAssign, showPhone }: { lead: Lead; onClick: () => void; onFollowUp: () => void; onNote: () => void; onAssign: () => void; showPhone: boolean }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: lead.id });
+function LeadCard({ lead, onClick, onFollowUp, onNote, onAssign, showPhone, highlighted }: { lead: Lead; onClick: () => void; onFollowUp: () => void; onNote: () => void; onAssign: () => void; showPhone: boolean; highlighted?: boolean }) {
+  const { attributes, listeners, setNodeRef: setSortableRef, transform, transition, isDragging } = useSortable({ id: lead.id });
+  const cardRef = useRef<HTMLDivElement>(null);
   const stopAnd = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); };
   const { staff: allStaff, followUps } = useCrmStore();
+
+  useEffect(() => {
+    if (highlighted && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [highlighted]);
   const assignedStaff = allStaff.find((s) => s.id === lead.assignedTo);
   const assignedCardName = assignedStaff?.name || lead.assignedName || '';
   const assignedCardAvatar = assignedStaff?.avatar || assignedCardName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() || '';
@@ -2988,11 +2995,14 @@ function LeadCard({ lead, onClick, onFollowUp, onNote, onAssign, showPhone }: { 
 
   return (<>
     <div
-      ref={setNodeRef}
+      ref={(el) => { setSortableRef(el); (cardRef as any).current = el; }}
       {...attributes}
       {...listeners}
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.25 : 1 }}
-      className="group bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all duration-150 cursor-grab active:cursor-grabbing"
+      className={cn(
+        'group bg-white rounded-xl border shadow-sm hover:shadow-md transition-all duration-150 cursor-grab active:cursor-grabbing',
+        highlighted ? 'border-primary ring-2 ring-primary/30 bg-primary/[0.02]' : 'border-gray-100',
+      )}
       onClick={onClick}
     >
       <div className="p-2.5">
@@ -3100,10 +3110,10 @@ const STAGE_ACCENT_COLORS = [
   '#f43f5e', '#06b6d4', '#84cc16', '#ec4899', '#0ea5e9',
 ];
 
-function StageColumn({ stage, leads: stageLeads, onLeadClick, onFollowUp, onNote, onAssign, showPhone, stageIndex }: {
+function StageColumn({ stage, leads: stageLeads, onLeadClick, onFollowUp, onNote, onAssign, showPhone, stageIndex, highlightId }: {
   stage: string; leads: Lead[]; onLeadClick: (l: Lead) => void;
   onFollowUp: (l: Lead) => void; onNote: (l: Lead) => void; onAssign: (l: Lead) => void;
-  showPhone: boolean; stageIndex: number;
+  showPhone: boolean; stageIndex: number; highlightId?: string | null;
 }) {
   const { setNodeRef } = useDroppable({ id: stage });
   const accent  = STAGE_ACCENT_COLORS[stageIndex % STAGE_ACCENT_COLORS.length];
@@ -3144,6 +3154,7 @@ function StageColumn({ stage, leads: stageLeads, onLeadClick, onFollowUp, onNote
               onNote={() => onNote(lead)}
               onAssign={() => onAssign(lead)}
               showPhone={showPhone}
+              highlighted={highlightId === lead.id}
             />
           ))}
         </SortableContext>
@@ -3514,6 +3525,21 @@ export default function LeadsPage() {
     const valid = saved && pipelines.find((p) => p.id === saved);
     setPipeline(valid ? saved! : pipelines[0].id);
   }, [pipelines]);
+
+  // Highlight lead from notification click — switch to its pipeline and flash the card
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const highlightParam = searchParams.get('highlight');
+  useEffect(() => {
+    if (!highlightParam || leads.length === 0 || pipelines.length === 0) return;
+    const lead = leads.find((l) => l.id === highlightParam);
+    if (!lead) return;
+    if (lead.pipelineId && lead.pipelineId !== selectedPipelineId) {
+      setPipeline(lead.pipelineId);
+    }
+    setHighlightId(highlightParam);
+    const t = setTimeout(() => setHighlightId(null), 4000);
+    return () => clearTimeout(t);
+  }, [highlightParam, leads, pipelines]);
   const [kanbanView, setKanbanView] = useState(!dashFilter);
   const [showPhone, setShowPhone] = useState(true);
   const location = useLocation();
@@ -4146,6 +4172,7 @@ export default function LeadsPage() {
                 onAssign={setQuickAssignLead}
                 showPhone={showPhone}
                 stageIndex={stageIndex}
+                highlightId={highlightId}
               />
               );
             })}

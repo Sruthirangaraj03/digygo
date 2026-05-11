@@ -92,9 +92,9 @@ export async function sendNewLeadNotification(
 
   for (const uid of filteredIds) {
     const nRes = await query(
-      `INSERT INTO notifications (tenant_id, user_id, title, message, type)
-       VALUES ($1::uuid, $2::uuid, $3, $4, 'new_lead') RETURNING id, created_at`,
-      [tenantId, uid, notifTitle, notifMessage],
+      `INSERT INTO notifications (tenant_id, user_id, title, message, type, lead_id)
+       VALUES ($1::uuid, $2::uuid, $3, $4, 'new_lead', $5::uuid) RETURNING id, created_at`,
+      [tenantId, uid, notifTitle, notifMessage, lead.id],
     );
     if (nRes.rows[0]) {
       emitToUser(uid, 'notification:new', {
@@ -102,6 +102,7 @@ export async function sendNewLeadNotification(
         type:       'new_lead',
         title:      notifTitle,
         message:    notifMessage,
+        lead_id:    lead.id,
         is_read:    false,
         created_at: nRes.rows[0].created_at,
       });
@@ -129,9 +130,9 @@ export async function sendLeadAssignedNotification(
   const notifMessage = 'A lead has been assigned to you';
 
   const nRes = await query(
-    `INSERT INTO notifications (tenant_id, user_id, title, message, type)
-     VALUES ($1::uuid, $2::uuid, $3, $4, 'assigned') RETURNING id, created_at`,
-    [tenantId, assignedToUserId, notifTitle, notifMessage],
+    `INSERT INTO notifications (tenant_id, user_id, title, message, type, lead_id)
+     VALUES ($1::uuid, $2::uuid, $3, $4, 'assigned', $5::uuid) RETURNING id, created_at`,
+    [tenantId, assignedToUserId, notifTitle, notifMessage, lead.id],
   );
   if (nRes.rows[0]) {
     emitToUser(assignedToUserId, 'notification:new', {
@@ -139,6 +140,7 @@ export async function sendLeadAssignedNotification(
       type:       'assigned',
       title:      notifTitle,
       message:    notifMessage,
+      lead_id:    lead.id,
       is_read:    false,
       created_at: nRes.rows[0].created_at,
     });
@@ -196,6 +198,64 @@ export async function sendBulkImportNotification(
         type:       'new_lead',
         title:      notifTitle,
         message:    notifMessage,
+        is_read:    false,
+        created_at: nRes.rows[0].created_at,
+      });
+    }
+  }
+}
+
+/**
+ * Runs every 5 minutes. Finds follow-ups due within the next 30 minutes
+ * that haven't had a reminder sent yet, sends an in-app notification to
+ * the assigned staff member, and marks reminder_sent = TRUE.
+ */
+export async function processFollowUpReminders(): Promise<void> {
+  const now = new Date();
+  const in30 = new Date(now.getTime() + 30 * 60 * 1000);
+
+  // Fetch follow-ups due in the next 30 minutes, not completed, reminder not sent
+  const fus = await query(
+    `SELECT f.id, f.lead_id, f.tenant_id, f.title, f.due_at, f.assigned_to,
+            l.first_name || ' ' || l.last_name AS lead_name
+     FROM lead_followups f
+     JOIN leads l ON l.id = f.lead_id AND l.is_deleted = FALSE
+     WHERE f.completed = FALSE
+       AND f.reminder_sent = FALSE
+       AND f.due_at >= $1
+       AND f.due_at <= $2`,
+    [now.toISOString(), in30.toISOString()],
+  );
+
+  for (const fu of fus.rows) {
+    // Mark reminder_sent immediately to prevent double-sending
+    await query(
+      `UPDATE lead_followups SET reminder_sent = TRUE WHERE id = $1`,
+      [fu.id],
+    );
+
+    if (!fu.assigned_to) continue;
+
+    const prefsMap = await batchGetPrefs([fu.assigned_to]);
+    if (!prefAllows(prefsMap.get(fu.assigned_to), 'follow_up_due')) continue;
+
+    const dueDate = new Date(fu.due_at);
+    const minutesLeft = Math.round((dueDate.getTime() - now.getTime()) / 60000);
+    const notifTitle = `Follow-up due soon: ${fu.title}`;
+    const notifMessage = `Lead: ${fu.lead_name} — due in ${minutesLeft} min`;
+
+    const nRes = await query(
+      `INSERT INTO notifications (tenant_id, user_id, title, message, type, lead_id)
+       VALUES ($1::uuid, $2::uuid, $3, $4, 'follow_up_due', $5::uuid) RETURNING id, created_at`,
+      [fu.tenant_id, fu.assigned_to, notifTitle, notifMessage, fu.lead_id],
+    );
+    if (nRes.rows[0]) {
+      emitToUser(fu.assigned_to, 'notification:new', {
+        id:         nRes.rows[0].id,
+        type:       'follow_up_due',
+        title:      notifTitle,
+        message:    notifMessage,
+        lead_id:    fu.lead_id,
         is_read:    false,
         created_at: nRes.rows[0].created_at,
       });

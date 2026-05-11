@@ -88,10 +88,12 @@ export interface CalendarEvent {
 export interface Notification {
   id: string;
   type: 'new_lead' | 'assigned' | 'automation' | 'info' | 'lead_created' | 'stage_changed' | 'new_message' | 'follow_up_due' | 'appointment';
-  message: string;
+  category: 'alert' | 'activity';
+  title: string;   // bold first line
+  body: string;    // muted context line
   time: string;
   read: boolean;
-  avatar: string;
+  leadId?: string;
 }
 
 export const STAGES = ['New Leads', 'Contacted', 'Qualified', 'Proposal Sent', 'Closed Won'];

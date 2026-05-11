@@ -29,6 +29,7 @@ import fieldsRoutes           from './routes/fields';
 import assignmentRulesRoutes  from './routes/assignment_rules';
 import landingPagesRoutes     from './routes/landing_pages';
 import notificationsRoutes    from './routes/notifications';
+import { processFollowUpReminders } from './utils/notifications';
 import whatsappFlowsRoutes    from './routes/whatsapp_flows';
 import dashboardRoutes        from './routes/dashboard';
 import pincodeRoutingRoutes   from './routes/pincode_routing';
@@ -167,6 +168,9 @@ runMigrations()
 
     setInterval(() => processScheduledTriggers().catch(() => null), 60_000);
     console.log('📅  Schedule trigger worker started (60s interval)');
+
+    setInterval(() => processFollowUpReminders().catch(() => null), 5 * 60_000);
+    console.log('🔔  Follow-up reminder worker started (5min interval)');
 
     httpServer.listen(PORT, () => {
       console.log(`\n🚀  DigyGo CRM Backend running on http://localhost:${PORT}`);

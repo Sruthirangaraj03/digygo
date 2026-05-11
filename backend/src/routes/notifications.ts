@@ -43,6 +43,17 @@ router.post('/read-all', async (req: AuthRequest, res: Response) => {
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 
+// DELETE /api/notifications — clear all notifications for the current user
+router.delete('/', async (req: AuthRequest, res: Response) => {
+  try {
+    await query(
+      `DELETE FROM notifications WHERE tenant_id=$1 AND user_id=$2::uuid`,
+      [req.user!.tenantId, req.user!.userId],
+    );
+    res.json({ success: true });
+  } catch { res.status(500).json({ error: 'Server error' }); }
+});
+
 // DELETE /api/notifications/:id — Fix 15: dismiss a notification
 router.delete('/:id', async (req: AuthRequest, res: Response) => {
   try {

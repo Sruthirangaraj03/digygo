@@ -10,24 +10,25 @@ import { SYSTEM_STANDARD_FIELDS } from '@/constants/systemFields';
 
 const SYSTEM_FIELDS_FALLBACK = SYSTEM_STANDARD_FIELDS.map((f) => ({ id: f.id, name: f.name, slug: f.slug, group: f.group }));
 
-// Fix 11: map backend notification type string to the frontend union type
-function mapNotifType(t: string | undefined): Notification['type'] {
-  const known: Record<string, Notification['type']> = {
-    new_lead: 'new_lead', assigned: 'assigned', automation: 'automation', info: 'info',
-    lead_created: 'lead_created', stage_changed: 'stage_changed',
-    new_message: 'new_message', follow_up_due: 'follow_up_due', appointment: 'appointment',
-  };
-  return known[t ?? ''] ?? 'new_lead';
-}
+const NOTIF_TYPE_MAP: Record<string, Notification['type']> = {
+  new_lead: 'new_lead', assigned: 'assigned', automation: 'automation', info: 'info',
+  lead_created: 'lead_created', stage_changed: 'stage_changed',
+  new_message: 'new_message', follow_up_due: 'follow_up_due', appointment: 'appointment',
+};
+
+const ALERT_TYPES = new Set<Notification['type']>(['assigned', 'follow_up_due', 'new_message', 'appointment']);
 
 function mapNotifRecord(n: any): Notification {
+  const type: Notification['type'] = NOTIF_TYPE_MAP[n.type ?? ''] ?? 'new_lead';
   return {
     id: n.id,
-    type: mapNotifType(n.type),
-    message: n.title + (n.message ? `: ${n.message}` : ''),
+    type,
+    category: ALERT_TYPES.has(type) ? 'alert' : 'activity',
+    title: n.title ?? '',
+    body: n.message ?? '',
     time: n.created_at ?? new Date().toISOString(),
     read: n.is_read ?? false,
-    avatar: '🔔',
+    leadId: n.lead_id ?? undefined,
   };
 }
 
@@ -136,6 +137,7 @@ interface CrmState {
   // Notification actions
   addNotification: (n: Notification) => void;
   removeNotification: (id: string) => void;
+  clearAllNotifications: () => void;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
   refreshNotifications: () => Promise<void>;
@@ -335,6 +337,10 @@ export const useCrmStore = create<CrmState>((set) => ({
   removeNotification: (id) => {
     set((s) => ({ notifications: s.notifications.filter((n) => n.id !== id) }));
     api.delete(`/api/notifications/${id}`).catch(() => {});
+  },
+  clearAllNotifications: () => {
+    set({ notifications: [] });
+    api.delete('/api/notifications').catch(() => {});
   },
   markNotificationRead: (id) => {
     set((s) => ({ notifications: s.notifications.map((n) => n.id === id ? { ...n, read: true } : n) }));
