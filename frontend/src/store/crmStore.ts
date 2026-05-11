@@ -76,6 +76,9 @@ interface CrmState {
   conversations: Conversation[];
   workflows: Workflow[];
   notifications: Notification[];
+  waPersonalStatus: 'disconnected' | 'connecting' | 'connected';
+  waPersonalPhone: string | null;
+  setWaPersonalStatus: (status: 'disconnected' | 'connecting' | 'connected', phone?: string | null) => void;
   calendarEvents: CalendarEvent[];
   staff: StaffMember[];
   tags: Tag[];
@@ -200,6 +203,9 @@ export const useCrmStore = create<CrmState>((set) => ({
   conversations: [],
   workflows: [],
   notifications: [],
+  waPersonalStatus: 'disconnected',
+  waPersonalPhone: null,
+  setWaPersonalStatus: (status, phone) => set({ waPersonalStatus: status, waPersonalPhone: phone ?? null }),
   calendarEvents: [],
   staff: [],
   tags: [],

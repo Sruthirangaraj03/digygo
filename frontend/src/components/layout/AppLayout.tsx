@@ -12,6 +12,7 @@ export function AppLayout() {
   const initFromApi = useCrmStore((s) => s.initFromApi);
   const addNotification = useCrmStore((s) => s.addNotification);
   const refreshNotifications = useCrmStore((s) => s.refreshNotifications);
+  const setWaPersonalStatus = useCrmStore((s) => s.setWaPersonalStatus);
   const { refreshPermissions, isImpersonating } = useAuthStore();
   const location = useLocation();
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -19,25 +20,33 @@ export function AppLayout() {
   // Real-time notification delivery + Fix 14: fetch missed on reconnect
   useEffect(() => {
     const socket = getSocket();
+    const ALERT_TYPES = new Set(['assigned', 'follow_up_due', 'new_message', 'appointment']);
     const handler = (n: any) => {
+      const type = n.type ?? 'new_lead';
       addNotification({
-        id:      n.id,
-        type:    n.type ?? 'new_lead',
-        message: n.title + (n.message ? `: ${n.message}` : ''),
-        time:    n.created_at ?? new Date().toISOString(),
-        read:    false,
-        avatar:  '🔔',
+        id:       n.id,
+        type,
+        category: ALERT_TYPES.has(type) ? 'alert' : 'activity',
+        title:    n.title ?? '',
+        body:     n.message ?? '',
+        time:     n.created_at ?? new Date().toISOString(),
+        read:     false,
       });
     };
     // Fix 14: on reconnect, fetch any notifications missed during the disconnect window
     const reconnectHandler = () => { refreshNotifications(); };
+    const waStatusHandler = (data: { status: string; phone?: string | null }) => {
+      setWaPersonalStatus(data.status as any, data.phone);
+    };
     socket.on('notification:new', handler);
     socket.on('connect', reconnectHandler);
+    socket.on('wa:status', waStatusHandler);
     return () => {
       socket.off('notification:new', handler);
       socket.off('connect', reconnectHandler);
+      socket.off('wa:status', waStatusHandler);
     };
-  }, [addNotification, refreshNotifications]);
+  }, [addNotification, refreshNotifications, setWaPersonalStatus]);
 
   // Re-fetch data whenever the user navigates to a new page
   useEffect(() => {

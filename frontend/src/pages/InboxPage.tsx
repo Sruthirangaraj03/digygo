@@ -5,7 +5,7 @@ import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import {
   Search, Send, Paperclip, Check, CheckCheck, MessageCircle,
-  ArrowLeft, StickyNote, Zap, ChevronDown, UserCheck, X,
+  ArrowLeft, StickyNote, Zap, ChevronDown, UserCheck, X, Smartphone,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import { formatDistanceToNow, format, isToday, isYesterday } from 'date-fns';
 import { toast } from 'sonner';
 
 type FilterTab = 'all' | 'mine' | 'unread' | 'unassigned' | 'resolved';
+type ChannelFilter = 'all' | 'waba' | 'personal_wa';
 
 interface ApiConversation {
   id: string;
@@ -48,6 +49,7 @@ export default function InboxPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
+  const [channelFilter, setChannelFilter] = useState<ChannelFilter>('all');
   const [messageText, setMessageText] = useState('');
   const [isNote, setIsNote] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
@@ -116,6 +118,8 @@ export default function InboxPage() {
 
   const filtered = conversations.filter((c) => {
     if (search && !c.lead_name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (channelFilter === 'waba' && c.channel !== 'whatsapp') return false;
+    if (channelFilter === 'personal_wa' && c.channel !== 'personal_wa') return false;
     if (filterTab === 'mine') return c.assigned_to === currentUser?.id;
     if (filterTab === 'unread') return c.unread_count > 0;
     if (filterTab === 'unassigned') return !c.assigned_to;
@@ -228,6 +232,21 @@ export default function InboxPage() {
               );
             })}
           </div>
+          {/* Channel filter */}
+          <div className="flex gap-1 overflow-x-auto">
+            {([
+              { key: 'all' as ChannelFilter, label: 'All Channels' },
+              { key: 'waba' as ChannelFilter, label: 'WA Business', Icon: MessageCircle, color: 'text-emerald-600' },
+              { key: 'personal_wa' as ChannelFilter, label: 'WA Personal', Icon: Smartphone, color: 'text-teal-600' },
+            ]).map(({ key, label, Icon: Ic, color }) => (
+              <button key={key} onClick={() => setChannelFilter(key)}
+                className={cn('px-2.5 py-1 text-[11px] font-medium rounded-lg whitespace-nowrap transition-colors flex items-center gap-1',
+                  channelFilter === key ? 'bg-black/10 text-foreground' : 'text-muted-foreground hover:bg-[#f5ede3]')}>
+                {Ic && <Ic className={cn('w-3 h-3', color)} />}
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto">
           {filtered.length === 0 && (
@@ -252,7 +271,9 @@ export default function InboxPage() {
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <MessageCircle className="w-3 h-3 text-green-500 shrink-0" />
+                  {conv.channel === 'personal_wa'
+                    ? <Smartphone className="w-3 h-3 text-teal-500 shrink-0" />
+                    : <MessageCircle className="w-3 h-3 text-green-500 shrink-0" />}
                   <p className="text-[11px] text-[#7a6b5c] truncate">{conv.last_message}</p>
                 </div>
                 <div className="flex items-center gap-1 mt-0.5">

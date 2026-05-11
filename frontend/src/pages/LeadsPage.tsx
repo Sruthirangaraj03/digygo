@@ -12,7 +12,7 @@ import {
   FileText, User, Tag, DollarSign, ChevronDown, Trash2, Check,
   Mail, Pencil, CheckSquare, RotateCcw, LayoutGrid, List, EyeOff, Eye,
   Star, ChevronRight, ArrowLeft, ArrowRight, Settings, Download, Package, Zap, Copy, ArrowUpDown, Layers,
-  CalendarPlus, MoreHorizontal, UserX, ArrowLeftRight, UserCheck, UserPlus, Circle, Clock, Users,
+  CalendarPlus, MoreHorizontal, UserX, ArrowLeftRight, UserCheck, UserPlus, Circle, Clock, Users, Smartphone,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -2048,9 +2048,14 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
   const [leadActivities, setLeadActivities] = useState<any[]>([]);
 
   const { calendarEvents, updateLead, deleteLead, addActivity, pipelines, tags: storeTags, staff, bookingLinks, addCalendarEvent } = useCrmStore();
+  const waPersonalStatus = useCrmStore((s) => s.waPersonalStatus);
   const currentUser = useAuthStore((s) => s.currentUser);
   const canEditLead   = usePermission('leads:edit');
   const canDeleteLead = usePermission('leads:delete');
+  const [showWaDropdown, setShowWaDropdown] = useState(false);
+  const [showWaSendModal, setShowWaSendModal] = useState(false);
+  const [waMessage, setWaMessage] = useState('');
+  const [waSending, setWaSending] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showCustomFields, setShowCustomFields] = useState(false);
   const [showEditFields,   setShowEditFields]   = useState(false);
@@ -2153,6 +2158,26 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
   const handleWhatsApp = () => {
     logActivity('whatsapp', 'WhatsApp', lead.phone);
     window.open(`https://wa.me/${lead.phone.replace(/\D/g, '')}`, '_blank');
+  };
+
+  const handleSendPersonalWa = async () => {
+    if (!waMessage.trim() || waSending) return;
+    setWaSending(true);
+    try {
+      await api.post('/api/whatsapp-personal/send', {
+        lead_id: lead.id,
+        phone: lead.phone,
+        message: waMessage.trim(),
+      });
+      logActivity('whatsapp', 'Sent via Personal WhatsApp', waMessage.trim());
+      toast.success('Message sent via Personal WhatsApp');
+      setShowWaSendModal(false);
+      setWaMessage('');
+    } catch {
+      toast.error('Failed to send via Personal WhatsApp');
+    } finally {
+      setWaSending(false);
+    }
   };
 
   const cleanActivityTitle = (t: string) => t
@@ -2532,21 +2557,83 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
           <div className="px-5 py-4 border-b border-black/5">
             <h4 className="text-[13px] font-bold text-[#1c1410] mb-3">Quick Actions</h4>
             <div className="grid grid-cols-4 gap-2">
-              {([
-                { Icon: Layers, label: 'Pipeline', onClick: () => setShowPipelineModal(true) },
-                { Icon: MessageCircle, label: 'WhatsApp', onClick: handleWhatsApp },
-                { Icon: Clock, label: 'Follow-up', onClick: () => setShowFuModal(true) },
-                { Icon: CalendarPlus, label: 'Appointment', onClick: () => setShowApptModal(true) },
-              ]).map(({ Icon, label, onClick }) => (
+              <button onClick={() => setShowPipelineModal(true)}
+                className="flex flex-col items-center gap-1 py-2.5 rounded-xl border border-black/[0.07] bg-white hover:bg-[#faf0e8] hover:border-primary/30 transition-colors">
+                <Layers className="w-4 h-4 text-[#7a6b5c]" />
+                <span className="text-[10px] font-medium text-[#7a6b5c]">Pipeline</span>
+              </button>
+
+              {/* WhatsApp — dropdown when personal WA is also connected */}
+              <div className="relative">
                 <button
-                  key={label}
-                  onClick={onClick}
-                  className="flex flex-col items-center gap-1 py-2.5 rounded-xl border border-black/[0.07] bg-white hover:bg-[#faf0e8] hover:border-primary/30 transition-colors"
-                >
-                  <Icon className="w-4 h-4 text-[#7a6b5c]" />
-                  <span className="text-[10px] font-medium text-[#7a6b5c]">{label}</span>
+                  onClick={waPersonalStatus === 'connected' ? () => setShowWaDropdown((v) => !v) : handleWhatsApp}
+                  className="w-full flex flex-col items-center gap-1 py-2.5 rounded-xl border border-black/[0.07] bg-white hover:bg-[#faf0e8] hover:border-primary/30 transition-colors">
+                  <MessageCircle className="w-4 h-4 text-[#7a6b5c]" />
+                  <span className="text-[10px] font-medium text-[#7a6b5c]">WhatsApp</span>
                 </button>
-              ))}
+                {showWaDropdown && (
+                  <>
+                    <div className="fixed inset-0 z-30" onClick={() => setShowWaDropdown(false)} />
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-white border border-black/10 rounded-xl shadow-xl z-40 w-52 py-1">
+                      <button onClick={() => { handleWhatsApp(); setShowWaDropdown(false); }}
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-[#f5ede3] flex items-center gap-2">
+                        <MessageCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        Open WhatsApp Business
+                      </button>
+                      <button onClick={() => { setShowWaDropdown(false); setShowWaSendModal(true); }}
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-[#f5ede3] flex items-center gap-2">
+                        <Smartphone className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                        Send via Personal WA
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <button onClick={() => setShowFuModal(true)}
+                className="flex flex-col items-center gap-1 py-2.5 rounded-xl border border-black/[0.07] bg-white hover:bg-[#faf0e8] hover:border-primary/30 transition-colors">
+                <Clock className="w-4 h-4 text-[#7a6b5c]" />
+                <span className="text-[10px] font-medium text-[#7a6b5c]">Follow-up</span>
+              </button>
+              <button onClick={() => setShowApptModal(true)}
+                className="flex flex-col items-center gap-1 py-2.5 rounded-xl border border-black/[0.07] bg-white hover:bg-[#faf0e8] hover:border-primary/30 transition-colors">
+                <CalendarPlus className="w-4 h-4 text-[#7a6b5c]" />
+                <span className="text-[10px] font-medium text-[#7a6b5c]">Appointment</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Personal WA send modal */}
+        {showWaSendModal && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => { setShowWaSendModal(false); setWaMessage(''); }}>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="font-headline font-bold text-[#1c1410] flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-teal-600" /> Send via Personal WhatsApp
+                </h3>
+                <button onClick={() => { setShowWaSendModal(false); setWaMessage(''); }} className="text-muted-foreground hover:text-foreground">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-xs text-[#7a6b5c] mb-3">To: <strong>{lead.phone}</strong></p>
+              <textarea
+                className="w-full border border-black/10 rounded-xl px-3 py-2 text-sm min-h-[100px] resize-none focus:outline-none focus:ring-2 focus:ring-teal-500/20 mb-4"
+                placeholder="Type your message..."
+                value={waMessage}
+                onChange={(e) => setWaMessage(e.target.value)}
+                autoFocus
+              />
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => { setShowWaSendModal(false); setWaMessage(''); }}
+                  className="px-4 py-2 text-sm border border-black/10 rounded-xl hover:bg-[#f5ede3] transition-colors">
+                  Cancel
+                </button>
+                <button onClick={handleSendPersonalWa} disabled={!waMessage.trim() || waSending}
+                  className="px-4 py-2 text-sm bg-teal-600 text-white rounded-xl hover:bg-teal-700 disabled:opacity-50 transition-colors">
+                  {waSending ? 'Sending…' : 'Send'}
+                </button>
+              </div>
             </div>
           </div>
         )}

@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
-import { ArrowLeft, X, RefreshCw, Check, Mail, ExternalLink, Unplug, Eye, EyeOff } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, X, RefreshCw, Check, Mail, ExternalLink, Unplug, Eye, EyeOff, QrCode, Wifi, WifiOff } from 'lucide-react';
+import { getSocket } from '@/lib/socket';
+import { useCrmStore } from '@/store/crmStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
@@ -354,9 +356,128 @@ function N8nModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
   );
 }
 
+// ── WhatsApp Personal icon ──────────────────────────────────────────────────────
+
+function WhatsAppPersonalIcon() {
+  return (
+    <div className="w-12 h-12 rounded-2xl bg-[#128C7E] flex items-center justify-center shrink-0">
+      <QrCode className="w-6 h-6 text-white" />
+    </div>
+  );
+}
+
+// ── WhatsApp Personal QR Modal ─────────────────────────────────────────────────
+
+function WaPersonalModal({ onClose, onConnected }: { onClose: () => void; onConnected: () => void }) {
+  const [qr, setQr] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState(60);
+  const [starting, setStarting] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startSession = async () => {
+    setStarting(true);
+    try {
+      await api.post('/api/whatsapp-personal/connect', {});
+      setCountdown(60);
+      // Start polling for QR
+      pollRef.current = setInterval(async () => {
+        try {
+          const data = await api.get<{ qr: string | null }>('/api/whatsapp-personal/qr');
+          if (data.qr) { setQr(data.qr); setCountdown(60); }
+        } catch {}
+      }, 3000);
+      countRef.current = setInterval(() => {
+        setCountdown((c) => {
+          if (c <= 1) { setCountdown(60); return 60; }
+          return c - 1;
+        });
+      }, 1000);
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to start session');
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  useEffect(() => {
+    const socket = getSocket();
+    const handler = (data: { status: string; phone?: string }) => {
+      if (data.status === 'connected') {
+        setConnected(true);
+        setQr(null);
+        if (pollRef.current) clearInterval(pollRef.current);
+        if (countRef.current) clearInterval(countRef.current);
+        setTimeout(() => { onConnected(); onClose(); }, 1500);
+      }
+    };
+    socket.on('wa:status', handler);
+    startSession();
+    return () => {
+      socket.off('wa:status', handler);
+      if (pollRef.current) clearInterval(pollRef.current);
+      if (countRef.current) clearInterval(countRef.current);
+    };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }}>
+      <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
+        <div className="px-5 py-4 border-b border-black/5 flex items-center justify-between">
+          <p className="text-[15px] font-bold text-[#1c1410]">Connect WhatsApp (Personal)</p>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c]"><X size={15} /></button>
+        </div>
+
+        <div className="p-6 flex flex-col items-center gap-4">
+          {connected ? (
+            <>
+              <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center">
+                <Check className="w-8 h-8 text-emerald-600" />
+              </div>
+              <p className="text-[14px] font-bold text-emerald-600">Connected!</p>
+              <p className="text-[12px] text-[#7a6b5c] text-center">WhatsApp Personal is now linked to your CRM.</p>
+            </>
+          ) : qr ? (
+            <>
+              <img src={qr} alt="WhatsApp QR Code" className="w-52 h-52 rounded-xl border border-black/10" />
+              <div className="flex flex-col items-center gap-1">
+                <p className="text-[13px] font-semibold text-[#1c1410]">Scan with WhatsApp on your phone</p>
+                <p className="text-[11px] text-[#9e8e7e]">WhatsApp → Linked Devices → Link a Device</p>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                  <p className="text-[11px] text-[#9e8e7e]">QR refreshes in {countdown}s</p>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="w-16 h-16 rounded-2xl bg-[#f5f0eb] flex items-center justify-center">
+                {starting
+                  ? <RefreshCw className="w-7 h-7 text-[#9e8e7e] animate-spin" />
+                  : <QrCode className="w-7 h-7 text-[#9e8e7e]" />
+                }
+              </div>
+              <p className="text-[13px] text-[#7a6b5c] text-center">
+                {starting ? 'Starting session…' : 'Generating QR code…'}
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="px-5 py-4 border-t border-black/5 bg-[#faf8f6]">
+          <p className="text-[10.5px] text-[#b09e8d] text-center leading-relaxed">
+            Sends messages from your linked number. Avoid mass messaging to prevent WhatsApp from banning the number.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Integration card ───────────────────────────────────────────────────────────
 
-type ModalType = 'waba' | 'smtp' | 'razorpay' | 'n8n';
+type ModalType = 'waba' | 'smtp' | 'razorpay' | 'n8n' | 'wa_personal';
 
 interface IntegCardProps {
   icon: React.ReactNode;
@@ -420,6 +541,8 @@ function IntegCard({ icon, name, tagline, connected, onConnect, onConfigure, onD
 export default function IntegrationsPage() {
   const navigate = useNavigate();
   const [modal, setModal] = useState<ModalType | null>(null);
+  const { waPersonalStatus, waPersonalPhone, setWaPersonalStatus } = useCrmStore();
+  const [waStats, setWaStats] = useState<{ today: { sent: number; received: number }; month: { sent: number; received: number } } | null>(null);
   const [status, setStatus] = useState({
     meta: false,
     waba: false,
@@ -429,11 +552,12 @@ export default function IntegrationsPage() {
   });
 
   const loadStatus = async () => {
-    const [meta, waba, smtp, configs] = await Promise.allSettled([
+    const [meta, waba, smtp, configs, waPersStatus] = await Promise.allSettled([
       api.get<{ connected: boolean }>('/api/integrations/meta/status'),
       api.get<{ connected: boolean }>('/api/integrations/waba/status'),
       api.get<{ connected: boolean }>('/api/integrations/smtp/status'),
       api.get<Record<string, { is_active: boolean }>>('/api/integrations/configs'),
+      api.get<{ status: string; phone: string | null }>('/api/whatsapp-personal/status'),
     ]);
 
     setStatus({
@@ -443,6 +567,12 @@ export default function IntegrationsPage() {
       razorpay: configs.status  === 'fulfilled' && !!configs.value?.razorpay?.is_active,
       n8n:      configs.status  === 'fulfilled' && !!configs.value?.n8n?.is_active,
     });
+
+    if (waPersStatus.status === 'fulfilled') {
+      setWaPersonalStatus(waPersStatus.value.status as any, waPersStatus.value.phone);
+    }
+
+    api.get<any>('/api/whatsapp-personal/stats').then(setWaStats).catch(() => null);
   };
 
   useEffect(() => { loadStatus(); }, []);
@@ -514,6 +644,65 @@ export default function IntegrationsPage() {
           onDisconnect={() => disconnect('waba', '/api/integrations/waba/disconnect')}
         />
 
+        {/* WhatsApp Personal (QR) */}
+        <div className="bg-white rounded-2xl border border-black/5 p-5 flex flex-col gap-4 hover:shadow-sm transition-all duration-200">
+          <div className="flex items-start justify-between gap-2">
+            <WhatsAppPersonalIcon />
+            <span className={cn(
+              'inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full',
+              waPersonalStatus === 'connected' ? 'bg-emerald-50 text-emerald-600'
+              : waPersonalStatus === 'connecting' ? 'bg-amber-50 text-amber-600'
+              : 'bg-[#f5f0eb] text-[#9e8e7e]'
+            )}>
+              {waPersonalStatus === 'connected' && <><Check className="w-2.5 h-2.5" />Connected</>}
+              {waPersonalStatus === 'connecting' && <><RefreshCw className="w-2.5 h-2.5 animate-spin" />Connecting…</>}
+              {waPersonalStatus === 'disconnected' && 'Not connected'}
+            </span>
+          </div>
+          <div className="flex-1">
+            <p className="text-[14px] font-bold text-[#1c1410]">WhatsApp Personal (QR)</p>
+            <p className="text-[12px] text-[#9e8e7e] mt-0.5 leading-relaxed">
+              Link any WhatsApp number via QR scan. Send messages to any contact without WABA approval.
+            </p>
+            {waPersonalStatus === 'connected' && waPersonalPhone && (
+              <p className="text-[11px] text-emerald-600 font-semibold mt-1">
+                <Wifi className="w-3 h-3 inline mr-1" />{waPersonalPhone}
+              </p>
+            )}
+            {waStats && waPersonalStatus === 'connected' && (
+              <div className="flex gap-3 mt-2">
+                <span className="text-[11px] text-[#9e8e7e]">Today: <b className="text-[#1c1410]">{waStats.today.sent} sent</b></span>
+                <span className="text-[11px] text-[#9e8e7e]"><b className="text-[#1c1410]">{waStats.today.received} received</b></span>
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {waPersonalStatus === 'connected' ? (
+              <button
+                className="flex-1 flex items-center justify-center gap-1.5 text-[12px] font-semibold text-red-600 border border-red-100 rounded-lg px-3 py-1.5 hover:bg-red-50 transition-colors"
+                onClick={async () => {
+                  try {
+                    await api.delete('/api/whatsapp-personal/disconnect');
+                    setWaPersonalStatus('disconnected', null);
+                    toast.success('WhatsApp Personal disconnected');
+                  } catch { toast.error('Failed to disconnect'); }
+                }}
+              >
+                <WifiOff className="w-3.5 h-3.5" />Disconnect
+              </button>
+            ) : (
+              <button
+                className="flex-1 flex items-center justify-center gap-1.5 text-[12px] font-semibold text-white bg-[#128C7E] rounded-lg px-3 py-1.5 hover:bg-[#0f7a6d] transition-colors disabled:opacity-50"
+                disabled={waPersonalStatus === 'connecting'}
+                onClick={() => setModal('wa_personal')}
+              >
+                <QrCode className="w-3.5 h-3.5" />
+                {waPersonalStatus === 'connecting' ? 'Connecting…' : 'Connect via QR'}
+              </button>
+            )}
+          </div>
+        </div>
+
         <IntegCard
           icon={<EmailIcon />}
           name="Email (SMTP)"
@@ -547,10 +736,11 @@ export default function IntegrationsPage() {
       </div>
 
       {/* Modals */}
-      {modal === 'waba'     && <WabaModal     onClose={() => setModal(null)} onSaved={() => onSaved('waba')}     />}
-      {modal === 'smtp'     && <SmtpModal     onClose={() => setModal(null)} onSaved={() => onSaved('smtp')}     />}
-      {modal === 'razorpay' && <RazorpayModal onClose={() => setModal(null)} onSaved={() => onSaved('razorpay')} />}
-      {modal === 'n8n'      && <N8nModal      onClose={() => setModal(null)} onSaved={() => onSaved('n8n')}      />}
+      {modal === 'waba'        && <WabaModal       onClose={() => setModal(null)} onSaved={() => onSaved('waba')}     />}
+      {modal === 'smtp'        && <SmtpModal       onClose={() => setModal(null)} onSaved={() => onSaved('smtp')}     />}
+      {modal === 'razorpay'    && <RazorpayModal   onClose={() => setModal(null)} onSaved={() => onSaved('razorpay')} />}
+      {modal === 'n8n'         && <N8nModal        onClose={() => setModal(null)} onSaved={() => onSaved('n8n')}      />}
+      {modal === 'wa_personal' && <WaPersonalModal onClose={() => setModal(null)} onConnected={() => { setWaPersonalStatus('connected'); loadStatus(); }} />}
 
     </div>
   );

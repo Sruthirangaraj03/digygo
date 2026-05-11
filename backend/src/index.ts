@@ -30,6 +30,8 @@ import assignmentRulesRoutes  from './routes/assignment_rules';
 import landingPagesRoutes     from './routes/landing_pages';
 import notificationsRoutes    from './routes/notifications';
 import { processFollowUpReminders } from './utils/notifications';
+import waPersonalRoutes from './routes/whatsapp_personal';
+import { restoreAllSessions } from './services/whatsapp/sessionManager';
 import whatsappFlowsRoutes    from './routes/whatsapp_flows';
 import dashboardRoutes        from './routes/dashboard';
 import pincodeRoutingRoutes   from './routes/pincode_routing';
@@ -148,6 +150,7 @@ app.use('/api/field-routing',     fieldRoutingRoutes);
 app.use('/api/lead-generation',   leadGenerationRoutes);
 app.use('/api/reports',           reportsRoutes);
 app.use('/api/contact-groups',    contactGroupsRoutes);
+app.use('/api/whatsapp-personal', waPersonalRoutes);
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
@@ -171,6 +174,9 @@ runMigrations()
 
     setInterval(() => processFollowUpReminders().catch(() => null), 5 * 60_000);
     console.log('🔔  Follow-up reminder worker started (5min interval)');
+
+    restoreAllSessions().catch(() => null);
+    console.log('📱  WhatsApp Personal session restore initiated');
 
     httpServer.listen(PORT, () => {
       console.log(`\n🚀  DigyGo CRM Backend running on http://localhost:${PORT}`);

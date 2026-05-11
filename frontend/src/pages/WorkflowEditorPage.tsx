@@ -144,6 +144,7 @@ const ACTION_LIST: { id: string; label: string; desc: string; category: ActionCa
   { id: 'send_email',           label: 'Send Email',                  desc: 'Send an automated email',                            category: 'Communication', Icon: Mail,          color: 'bg-blue-100 text-blue-600' },
   { id: 'send_sms',             label: 'Send SMS',                    desc: 'Send an automated SMS',                              category: 'Communication', Icon: Smartphone,    color: 'bg-green-100 text-green-700' },
   { id: 'send_whatsapp',        label: 'WhatsApp Message',            desc: 'Send an automated whatsapp message',                 category: 'Communication', Icon: MessageCircle, color: 'bg-emerald-100 text-emerald-700' },
+  { id: 'send_whatsapp_personal', label: 'WhatsApp Personal',         desc: 'Send via connected personal WhatsApp (QR scan)',      category: 'Communication', Icon: Smartphone,    color: 'bg-teal-100 text-teal-700' },
   { id: 'internal_notify',      label: 'Internal Notification',       desc: 'Send an Internal Notification',                      category: 'Communication', Icon: Bell,          color: 'bg-purple-100 text-purple-600' },
   // ── Conditions / Timing ─────────────────────────────────────────────────────
   { id: 'if_else',              label: 'If / Else Condition',         desc: 'Branch based on a condition',                        category: 'Conditions',    Icon: GitBranch,     color: 'bg-amber-100 text-amber-600' },
@@ -222,6 +223,7 @@ const ACTION_ACCENT: Record<string, { bar: string; icon: string; badge: string }
   send_email:            { bar: 'bg-blue-500',    icon: 'bg-blue-50 text-blue-600',      badge: 'bg-blue-100 text-blue-700' },
   send_sms:              { bar: 'bg-green-500',   icon: 'bg-green-50 text-green-700',    badge: 'bg-green-100 text-green-800' },
   send_whatsapp:         { bar: 'bg-emerald-600', icon: 'bg-emerald-50 text-emerald-700',badge: 'bg-emerald-100 text-emerald-800' },
+  send_whatsapp_personal:{ bar: 'bg-teal-600',    icon: 'bg-teal-50 text-teal-700',      badge: 'bg-teal-100 text-teal-800' },
   internal_notify:       { bar: 'bg-purple-500',  icon: 'bg-purple-50 text-purple-600',  badge: 'bg-purple-100 text-purple-700' },
   // Social
   post_instagram:        { bar: 'bg-pink-500',    icon: 'bg-pink-50 text-pink-600',      badge: 'bg-pink-100 text-pink-700' },
@@ -1931,6 +1933,23 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
         </FieldRow>
       </>)}
 
+      {/* WhatsApp Personal */}
+      {node.actionType === 'send_whatsapp_personal' && (<>
+        <p className="text-sm text-muted-foreground leading-relaxed">Send a message via your connected personal WhatsApp session (QR scan). Requires an active personal WA connection in Integrations.</p>
+        <FieldRow label="Message" required>
+          <textarea
+            className="w-full border border-border rounded-lg px-3 py-2 text-sm min-h-[120px] resize-y focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
+            placeholder={`Type your message... Supports variables: {first_name}, {last_name}, {phone}, {email}`}
+            value={(cfg.message as string) ?? ''}
+            onChange={(e) => onUpdate({ config: { ...cfg, message: e.target.value } })}
+          />
+        </FieldRow>
+        <div className="flex items-start gap-2 p-3 bg-teal-50 border border-teal-200 rounded-lg text-xs text-teal-700">
+          <span className="shrink-0 mt-0.5">ℹ️</span>
+          <span>Messages are sent from your personal WhatsApp account. They are not formal templates and do not require Meta approval.</span>
+        </div>
+      </>)}
+
       {/* Time Delay */}
       {node.actionType === 'delay' && (() => {
         const preset    = (cfg.preset    as string)   ?? '24h';
@@ -3292,7 +3311,7 @@ function NodeConfigModal({
     ? TRIGGER_CATEGORIES.find((c) => c.items.some((i) => i.id === node.actionType))?.label ?? 'Trigger'
     : null;
   const typeLabel = triggerCatLabel ?? (NODE_TYPE_LABEL[node.type] ?? 'Action');
-  const isCommNode = ['send_email','send_sms','send_whatsapp','internal_notify','create_note'].includes(node.actionType);
+  const isCommNode = ['send_email','send_sms','send_whatsapp','send_whatsapp_personal','internal_notify','create_note'].includes(node.actionType);
   const isTrigger = node.type === 'trigger';
 
   const handleSaveClose = () => {
@@ -3878,6 +3897,7 @@ export default function WorkflowEditorPage() {
         if (node.actionType === 'change_stage' && !node.config.stage_id) return `"Change Pipeline Stage" is missing a stage.`;
         if (node.actionType === 'send_email' && !node.config.subject) return `"Send Email" is missing a subject.`;
         if (node.actionType === 'send_whatsapp' && !node.config.template) return `"WhatsApp Message" is missing a template.`;
+        if (node.actionType === 'send_whatsapp_personal' && !node.config.message) return `"WhatsApp Personal" is missing a message.`;
         if (node.actionType === 'webhook_call' && !node.config.url) return `"Webhook Call" is missing a URL.`;
         if (node.actionType === 'execute_automation' && !node.config.workflow_id) return `"Execute Automation" has no workflow selected.`;
         if (node.actionType === 'add_tag' && !(node.config.tag || (node.config.tags as string[])?.length)) return `"Add Tag" is missing at least one tag.`;

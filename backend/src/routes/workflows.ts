@@ -1057,6 +1057,34 @@ export async function executeNodes(
           break;
         }
 
+        // ── Send WhatsApp Personal (QR-based) ─────────────────────────────────
+        case 'send_whatsapp_personal': {
+          const toPhone = lead.phone;
+          if (!toPhone) {
+            status = 'skipped'; message = 'send_whatsapp_personal: lead has no phone number'; break;
+          }
+          const msgText = interpolate(
+            (node.config.message ?? '') as string, lead
+          );
+          if (!msgText) {
+            status = 'skipped'; message = 'send_whatsapp_personal: no message body configured'; break;
+          }
+          const { sendText, getSession } = await import('../services/whatsapp/sessionManager');
+          const { toJID } = await import('../services/whatsapp/phoneUtils');
+          if (!getSession(tenantId)) {
+            status = 'failed'; message = 'send_whatsapp_personal: WhatsApp Personal session not connected — scan QR under Integrations'; break;
+          }
+          await sendText(tenantId, toJID(toPhone), msgText);
+          // Log in lead activity
+          await query(
+            `INSERT INTO lead_activities (lead_id, tenant_id, type, title, detail, created_by)
+             VALUES ($1::uuid, $2::uuid, 'whatsapp', 'WhatsApp sent (Personal via Automation)', $3, NULL)`,
+            [lead.id, tenantId, msgText.slice(0, 255)],
+          ).catch(() => null);
+          message = `WhatsApp Personal sent to ${toPhone}`;
+          break;
+        }
+
         // ── Send SMS ───────────────────────────────────────────────────────────
         // Leak 5 fix: fail visibly so the gap shows in execution logs, not as a silent skip
         case 'send_sms': {
