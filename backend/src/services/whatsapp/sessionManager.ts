@@ -14,12 +14,13 @@ const WA_SESSIONS_DIR = process.env.WA_SESSIONS_DIR
   || path.join(process.cwd(), 'wa_sessions');
 
 // In-memory state — source of truth (more reliable than DB after restarts)
-const sessions   = new Map<string, ReturnType<typeof makeWASocket>>();
-const connectedSessions = new Set<string>();   // tenants with a fully open connection
-const pendingQRs = new Map<string, string>();
-const retryCount = new Map<string, number>();  // transient-disconnect retry counter
+const sessions          = new Map<string, ReturnType<typeof makeWASocket>>();
+const connectedSessions = new Set<string>();   // tenants with a fully open WA connection
+const pendingQRs        = new Map<string, string>();
+const retryCount        = new Map<string, number>(); // transient-disconnect retry counter
+const intentionallyStopped = new Set<string>(); // prevents spurious retry after manual stop
 
-const MAX_RETRIES = 5;  // after 5 failed reconnects, wipe stale auth and give up
+const MAX_RETRIES = 5;
 
 function sessionDir(tenantId: string): string {
   return path.join(WA_SESSIONS_DIR, tenantId);
@@ -39,7 +40,7 @@ async function upsertSessionStatus(tenantId: string, status: string, phoneNumber
 }
 
 export async function startSession(tenantId: string): Promise<void> {
-  // Close any existing socket without touching DB
+  // Close any existing socket without touching DB (intentional stop — suppress retry)
   await stopSession(tenantId, false);
   pendingQRs.delete(tenantId);
 
@@ -99,8 +100,10 @@ export async function startSession(tenantId: string): Promise<void> {
       const loggedOut = code === DisconnectReason.loggedOut || code === 401;
       console.log(`[WA] Connection closed for tenant ${tenantId.slice(0, 8)}: code=${code ?? 'none'}, loggedOut=${loggedOut}`);
 
+      // If this close was triggered by an intentional stopSession call, don't retry
+      if (intentionallyStopped.has(tenantId)) return;
+
       if (loggedOut) {
-        // Explicit logout — wipe auth and stop completely
         retryCount.delete(tenantId);
         sessions.delete(tenantId);
         try { fs.rmSync(sessionDir(tenantId), { recursive: true, force: true }); } catch {}
@@ -133,6 +136,10 @@ export async function startSession(tenantId: string): Promise<void> {
 }
 
 export async function stopSession(tenantId: string, updateDb = true): Promise<void> {
+  // Mark as intentional so the close event handler doesn't schedule a retry
+  intentionallyStopped.add(tenantId);
+  setTimeout(() => intentionallyStopped.delete(tenantId), 3000); // clear after close event fires
+
   const sock = sessions.get(tenantId);
   if (sock) {
     try { sock.end(undefined as any); } catch {}
@@ -160,34 +167,22 @@ export function getQR(tenantId: string): string | null {
 }
 
 /**
- * Returns live status using in-memory state as the source of truth.
- * DB is only consulted for the phone number (which doesn't change mid-session).
- * This prevents stale 'connecting' states from persisting after server restarts.
+ * Returns live status using in-memory state as source of truth.
+ * If there is no live socket in memory, always returns 'disconnected' — DB value is
+ * unreliable after restarts (may be stale 'connected' from a previous session).
  */
 export async function getStatus(tenantId: string): Promise<{ status: string; phone: string | null }> {
-  if (connectedSessions.has(tenantId)) {
-    const res = await query(
-      'SELECT phone_number FROM wa_personal_sessions WHERE tenant_id=$1::uuid',
-      [tenantId],
-    );
-    return { status: 'connected', phone: res.rows[0]?.phone_number ?? null };
-  }
-
-  if (sessions.has(tenantId)) {
-    // Socket exists but handshake not yet complete
-    return { status: 'connecting', phone: null };
-  }
-
-  // No in-memory session — read DB but treat stale 'connecting' as disconnected
   const res = await query(
-    'SELECT status, phone_number FROM wa_personal_sessions WHERE tenant_id=$1::uuid',
+    'SELECT phone_number FROM wa_personal_sessions WHERE tenant_id=$1::uuid',
     [tenantId],
   );
-  const dbStatus = res.rows[0]?.status ?? 'disconnected';
-  return {
-    status: dbStatus === 'connecting' ? 'disconnected' : dbStatus,
-    phone: res.rows[0]?.phone_number ?? null,
-  };
+  const phone = res.rows[0]?.phone_number ?? null;
+
+  if (connectedSessions.has(tenantId)) return { status: 'connected', phone };
+  if (sessions.has(tenantId))          return { status: 'connecting', phone: null };
+
+  // No live socket — always disconnected regardless of what the DB says
+  return { status: 'disconnected', phone };
 }
 
 /** Called on server boot — restores tenants that had an active session saved to disk */
