@@ -19,8 +19,6 @@ SET
   created_at = COALESCE(sent_at, NOW())
 WHERE sender IS NULL OR body IS NULL OR created_at IS NULL;
 
--- ── Unique index on wamid for ON CONFLICT support ──────────────────────────────
--- The earlier idx_messages_wamid was a plain index; ON CONFLICT needs UNIQUE
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_wamid_unique
   ON messages(wamid)
   WHERE wamid IS NOT NULL;
