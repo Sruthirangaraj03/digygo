@@ -1939,7 +1939,7 @@ function AdditionalInfoSection({ lead, onUpdate }: { lead: Lead; onUpdate: (fiel
               {q.type === 'Multi-select' && (
                 <div className="flex flex-wrap gap-1.5">
                   {(q.options ?? []).map((o) => {
-                    const selected = value.split(',').map((x) => x.trim()).includes(o);
+                    const selected = (value ?? '').split(',').map((x) => x.trim()).includes(o);
                     return (
                       <button
                         key={o}
@@ -1976,7 +1976,7 @@ function AdditionalInfoSection({ lead, onUpdate }: { lead: Lead; onUpdate: (fiel
               {q.type === 'Multi-Checkbox' && (
                 <div className="space-y-1.5">
                   {(q.options ?? []).map((o) => {
-                    const selected = value.split(',').map((x) => x.trim()).includes(o);
+                    const selected = (value ?? '').split(',').map((x) => x.trim()).includes(o);
                     return (
                       <label key={o} className="flex items-center gap-2 cursor-pointer">
                         <input
@@ -2205,7 +2205,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
     ...leadNotes.map((n) => ({ id: `note-${n.id}`, type: 'note' as const, title: n.title || 'Note', detail: n.content, timestamp: n.created_at, createdBy: n.created_by_name ?? n.created_by })),
     ...leadAppointments.map((a) => ({
       id: `appt-${a.id}`, type: 'appointment' as const,
-      title: a.title.split(' - ')[0],
+      title: (a.title ?? '').split(' - ')[0],
       detail: `${format(new Date(a.date), 'dd MMM yyyy')} · ${a.time}`,
       timestamp: a.date,
     })),

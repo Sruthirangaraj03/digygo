@@ -575,7 +575,7 @@ export const useCrmStore = create<CrmState>((set) => ({
         status: s.is_active ? 'active' as const : 'inactive' as const,
         leadsAssigned: 0,
         lastActive: s.created_at ?? new Date().toISOString(),
-        avatar: (s.name as string).split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase(),
+        avatar: (s.name ?? '').split(' ').map((n: string) => n[0] ?? '').join('').slice(0, 2).toUpperCase(),
       }));
 
       const mappedEvents: CalendarEvent[] = calRes.map((e) => ({
