@@ -381,13 +381,13 @@ function WaPersonalModal({ onClose, onConnected }: { onClose: () => void; onConn
     try {
       await api.post('/api/whatsapp-personal/connect', {});
       setCountdown(60);
-      // Start polling for QR
+      // Poll as fallback (socket delivers instantly, this catches any miss)
       pollRef.current = setInterval(async () => {
         try {
           const data = await api.get<{ qr: string | null }>('/api/whatsapp-personal/qr');
           if (data.qr) { setQr(data.qr); setCountdown(60); }
         } catch {}
-      }, 3000);
+      }, 1500);
       countRef.current = setInterval(() => {
         setCountdown((c) => {
           if (c <= 1) { setCountdown(60); return 60; }
@@ -403,7 +403,12 @@ function WaPersonalModal({ onClose, onConnected }: { onClose: () => void; onConn
 
   useEffect(() => {
     const socket = getSocket();
-    const handler = (data: { status: string; phone?: string }) => {
+
+    // Instant QR delivery via socket — no poll delay
+    const qrHandler = (data: { qr: string }) => {
+      if (data.qr) { setQr(data.qr); setCountdown(60); }
+    };
+    const statusHandler = (data: { status: string; phone?: string }) => {
       if (data.status === 'connected') {
         setConnected(true);
         setQr(null);
@@ -412,10 +417,12 @@ function WaPersonalModal({ onClose, onConnected }: { onClose: () => void; onConn
         setTimeout(() => { onConnected(); onClose(); }, 1500);
       }
     };
-    socket.on('wa:status', handler);
+    socket.on('wa:qr', qrHandler);
+    socket.on('wa:status', statusHandler);
     startSession();
     return () => {
-      socket.off('wa:status', handler);
+      socket.off('wa:qr', qrHandler);
+      socket.off('wa:status', statusHandler);
       if (pollRef.current) clearInterval(pollRef.current);
       if (countRef.current) clearInterval(countRef.current);
     };
