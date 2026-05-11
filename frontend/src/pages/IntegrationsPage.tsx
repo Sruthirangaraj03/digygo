@@ -373,26 +373,46 @@ function WaPersonalModal({ onClose, onConnected }: { onClose: () => void; onConn
   const [countdown, setCountdown] = useState(60);
   const [starting, setStarting] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearTimers = () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (countRef.current) clearInterval(countRef.current);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  };
+
+  const onQrReceived = (qrData: string) => {
+    setQr(qrData);
+    setCountdown(60);
+    setTimedOut(false);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  };
 
   const startSession = async () => {
+    clearTimers();
     setStarting(true);
+    setQr(null);
+    setTimedOut(false);
     try {
       await api.post('/api/whatsapp-personal/connect', {});
       setCountdown(60);
+
+      // 20-second timeout — if no QR arrives, show error + retry button
+      timeoutRef.current = setTimeout(() => setTimedOut(true), 20_000);
+
       // Poll as fallback (socket delivers instantly, this catches any miss)
       pollRef.current = setInterval(async () => {
         try {
           const data = await api.get<{ qr: string | null }>('/api/whatsapp-personal/qr');
-          if (data.qr) { setQr(data.qr); setCountdown(60); }
+          if (data.qr) onQrReceived(data.qr);
         } catch {}
       }, 1500);
+
       countRef.current = setInterval(() => {
-        setCountdown((c) => {
-          if (c <= 1) { setCountdown(60); return 60; }
-          return c - 1;
-        });
+        setCountdown((c) => (c <= 1 ? 60 : c - 1));
       }, 1000);
     } catch (err: any) {
       toast.error(err.message ?? 'Failed to start session');
@@ -404,16 +424,14 @@ function WaPersonalModal({ onClose, onConnected }: { onClose: () => void; onConn
   useEffect(() => {
     const socket = getSocket();
 
-    // Instant QR delivery via socket — no poll delay
     const qrHandler = (data: { qr: string }) => {
-      if (data.qr) { setQr(data.qr); setCountdown(60); }
+      if (data.qr) onQrReceived(data.qr);
     };
     const statusHandler = (data: { status: string; phone?: string }) => {
       if (data.status === 'connected') {
         setConnected(true);
         setQr(null);
-        if (pollRef.current) clearInterval(pollRef.current);
-        if (countRef.current) clearInterval(countRef.current);
+        clearTimers();
         setTimeout(() => { onConnected(); onClose(); }, 1500);
       }
     };
@@ -423,8 +441,7 @@ function WaPersonalModal({ onClose, onConnected }: { onClose: () => void; onConn
     return () => {
       socket.off('wa:qr', qrHandler);
       socket.off('wa:status', statusHandler);
-      if (pollRef.current) clearInterval(pollRef.current);
-      if (countRef.current) clearInterval(countRef.current);
+      clearTimers();
     };
   }, []);
 
@@ -457,12 +474,26 @@ function WaPersonalModal({ onClose, onConnected }: { onClose: () => void; onConn
                 </div>
               </div>
             </>
+          ) : timedOut ? (
+            <>
+              <div className="w-16 h-16 rounded-2xl bg-red-50 flex items-center justify-center">
+                <X className="w-7 h-7 text-red-400" />
+              </div>
+              <p className="text-[13px] font-semibold text-[#1c1410]">QR generation timed out</p>
+              <p className="text-[11px] text-[#9e8e7e] text-center">WhatsApp is taking too long to respond.<br />This usually resolves on retry.</p>
+              <button
+                onClick={startSession}
+                className="mt-1 flex items-center gap-1.5 text-[12px] font-semibold text-white bg-[#128C7E] rounded-lg px-4 py-1.5 hover:bg-[#0f7a6d] transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />Try Again
+              </button>
+            </>
           ) : (
             <>
               <div className="w-16 h-16 rounded-2xl bg-[#f5f0eb] flex items-center justify-center">
                 {starting
                   ? <RefreshCw className="w-7 h-7 text-[#9e8e7e] animate-spin" />
-                  : <QrCode className="w-7 h-7 text-[#9e8e7e]" />
+                  : <RefreshCw className="w-7 h-7 text-[#9e8e7e] animate-spin" />
                 }
               </div>
               <p className="text-[13px] text-[#7a6b5c] text-center">

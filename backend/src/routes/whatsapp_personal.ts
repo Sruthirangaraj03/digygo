@@ -29,8 +29,13 @@ router.get('/qr', async (req: AuthRequest, res: Response) => {
 
 // POST /api/whatsapp-personal/connect — initiate QR session
 router.post('/connect', checkPermission('integrations:manage'), async (req: AuthRequest, res: Response) => {
+  const tenantId = req.user!.tenantId!;
   try {
-    await startSession(req.user!.tenantId!);
+    // Always destroy first — wipes stale auth files so Baileys generates a fresh QR
+    // instead of trying to silently reconnect from a previous incomplete session.
+    await destroySession(tenantId).catch(() => null);
+    await new Promise<void>((r) => setTimeout(r, 300)); // let Node.js close file handles
+    await startSession(tenantId);
     res.json({ success: true, message: 'Session starting — scan the QR code' });
   } catch (err: any) {
     res.status(500).json({ error: err.message ?? 'Failed to start session' });
