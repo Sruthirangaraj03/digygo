@@ -400,8 +400,8 @@ function WaPersonalModal({ onClose, onConnected }: { onClose: () => void; onConn
       await api.post('/api/whatsapp-personal/connect', {});
       setCountdown(60);
 
-      // 20-second timeout — if no QR arrives, show error + retry button
-      timeoutRef.current = setTimeout(() => setTimedOut(true), 20_000);
+      // 60-second timeout — WhatsApp can take up to 30s on first connect
+      timeoutRef.current = setTimeout(() => setTimedOut(true), 60_000);
 
       // Poll as fallback (socket delivers instantly, this catches any miss)
       pollRef.current = setInterval(async () => {
@@ -480,7 +480,7 @@ function WaPersonalModal({ onClose, onConnected }: { onClose: () => void; onConn
                 <X className="w-7 h-7 text-red-400" />
               </div>
               <p className="text-[13px] font-semibold text-[#1c1410]">QR generation timed out</p>
-              <p className="text-[11px] text-[#9e8e7e] text-center">WhatsApp is taking too long to respond.<br />This usually resolves on retry.</p>
+              <p className="text-[11px] text-[#9e8e7e] text-center">WhatsApp didn't respond in 60s. This is usually temporary throttling — wait a few minutes then try again.</p>
               <button
                 onClick={startSession}
                 className="mt-1 flex items-center gap-1.5 text-[12px] font-semibold text-white bg-[#128C7E] rounded-lg px-4 py-1.5 hover:bg-[#0f7a6d] transition-colors"

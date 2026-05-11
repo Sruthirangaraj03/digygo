@@ -50,11 +50,23 @@ export async function startSession(tenantId: string): Promise<void> {
 
   await upsertSessionStatus(tenantId, 'connecting');
 
+  console.log(`[WA] Starting session for tenant ${tenantId.slice(0, 8)}… auth dir has ${fs.readdirSync(authDir).length} files`);
+
   const sock = makeWASocket({
     auth: state,
     printQRInTerminal: false,
     browser: ['DigyGo CRM', 'Chrome', '1.0'],
-    logger: { level: 'silent', trace: () => {}, debug: () => {}, info: () => {}, warn: () => {}, error: () => {}, fatal: () => {}, child: () => ({}) } as any,
+    connectTimeoutMs: 30_000,
+    logger: {
+      level: 'warn',
+      trace: () => {}, debug: () => {}, info: () => {},
+      warn:  (msg: any) => console.warn('[Baileys]', typeof msg === 'object' ? JSON.stringify(msg) : msg),
+      error: (msg: any) => console.error('[Baileys]', typeof msg === 'object' ? JSON.stringify(msg) : msg),
+      fatal: (msg: any) => console.error('[Baileys FATAL]', typeof msg === 'object' ? JSON.stringify(msg) : msg),
+      child: () => ({ level: 'warn', trace: () => {}, debug: () => {}, info: () => {},
+        warn: (m: any) => console.warn('[Baileys]', m), error: (m: any) => console.error('[Baileys]', m),
+        fatal: (m: any) => console.error('[Baileys]', m), child: () => ({}) as any }),
+    } as any,
   });
 
   sessions.set(tenantId, sock);
@@ -63,6 +75,7 @@ export async function startSession(tenantId: string): Promise<void> {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
+      console.log(`[WA] QR generated for tenant ${tenantId.slice(0, 8)}`);
       try {
         const qrBase64 = await qrcode.toDataURL(qr);
         pendingQRs.set(tenantId, qrBase64);
@@ -71,11 +84,12 @@ export async function startSession(tenantId: string): Promise<void> {
     }
 
     if (connection === 'open') {
-      retryCount.delete(tenantId);       // reset retry counter on success
+      retryCount.delete(tenantId);
       connectedSessions.add(tenantId);
       pendingQRs.delete(tenantId);
       const jid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
       const phone = jid ? jid.split('@')[0] : null;
+      console.log(`[WA] Connected for tenant ${tenantId.slice(0, 8)}: ${phone ?? 'unknown'}`);
       await upsertSessionStatus(tenantId, 'connected', phone ? `+${phone}` : null);
     }
 
@@ -83,6 +97,7 @@ export async function startSession(tenantId: string): Promise<void> {
       connectedSessions.delete(tenantId);
       const code = (lastDisconnect?.error as any)?.output?.statusCode;
       const loggedOut = code === DisconnectReason.loggedOut || code === 401;
+      console.log(`[WA] Connection closed for tenant ${tenantId.slice(0, 8)}: code=${code ?? 'none'}, loggedOut=${loggedOut}`);
 
       if (loggedOut) {
         // Explicit logout — wipe auth and stop completely
