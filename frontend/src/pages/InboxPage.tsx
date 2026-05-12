@@ -286,14 +286,18 @@ export default function InboxPage() {
     }
   };
 
-  // Debounced typing indicator — fires POST /typing, auto-stops after 3s
+  // Typing indicator — sends presence once per 3s typing session (not on every keypress)
   const handleTypingChange = (val: string) => {
     setMessageText(val);
     if (!selectedId) return;
     const conv = conversations.find((c) => c.id === selectedId);
-    if (conv?.channel !== 'personal_wa') return;
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    api.post(`/api/conversations/${selectedId}/typing`, {}).catch(() => null);
+    if (conv?.channel !== 'personal_wa' || !conv.lead_phone) return;
+    if (!typingTimeoutRef.current) {
+      // Only call the API at the START of a new typing session
+      api.post(`/api/conversations/${selectedId}/typing`, {}).catch(() => null);
+    } else {
+      clearTimeout(typingTimeoutRef.current);
+    }
     typingTimeoutRef.current = setTimeout(() => {
       typingTimeoutRef.current = null;
     }, 3000);
