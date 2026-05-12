@@ -62,6 +62,7 @@ async function storeLidMapping(tenantId: string, lidDigits: string, phoneDigits:
 
   // Find any LID-based anonymous conversation (phone = lidDigits) and merge it
   // into the real phone conversation so messages appear under the correct contact.
+  // ── Fix anonymous LID conversations (lead_id IS NULL) ──────────────────────
   try {
     const lidConv = await query(
       `SELECT id FROM conversations
@@ -70,51 +71,71 @@ async function storeLidMapping(tenantId: string, lidDigits: string, phoneDigits:
        LIMIT 1`,
       [tenantId, lidDigits],
     );
-    if (!lidConv.rows[0]) return; // no LID conversation to merge
-
-    const lidConvId = lidConv.rows[0].id;
-
-    // Find the real phone conversation
-    const realConv = await query(
-      `SELECT id FROM conversations
-       WHERE tenant_id=$1::uuid AND channel='personal_wa'
-         AND REGEXP_REPLACE(COALESCE(phone, (SELECT phone FROM leads WHERE id=lead_id)), '[^0-9]','','g')
-             LIKE '%' || RIGHT($2, 10)
-         AND id != $3
-       ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
-      [tenantId, phoneDigits, lidConvId],
-    );
-
-    if (realConv.rows[0]) {
-      const realConvId = realConv.rows[0].id;
-      // Move all messages from LID conversation to the real conversation
-      await query(`UPDATE messages SET conversation_id=$1 WHERE conversation_id=$2`, [realConvId, lidConvId]);
-      // Refresh real conversation preview
-      await query(
-        `UPDATE conversations c
-         SET last_message = m.body, last_message_at = m.created_at,
-             unread_count = (SELECT COUNT(*) FROM messages WHERE conversation_id=$1 AND sender='customer')
-         FROM (SELECT body, created_at FROM messages WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 1) m
-         WHERE c.id = $1`,
-        [realConvId],
+    if (lidConv.rows[0]) {
+      const lidConvId = lidConv.rows[0].id;
+      // Find the real phone conversation
+      const realConv = await query(
+        `SELECT id FROM conversations
+         WHERE tenant_id=$1::uuid AND channel='personal_wa'
+           AND REGEXP_REPLACE(COALESCE(phone, (SELECT phone FROM leads WHERE id=lead_id)), '[^0-9]','','g')
+               LIKE '%' || RIGHT($2, 10)
+           AND id != $3
+         ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
+        [tenantId, phoneDigits, lidConvId],
       );
-      // Delete the LID conversation
-      await query(`DELETE FROM conversations WHERE id=$1`, [lidConvId]);
-      console.log(`[WA] Merged LID conv ${lidConvId} → real conv ${realConvId} (${phoneDigits})`);
-      emitToTenant(tenantId, 'conversation:deleted', { id: lidConvId });
-      emitToTenant(tenantId, 'conversation:updated', { id: realConvId });
-    } else {
-      // No real conv found yet — update the LID conversation's phone to the real number
-      await query(
-        `UPDATE conversations SET phone=$1 WHERE id=$2`,
-        [phoneDigits, lidConvId],
-      );
-      console.log(`[WA] Updated LID conv phone: ${lidDigits} → ${phoneDigits}`);
-      // Notify frontend so the card shows the real phone number immediately
-      emitToTenant(tenantId, 'conversation:updated', { id: lidConvId, phone: `+${phoneDigits}` });
+      if (realConv.rows[0]) {
+        const realConvId = realConv.rows[0].id;
+        await query(`UPDATE messages SET conversation_id=$1 WHERE conversation_id=$2`, [realConvId, lidConvId]);
+        await query(
+          `UPDATE conversations c
+           SET last_message = m.body, last_message_at = m.created_at,
+               unread_count = (SELECT COUNT(*) FROM messages WHERE conversation_id=$1 AND sender='customer')
+           FROM (SELECT body, created_at FROM messages WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 1) m
+           WHERE c.id = $1`,
+          [realConvId],
+        );
+        await query(`DELETE FROM conversations WHERE id=$1`, [lidConvId]);
+        console.log(`[WA] Merged LID conv ${lidConvId} → real conv ${realConvId} (${phoneDigits})`);
+        emitToTenant(tenantId, 'conversation:deleted', { id: lidConvId });
+        emitToTenant(tenantId, 'conversation:updated', { id: realConvId });
+      } else {
+        await query(`UPDATE conversations SET phone=$1 WHERE id=$2`, [phoneDigits, lidConvId]);
+        console.log(`[WA] Updated LID conv phone: ${lidDigits} → ${phoneDigits}`);
+        emitToTenant(tenantId, 'conversation:updated', { id: lidConvId, phone: `+${phoneDigits}` });
+      }
     }
   } catch (e) {
     console.error('[WA] LID merge error:', e);
+  }
+
+  // ── Fix leads auto-created with LID digits as phone (lead_id IS NOT NULL case) ─
+  // Happens when a @lid message arrived before the mapping was known and auto-lead creation
+  // was enabled. The lead's phone is stored as the LID, not the real phone.
+  try {
+    const lidLeads = await query(
+      `UPDATE leads
+       SET phone = '+' || $1,
+           name  = CASE WHEN name = '+' || $2 THEN '+' || $1 ELSE name END,
+           updated_at = NOW()
+       WHERE tenant_id=$3::uuid AND is_deleted=FALSE
+         AND REGEXP_REPLACE(phone, '[^0-9]', '', 'g') = $2
+       RETURNING id, name`,
+      [phoneDigits, lidDigits, tenantId],
+    );
+    for (const lead of lidLeads.rows) {
+      console.log(`[WA] Fixed LID lead ${lead.id}: phone ${lidDigits} → ${phoneDigits}`);
+      emitToTenant(tenantId, 'lead:updated', { id: lead.id, phone: `+${phoneDigits}`, name: lead.name });
+      const conv = await query(
+        `SELECT id FROM conversations
+         WHERE tenant_id=$1::uuid AND lead_id=$2::uuid AND channel='personal_wa' LIMIT 1`,
+        [tenantId, lead.id],
+      );
+      if (conv.rows[0]) {
+        emitToTenant(tenantId, 'conversation:updated', { id: conv.rows[0].id, phone: `+${phoneDigits}` });
+      }
+    }
+  } catch (e) {
+    console.error('[WA] LID lead fix error:', e);
   }
 }
 
@@ -200,7 +221,20 @@ async function resolveLidsForTenant(tenantId: string, sock: ReturnType<typeof ma
     .map(r => r.phone as string)
     .filter(p => p && !alreadyMappedPhones.has(p));
 
-  if (!phones.length) return;
+  // Run storeLidMapping for all pre-loaded mappings to fix any stale leads/conversations
+  // whose phone is still the LID digits (e.g. auto-created before the mapping was known).
+  const allMappings = await query(
+    `SELECT lid_digits, phone_digits FROM wa_lid_phone_map WHERE tenant_id=$1::uuid`,
+    [tenantId],
+  );
+  for (const { lid_digits, phone_digits } of allMappings.rows) {
+    await storeLidMapping(tenantId, lid_digits, phone_digits);
+  }
+
+  if (!phones.length) {
+    console.log(`[WA] LID cleanup done; no new phones to USync`);
+    return;
+  }
   console.log(`[WA] Resolving LIDs for ${phones.length} phone(s) via USync...`);
 
   const phoneToLid = await lookupLidForPhonesBatch(sock as any, phones);
