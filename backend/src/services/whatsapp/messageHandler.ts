@@ -86,26 +86,25 @@ export async function handleInboundMessage(
   msg: any,
   opts?: { historical?: boolean; waPhone?: string | null },
 ): Promise<{ msgId: string; hasMedia: boolean } | null> {
-  if (!msg.message) return null;
+  if (!msg.message) { console.log('[MSG] skip: no message body'); return null; }
 
   const remoteJID = msg.key?.remoteJid ?? '';
-  if (!remoteJID || !remoteJID.includes('@')) return null;
+  if (!remoteJID || !remoteJID.includes('@')) { console.log('[MSG] skip: bad remoteJid', remoteJID); return null; }
   if (remoteJID === 'status@broadcast') return null;
-  if (isGroupJID(remoteJID)) return null;
+  if (isGroupJID(remoteJID)) { console.log('[MSG] skip: group jid'); return null; }
 
   const fromMe: boolean  = msg.key?.fromMe ?? false;
   const historical       = opts?.historical ?? false;
-  const waPhone          = opts?.waPhone ?? null; // connected session phone (for wa_account tagging)
+  const waPhone          = opts?.waPhone ?? null;
   const rawPhone   = fromJID(remoteJID);
   const phone      = normalizePhone(rawPhone);
-  // Reject LIDs, linked-device JIDs, and any non-standard numbers (E.164 max 15 digits)
-  if (!phone || phone.length > 15) return null;
+  if (!phone || phone.length > 15) { console.log('[MSG] skip: invalid phone', phone); return null; }
 
   const hasMedia = detectMedia(msg);
   const text     = extractText(msg);
-  if (!text) return null;
-  // Skip protocol/system messages that produce [Media message] without being real media
-  if (text === '[Media message]' && !hasMedia) return null;
+  console.log(`[MSG] remoteJid=${remoteJID} fromMe=${fromMe} phone=${phone} text="${text}" hasMedia=${hasMedia} historical=${historical}`);
+  if (!text) { console.log('[MSG] skip: empty text'); return null; }
+  if (text === '[Media message]' && !hasMedia) { console.log('[MSG] skip: protocol catch-all'); return null; }
 
   // Use the WA message timestamp (unix seconds); fall back to NOW() only if missing
   const msgTimestamp: Date = msg.messageTimestamp

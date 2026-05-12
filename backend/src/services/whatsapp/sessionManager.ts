@@ -280,8 +280,13 @@ export async function startSession(tenantId: string): Promise<void> {
     if (type !== 'notify' && type !== 'append') return;
     const sessionPhone = sock.user?.id ? jidNormalizedUser(sock.user.id).split('@')[0] : null;
 
+    console.log(`[WA] messages.upsert type=${type} count=${messages.length} session=${sessionPhone}`);
     for (const msg of messages) {
-      const result = await handleInboundMessage(tenantId, msg, { historical, waPhone: sessionPhone }).catch(() => null);
+      console.log(`[WA] msg remoteJid=${msg.key?.remoteJid} fromMe=${msg.key?.fromMe} hasMsg=${!!msg.message} keys=${msg.message ? Object.keys(msg.message).join(',') : 'none'}`);
+      const result = await handleInboundMessage(tenantId, msg, { historical, waPhone: sessionPhone }).catch((e) => {
+        console.error('[WA] handleInboundMessage error:', e?.message ?? e);
+        return null;
+      });
       if (result?.hasMedia) {
         if (historical) {
           // Queue historical media — drain at 1/sec to avoid burst overload
