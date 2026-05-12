@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus, Pencil, Trash2, Copy, X, Check, Eye, ArrowLeft,
   Paperclip, Upload, Loader2, FileText, Image as ImageIcon, Film,
@@ -525,9 +525,15 @@ function WABAPreview({ template, onClose }: { template: Template; onClose: () =>
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function AutomationTemplatesPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const canManage = usePermission('automation_templates:manage');
 
-  const [tab, setTab] = useState<TemplateType>('waba');
+  const [tab, setTab] = useState<TemplateType>((searchParams.get('tab') as TemplateType) ?? 'waba');
+
+  const handleTabChange = (t: TemplateType) => {
+    setTab(t);
+    setSearchParams({ tab: t }, { replace: true });
+  };
   const [templates, setTemplates] = useState<Template[]>([]);
   const [waPersonalTemplates, setWaPersonalTemplates] = useState<WaPersonalTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -638,7 +644,7 @@ export default function AutomationTemplatesPage() {
           </div>
         </div>
         {canManage && (
-          <Button onClick={() => setShowCreate(true)}>
+          <Button onClick={() => tab === 'wa_personal' ? navigate('/automation/templates/wa-personal/new') : setShowCreate(true)}>
             <Plus className="w-4 h-4 mr-1" />New Template
           </Button>
         )}
@@ -647,7 +653,7 @@ export default function AutomationTemplatesPage() {
       {/* Tabs */}
       <div className="flex gap-1 border-b border-black/5">
         {tabs.map((t) => (
-          <button key={t.key} onClick={() => setTab(t.key)} className={cn('px-4 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5', tab === t.key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground')}>
+          <button key={t.key} onClick={() => handleTabChange(t.key)} className={cn('px-4 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5', tab === t.key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground')}>
             {t.label}
             <span className={cn('text-xs rounded-full px-1.5 py-0.5', tab === t.key ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground')}>{t.count}</span>
           </button>
@@ -666,7 +672,7 @@ export default function AutomationTemplatesPage() {
             <p className="font-semibold text-foreground">{emptyLabel.wa_personal}</p>
             <p className="text-sm text-muted-foreground max-w-sm">{emptyDesc.wa_personal}</p>
             {canManage && (
-              <Button onClick={() => setShowCreate(true)}>
+              <Button onClick={() => navigate('/automation/templates/wa-personal/new')}>
                 <Plus className="w-4 h-4 mr-1" />Create First Template
               </Button>
             )}
@@ -690,7 +696,7 @@ export default function AutomationTemplatesPage() {
                   </div>
                   <div className="flex gap-1 shrink-0">
                     <button onClick={() => { copyToClipboard(t.name); toast.success('Template name copied'); }} className="p-1.5 rounded-md hover:bg-[#f5ede3] text-muted-foreground hover:text-foreground transition-colors" title="Copy name"><Copy className="w-4 h-4" /></button>
-                    {canManage && <button onClick={() => setEditWaPersonal(t)} className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-colors" title="Edit"><Pencil className="w-4 h-4" /></button>}
+                    {canManage && <button onClick={() => navigate(`/automation/templates/wa-personal/${t.id}`, { state: { template: t } })} className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-colors" title="Edit"><Pencil className="w-4 h-4" /></button>}
                     {canManage && <button onClick={() => handleWaPersonalDelete(t.id)} className="p-1.5 rounded-md hover:bg-red-50 text-muted-foreground hover:text-destructive transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>}
                   </div>
                 </div>
@@ -773,13 +779,12 @@ export default function AutomationTemplatesPage() {
       {showCreate && tab === 'waba'        && <WABAModal        onClose={() => setShowCreate(false)} onSaved={handleSaved} />}
       {showCreate && tab === 'email'       && <EmailModal       onClose={() => setShowCreate(false)} onSaved={handleSaved} />}
       {showCreate && tab === 'sms'         && <SMSModal         onClose={() => setShowCreate(false)} onSaved={handleSaved} />}
-      {showCreate && tab === 'wa_personal' && <WAPersonalModal  onClose={() => setShowCreate(false)} onSaved={handleWaPersonalSaved} />}
+      {/* wa_personal → full-page editor (navigate instead of modal) */}
 
       {/* Edit modal */}
       {editItem && editItem.template_type === 'waba'  && <WABAModal  initial={editItem} onClose={() => setEditItem(null)} onSaved={handleSaved} />}
       {editItem && editItem.template_type === 'email' && <EmailModal initial={editItem} onClose={() => setEditItem(null)} onSaved={handleSaved} />}
       {editItem && editItem.template_type === 'sms'   && <SMSModal   initial={editItem} onClose={() => setEditItem(null)} onSaved={handleSaved} />}
-      {editWaPersonal && <WAPersonalModal initial={editWaPersonal} onClose={() => setEditWaPersonal(null)} onSaved={handleWaPersonalSaved} />}
 
       {/* WABA preview */}
       {preview && <WABAPreview template={preview} onClose={() => setPreview(null)} />}

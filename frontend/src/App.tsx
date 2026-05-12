@@ -18,6 +18,7 @@ import AutomationOverviewPage from "./pages/AutomationOverviewPage";
 import AutomationPage from "./pages/AutomationPage";
 import AutomationTemplatesPage from "./pages/AutomationTemplatesPage";
 import WorkflowEditorPage from "./pages/WorkflowEditorPage";
+import WaPersonalTemplateEditorPage from "./pages/WaPersonalTemplateEditorPage";
 import WorkflowAnalyticsPage from "./pages/WorkflowAnalyticsPage";
 import InboxPage from "./pages/InboxPage";
 import InboxOverviewPage from "./pages/InboxOverviewPage";
@@ -107,6 +108,8 @@ const App = () => (
           {/* Full-screen editors — outside AppLayout but still protected */}
           <Route path="/automation/editor/:id" element={<WorkflowEditorPage />} />
           <Route path="/automation/analytics/:id" element={<WorkflowAnalyticsPage />} />
+          <Route path="/automation/templates/wa-personal/new" element={<WaPersonalTemplateEditorPage />} />
+          <Route path="/automation/templates/wa-personal/:id" element={<WaPersonalTemplateEditorPage />} />
           </Route>{/* closes AuthGuard */}
 
           <Route path="*" element={<NotFound />} />
