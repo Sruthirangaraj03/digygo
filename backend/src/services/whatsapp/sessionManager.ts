@@ -231,6 +231,29 @@ async function resolveLidsForTenant(tenantId: string, sock: ReturnType<typeof ma
     await storeLidMapping(tenantId, lid_digits, phone_digits);
   }
 
+  // Subscribe to presence for any conversation whose phone looks like an unresolved LID
+  // (15 digits, not a known real phone). This prompts WA to fire contacts.upsert with
+  // the real phone JID, which storeLidMapping will then use to fix the conversation.
+  try {
+    const knownPhoneSet = new Set(allMappings.rows.map((r: any) => r.phone_digits as string));
+    const unresolvedRes = await query(
+      `SELECT DISTINCT REGEXP_REPLACE(COALESCE(c.phone, ''), '[^0-9]', '', 'g') AS digits
+       FROM conversations c
+       WHERE c.tenant_id=$1::uuid AND c.channel='personal_wa' AND c.lead_id IS NULL
+         AND c.phone IS NOT NULL
+         AND LENGTH(REGEXP_REPLACE(c.phone, '[^0-9]', '', 'g')) >= 14`,
+      [tenantId],
+    );
+    for (const row of unresolvedRes.rows) {
+      const d = row.digits as string;
+      if (d && !knownPhoneSet.has(d) && !lidToPhone.has(d)) {
+        const lidJid = `${d}@lid`;
+        console.log(`[WA] Subscribing presence for unresolved LID conversation: ${lidJid}`);
+        sock.presenceSubscribe(lidJid).catch(() => null);
+      }
+    }
+  } catch { /* non-critical */ }
+
   if (!phones.length) {
     console.log(`[WA] LID cleanup done; no new phones to USync`);
     return;
@@ -530,7 +553,10 @@ export async function startSession(tenantId: string): Promise<void> {
           msg = { ...msg, key: { ...msg.key, remoteJid: `${realPhone}@s.whatsapp.net` } };
           console.log(`[WA] LID resolved: ${remoteJid} → ${realPhone}@s.whatsapp.net`);
         } else {
-          console.log(`[WA] LID not resolved: ${remoteJid} (no mapping in memory or DB yet)`);
+          console.log(`[WA] LID not resolved: ${remoteJid} — subscribing to presence to trigger contact sync`);
+          // Presence subscribe prompts WA to fire contacts.upsert with the real phone JID,
+          // which will then call storeLidMapping and fix the conversation phone automatically.
+          sock.presenceSubscribe(remoteJid).catch(() => null);
         }
       }
       console.log(`[WA] msg remoteJid=${msg.key?.remoteJid} fromMe=${msg.key?.fromMe} hasMsg=${!!msg.message} keys=${msg.message ? Object.keys(msg.message).join(',') : 'none'}`);
