@@ -10,6 +10,10 @@ import { api } from '@/lib/api';
 import { toast } from 'sonner';
 
 const sectionNavs: Record<string, { label: string; path: string }[]> = {
+  '/inbox': [
+    { label: 'Inbox', path: '/inbox' },
+    { label: 'Overview', path: '/inbox/overview' },
+  ],
   '/lead-generation': [
     { label: 'Overview', path: '/lead-generation' },
     { label: 'Meta Forms', path: '/lead-generation/meta-forms' },

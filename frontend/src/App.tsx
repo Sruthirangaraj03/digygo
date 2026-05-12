@@ -20,6 +20,7 @@ import AutomationTemplatesPage from "./pages/AutomationTemplatesPage";
 import WorkflowEditorPage from "./pages/WorkflowEditorPage";
 import WorkflowAnalyticsPage from "./pages/WorkflowAnalyticsPage";
 import InboxPage from "./pages/InboxPage";
+import InboxOverviewPage from "./pages/InboxOverviewPage";
 import FieldsPage from "./pages/FieldsPage";
 import StaffPage from "./pages/StaffPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -86,6 +87,7 @@ const App = () => (
             <Route path="/calendar/edit/:id" element={<CalendarEditPage />} />
 
             <Route path="/inbox" element={<InboxPage />} />
+            <Route path="/inbox/overview" element={<InboxOverviewPage />} />
             <Route path="/fields" element={<FieldsPage />} />
             <Route path="/staff" element={<StaffPage />} />
 
