@@ -19,6 +19,11 @@ function extractText(msg: any): string {
     m.editedMessage?.message ??
     m;
 
+  // Skip known protocol/system message types — no human content
+  if (inner.senderKeyDistributionMessage) return '';
+  if (inner.protocolMessage)              return '';
+  if (inner.messageContextInfo)           return '';
+
   if (inner.conversation)              return inner.conversation;
   if (inner.extendedTextMessage?.text) return inner.extendedTextMessage.text;
 
@@ -120,18 +125,23 @@ export async function handleInboundMessage(
   const leadId   = lead?.id ?? null;
   const leadName = lead?.name ?? `+${phone}`;
 
-  // ── Find or create conversation (scoped to wa_account) ───────────────────
+  // ── Find or create conversation ───────────────────────────────────────────
+  // wa_account is metadata only — never used as a filter (would create duplicates on session switch)
   let convId: string;
   if (leadId) {
     const existing = await query(
       `SELECT id FROM conversations
        WHERE tenant_id=$1::uuid AND channel='personal_wa' AND lead_id=$2::uuid
-         AND (wa_account=$3 OR wa_account IS NULL)
        ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
-      [tenantId, leadId, waPhone],
+      [tenantId, leadId],
     );
     if (existing.rows[0]) {
       convId = existing.rows[0].id;
+      // Keep wa_account updated to reflect current active session
+      if (waPhone) await query(
+        `UPDATE conversations SET wa_account=$1 WHERE id=$2 AND wa_account IS DISTINCT FROM $1`,
+        [waPhone, convId],
+      ).catch(() => null);
     } else {
       const newConv = await query(
         `INSERT INTO conversations (tenant_id, lead_id, channel, status, unread_count, last_message_at, wa_account)
@@ -144,12 +154,15 @@ export async function handleInboundMessage(
     const existing = await query(
       `SELECT id FROM conversations
        WHERE tenant_id=$1::uuid AND channel='personal_wa' AND lead_id IS NULL AND phone=$2
-         AND (wa_account=$3 OR wa_account IS NULL)
        ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
-      [tenantId, phone, waPhone],
+      [tenantId, phone],
     );
     if (existing.rows[0]) {
       convId = existing.rows[0].id;
+      if (waPhone) await query(
+        `UPDATE conversations SET wa_account=$1 WHERE id=$2 AND wa_account IS DISTINCT FROM $1`,
+        [waPhone, convId],
+      ).catch(() => null);
     } else {
       const newConv = await query(
         `INSERT INTO conversations (tenant_id, lead_id, channel, status, unread_count, last_message_at, phone, wa_account)

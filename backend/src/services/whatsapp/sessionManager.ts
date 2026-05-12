@@ -17,6 +17,23 @@ const WA_SESSIONS_DIR = process.env.WA_SESSIONS_DIR
 const WA_MEDIA_DIR = process.env.WA_MEDIA_DIR
   || path.join(process.cwd(), 'wa_media');
 
+// Background queue for historical media downloads — drains at 1 item/sec to avoid overload
+interface MediaQueueItem { tenantId: string; msg: any; msgId: string; }
+const mediaDownloadQueue: MediaQueueItem[] = [];
+let mediaQueueRunning = false;
+function drainMediaQueue() {
+  if (mediaQueueRunning) return;
+  mediaQueueRunning = true;
+  const tick = () => {
+    const item = mediaDownloadQueue.shift();
+    if (!item) { mediaQueueRunning = false; return; }
+    downloadAndStoreMedia(item.tenantId, item.msg, item.msgId)
+      .catch(() => null)
+      .finally(() => setTimeout(tick, 1000));
+  };
+  tick();
+}
+
 // In-memory state — source of truth (more reliable than DB after restarts)
 const sessions          = new Map<string, ReturnType<typeof makeWASocket>>();
 const connectedSessions = new Set<string>();
@@ -242,9 +259,15 @@ export async function startSession(tenantId: string): Promise<void> {
 
     for (const msg of messages) {
       const result = await handleInboundMessage(tenantId, msg, { historical, waPhone: sessionPhone }).catch(() => null);
-      if (result?.hasMedia && !historical) {
-        // Download media asynchronously — don't block message processing
-        downloadAndStoreMedia(tenantId, msg, result.msgId).catch(() => null);
+      if (result?.hasMedia) {
+        if (historical) {
+          // Queue historical media — drain at 1/sec to avoid burst overload
+          mediaDownloadQueue.push({ tenantId, msg, msgId: result.msgId });
+          drainMediaQueue();
+        } else {
+          // Real-time media — download immediately in background
+          downloadAndStoreMedia(tenantId, msg, result.msgId).catch(() => null);
+        }
       }
     }
   });
