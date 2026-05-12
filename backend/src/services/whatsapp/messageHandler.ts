@@ -144,6 +144,10 @@ export async function handleInboundMessage(
   let lead   = leadRes.rows[0] ?? null;
   let leadId = lead?.id ?? null;
 
+  // Friendly name for the contact — WA push name if available, otherwise a readable fallback
+  const pushName = msg.pushName as string | null ?? null;
+  const pushNameForLead = pushName || (isLid ? `WA Contact (${phone.slice(-6)})` : `+${phone}`);
+
   // ── Auto-create lead for inbound messages from unknown numbers ────────────
   // Only if: inbound (not fromMe), no existing lead, not historical sync,
   // and tenant has wa_auto_create_lead enabled in settings.
@@ -164,7 +168,7 @@ export async function handleInboundMessage(
            ORDER BY p.created_at ASC, s.position ASC
            LIMIT 1
            RETURNING id, name, phone`,
-          [tenantId, `+${phone}`, `+${phone}`],
+          [tenantId, pushNameForLead, `+${phone}`],
         );
         if (newLead.rows[0]) {
           lead   = newLead.rows[0];
@@ -174,7 +178,7 @@ export async function handleInboundMessage(
     } catch { /* best-effort */ }
   }
 
-  const leadName = lead?.name ?? `+${phone}`;
+  const leadName = lead?.name ?? pushNameForLead;
 
   // ── Find or create conversation ───────────────────────────────────────────
   // wa_account is metadata only — never used as a filter (would create duplicates on session switch)
