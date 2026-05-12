@@ -398,16 +398,17 @@ export default function InboxPage() {
 
   const handleAssign = async (staffId: string) => {
     if (!selectedId) return;
+    const isUnassign = !staffId;
     try {
-      await api.patch(`/api/conversations/${selectedId}/assign`, { assigned_to: staffId });
+      await api.patch(`/api/conversations/${selectedId}/assign`, { assigned_to: isUnassign ? null : staffId });
       const member = staff.find((s) => s.id === staffId);
       setConversations((prev) =>
         prev.map((c) => c.id === selectedId
-          ? { ...c, assigned_to: staffId, assigned_name: member?.name ?? null }
+          ? { ...c, assigned_to: isUnassign ? null : staffId, assigned_name: isUnassign ? null : (member?.name ?? null) }
           : c,
         ),
       );
-      toast.success(`Assigned to ${member?.name ?? 'staff'}`);
+      toast.success(isUnassign ? 'Unassigned' : `Assigned to ${member?.name ?? 'staff'}`);
     } catch { toast.error('Failed to assign'); }
     setShowAssign(false);
   };
@@ -454,14 +455,14 @@ export default function InboxPage() {
     <div className="animate-fade-in -m-4 md:-m-8 flex" style={{ height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
 
       {/* Conversation List */}
-      <div className={cn('w-full sm:w-80 border-r border-black/5 flex flex-col bg-card shrink-0', !showList && 'hidden sm:flex')}>
-        <div className="p-3 border-b border-black/5 space-y-2">
-          {/* Row 1: search bar + round new-chat button */}
+      <div className={cn('w-full sm:w-80 border-r border-black/5 flex flex-col bg-[#fdf9f7] shrink-0', !showList && 'hidden sm:flex')}>
+        <div className="px-3 pt-4 pb-3 border-b border-orange-100 space-y-2.5 bg-[#faf4ef]">
+          {/* Row 1: search bar + New button */}
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#c2410c]/50" />
               <input
-                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-full border border-black/10 bg-[#f5ede3]/60 placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-colors"
+                className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-orange-200 bg-white placeholder:text-[#b8a89a] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-colors"
                 placeholder="Search conversations..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -469,9 +470,9 @@ export default function InboxPage() {
             </div>
             <button
               onClick={() => setShowNewChat(true)}
-              className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xl font-light hover:bg-primary/90 transition-colors shrink-0"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors shrink-0"
               title="Start a new chat">
-              +
+              <span className="text-base leading-none">+</span> New
             </button>
           </div>
 
@@ -553,16 +554,16 @@ export default function InboxPage() {
         <div className="flex-1 overflow-y-auto">
           {filtered.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 px-4 text-center gap-2">
-              <MessageCircle className="w-10 h-10 text-gray-300 mb-1" />
+              <MessageCircle className="w-10 h-10 text-orange-200 mb-1" />
               <p className="text-[13px] font-semibold text-[#1c1410]">No conversations yet</p>
               <p className="text-[12px] text-[#7a6b5c]">Connect WhatsApp in <strong>Settings → WhatsApp Setup</strong> to start receiving messages here.</p>
             </div>
           )}
           {filtered.map((conv) => (
             <button key={conv.id} onClick={() => handleSelectConversation(conv.id)}
-              className={cn('w-full text-left px-4 py-3 border-b border-black/5 hover:bg-[#faf8f6] transition-colors flex gap-3',
-                conv.id === selectedId && 'bg-accent/30 border-l-2 border-l-primary')}>
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary shrink-0">
+              className={cn('w-full text-left px-4 py-3 border-b border-orange-50 hover:bg-[#fef3ea] transition-colors flex gap-3',
+                conv.id === selectedId ? 'bg-[#fde8d8] border-l-2 border-l-primary' : 'border-l-2 border-l-transparent')}>
+              <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-sm font-semibold text-primary shrink-0">
                 {getInitials(conv.lead_name, conv.lead_phone)}
               </div>
               <div className="flex-1 min-w-0">
@@ -598,11 +599,11 @@ export default function InboxPage() {
       </div>
 
       {/* Message Thread */}
-      <div className={cn('flex-1 flex flex-col', showList && 'hidden sm:flex')}>
+      <div className={cn('flex-1 flex flex-col bg-[#fdf9f7]', showList && 'hidden sm:flex')}>
         {selected ? (
           <>
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-black/5">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-orange-100 bg-[#faf4ef]">
               <div className="flex items-center gap-3">
                 <button onClick={handleBack} className="sm:hidden p-1 hover:bg-[#f5ede3] rounded-lg"><ArrowLeft className="w-5 h-5" /></button>
                 <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-semibold">
@@ -625,24 +626,39 @@ export default function InboxPage() {
 
                 {/* Assign dropdown */}
                 <div className="relative">
-                  <Button variant="outline" size="sm" onClick={() => setShowAssign(!showAssign)} className="flex items-center gap-1">
+                  <Button variant="outline" size="sm" onClick={() => setShowAssign(!showAssign)} className="flex items-center gap-1 border-orange-200 hover:bg-[#fef3ea]">
                     <UserCheck className="w-4 h-4" />
-                    <span className="hidden sm:inline">{assignedStaff ? assignedStaff.name.split(' ')[0] : 'Assign'}</span>
+                    <span className="hidden sm:inline">{assignedStaff ? assignedStaff.name.split(' ')[0] : selected.assigned_name ? selected.assigned_name.split(' ')[0] : 'Assign'}</span>
                     <ChevronDown className="w-3 h-3" />
                   </Button>
                   {showAssign && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setShowAssign(false)} />
-                      <div className="absolute right-0 top-10 bg-card border border-black/5 rounded-xl shadow-xl z-50 w-48 py-1">
-                        {staff.filter((s) => s.status === 'active').map((s) => (
-                          <button key={s.id} onClick={() => handleAssign(s.id)}
-                            className={cn('w-full text-left px-3 py-2 text-sm hover:bg-[#f5ede3] flex items-center gap-2',
-                              selected.assigned_to === s.id && 'text-primary font-medium')}>
-                            <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-semibold text-primary">{s.avatar}</div>
-                            {s.name.split(' ')[0]}
-                            {selected.assigned_to === s.id && <Check className="w-3 h-3 ml-auto" />}
-                          </button>
-                        ))}
+                      <div className="absolute right-0 top-10 bg-white border border-orange-100 rounded-xl shadow-xl z-50 w-52 py-1">
+                        <p className="px-3 pt-2 pb-1 text-[10px] font-semibold text-[#7a6b5c] uppercase tracking-wider">Assign to</p>
+                        {staff.filter((s) => s.status === 'active').length === 0 ? (
+                          <p className="px-3 py-3 text-xs text-[#7a6b5c] text-center">No active staff members</p>
+                        ) : (
+                          staff.filter((s) => s.status === 'active').map((s) => (
+                            <button key={s.id} onClick={() => handleAssign(s.id)}
+                              className={cn('w-full text-left px-3 py-2 text-sm hover:bg-[#fef3ea] flex items-center gap-2 transition-colors',
+                                selected.assigned_to === s.id && 'text-primary font-medium bg-orange-50')}>
+                              <div className="w-7 h-7 rounded-full bg-orange-100 flex items-center justify-center text-[11px] font-bold text-primary shrink-0">
+                                {getInitials(s.name, null)}
+                              </div>
+                              <span className="truncate">{s.name}</span>
+                              {selected.assigned_to === s.id && <Check className="w-3.5 h-3.5 ml-auto shrink-0 text-primary" />}
+                            </button>
+                          ))
+                        )}
+                        {selected.assigned_to && (
+                          <div className="border-t border-orange-50 mt-1 pt-1">
+                            <button onClick={() => handleAssign('')}
+                              className="w-full text-left px-3 py-2 text-xs text-[#7a6b5c] hover:bg-[#fef3ea] transition-colors flex items-center gap-2">
+                              <X className="w-3.5 h-3.5" /> Unassign
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </>
                   )}
@@ -656,7 +672,7 @@ export default function InboxPage() {
             </div>
 
             {/* Messages */}
-            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#fdf9f7]">
               {/* Load older messages */}
               {hasMore && (
                 <div className="flex justify-center py-2">
@@ -752,7 +768,7 @@ export default function InboxPage() {
             )}
 
             {/* Input */}
-            <div className={cn('border-t border-black/5 p-3', isNote && 'bg-yellow-50')}>
+            <div className={cn('border-t border-orange-100 p-3 bg-[#faf4ef]', isNote && 'bg-yellow-50')}>
               {isNote && (
                 <p className="text-xs font-semibold text-yellow-600 mb-2 flex items-center gap-1">
                   <StickyNote className="w-3 h-3" /> Internal Note — not visible to customer
