@@ -1401,7 +1401,7 @@ function WaTemplatesModal({ onClose, onSelect }: { onClose: () => void; onSelect
 
   const load = () => {
     setLoading(true);
-    api.get<WaTemplate[]>('/wa-personal-templates').then((rows) => {
+    api.get<WaTemplate[]>('/api/wa-personal-templates').then((rows) => {
       setTemplates(rows);
     }).catch(() => toast.error('Failed to load templates')).finally(() => setLoading(false));
   };
@@ -1566,7 +1566,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
   useEffect(() => {
     if (node.actionType === 'send_whatsapp_personal') {
       setLoadingWaTemplates(true);
-      api.get<WaTemplate[]>('/wa-personal-templates').then(setWaTemplates).catch(() => {}).finally(() => setLoadingWaTemplates(false));
+      api.get<WaTemplate[]>('/api/wa-personal-templates').then(setWaTemplates).catch(() => {}).finally(() => setLoadingWaTemplates(false));
     }
   }, [node.actionType]);
 
@@ -2104,7 +2104,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
       {node.actionType === 'send_whatsapp_personal' && (<>
         {showWaTemplatesModal && (
           <WaTemplatesModal
-            onClose={() => { setShowWaTemplatesModal(false); setLoadingWaTemplates(true); api.get<WaTemplate[]>('/wa-personal-templates').then(setWaTemplates).catch(() => {}).finally(() => setLoadingWaTemplates(false)); }}
+            onClose={() => { setShowWaTemplatesModal(false); setLoadingWaTemplates(true); api.get<WaTemplate[]>('/api/wa-personal-templates').then(setWaTemplates).catch(() => {}).finally(() => setLoadingWaTemplates(false)); }}
             onSelect={(t) => { onUpdate({ config: { ...cfg, templateId: t.id, message: undefined } }); setWaTemplateMode('template'); }}
           />
         )}

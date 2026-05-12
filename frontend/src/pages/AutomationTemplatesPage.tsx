@@ -13,7 +13,7 @@ import { getAccessToken, BASE } from '@/lib/api';
 import { usePermission } from '@/hooks/usePermission';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
-type TemplateType = 'waba' | 'email' | 'sms';
+type TemplateType = 'waba' | 'email' | 'sms' | 'wa_personal';
 type WABACategory = 'MARKETING' | 'UTILITY' | 'AUTHENTICATION';
 interface WABAButton { id: string; type: 'QUICK_REPLY' | 'CALL_TO_ACTION'; label: string; value: string; }
 interface Template {
@@ -28,6 +28,16 @@ interface Template {
   header?: string | null;
   footer?: string | null;
   buttons: WABAButton[] | string;
+  file_path?: string | null;
+  file_type?: string | null;
+  file_name?: string | null;
+  created_at: string;
+}
+
+interface WaPersonalTemplate {
+  id: string;
+  name: string;
+  message: string;
   file_path?: string | null;
   file_type?: string | null;
   file_name?: string | null;
@@ -60,6 +70,19 @@ async function fetchApi(url: string, method: string, body: FormData): Promise<Te
   const data = await resp.json();
   if (!resp.ok) throw new Error(data.error || 'Request failed');
   return data as Template;
+}
+
+async function fetchWaPersonalApi(url: string, method: string, body: FormData): Promise<WaPersonalTemplate> {
+  const tok = getAccessToken();
+  const resp = await fetch(`${BASE}${url}`, {
+    method,
+    headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+    credentials: 'include',
+    body,
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || 'Request failed');
+  return data as WaPersonalTemplate;
 }
 
 const LANGUAGES = ['en', 'hi', 'ta', 'te', 'kn', 'mr'];
@@ -392,6 +415,75 @@ function SMSModal({ initial, onClose, onSaved }: { initial?: Template | null; on
   );
 }
 
+// ── WA Personal Modal ─────────────────────────────────────────────────────────
+function WAPersonalModal({ initial, onClose, onSaved }: { initial?: WaPersonalTemplate | null; onClose: () => void; onSaved: (t: WaPersonalTemplate) => void }) {
+  const [name, setName] = useState(initial?.name ?? '');
+  const [message, setMessage] = useState(initial?.message ?? '');
+  const [file, setFile] = useState<File | null>(null);
+  const [removeFile, setRemoveFile] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!name.trim()) { toast.error('Template name required'); return; }
+    if (!message.trim()) { toast.error('Message required'); return; }
+    setSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append('name', name.trim());
+      fd.append('message', message.trim());
+      if (removeFile) fd.append('removeFile', 'true');
+      if (file) fd.append('file', file);
+      const url = initial?.id ? `/api/wa-personal-templates/${initial.id}` : '/api/wa-personal-templates';
+      const method = initial?.id ? 'PATCH' : 'POST';
+      const saved = await fetchWaPersonalApi(url, method, fd);
+      toast.success('Template saved');
+      onSaved(saved);
+    } catch (e: any) { toast.error(e.message); } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+      <div className="bg-card rounded-2xl border border-black/5 w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-black/5 shrink-0">
+          <h3 className="font-bold text-[#1c1410]">{initial ? 'Edit WA Personal Template' : 'Create WA Personal Template'}</h3>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[#f5ede3]"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          <div>
+            <label className="text-sm font-medium text-foreground mb-1.5 block">Template Name *</label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Welcome Message" />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-sm font-medium text-foreground">Message *</label>
+              <span className="text-xs text-muted-foreground">{message.length}/4096</span>
+            </div>
+            <textarea
+              className="w-full border border-black/5 rounded-lg px-3 py-2 text-sm bg-card focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none resize-none"
+              rows={6} value={message} onChange={(e) => setMessage(e.target.value)} maxLength={4096}
+              placeholder="Message text. Use {first_name}, {phone}, {email}, {assigned_staff}, etc."
+            />
+            <p className="text-[11px] text-[#7a6b5c] mt-1">Variables: {'{first_name} {last_name} {phone} {email} {assigned_staff} {stage}'}</p>
+          </div>
+          <AttachRow
+            accept="image/*,.pdf,.doc,.docx"
+            label="Attachment (optional) — image, PDF or document"
+            existingName={initial?.file_name}
+            onFile={setFile}
+            onRemoveExisting={() => setRemoveFile(true)}
+          />
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-black/5 shrink-0">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Saving…</> : <><Check className="w-4 h-4 mr-1" />{initial ? 'Save Changes' : 'Create'}</>}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── WABA Preview ───────────────────────────────────────────────────────────────
 function WABAPreview({ template, onClose }: { template: Template; onClose: () => void }) {
   const btns = parseButtons(template.buttons);
@@ -437,22 +529,24 @@ export default function AutomationTemplatesPage() {
 
   const [tab, setTab] = useState<TemplateType>('waba');
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [waPersonalTemplates, setWaPersonalTemplates] = useState<WaPersonalTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [editItem, setEditItem] = useState<Template | null>(null);
+  const [editWaPersonal, setEditWaPersonal] = useState<WaPersonalTemplate | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [preview, setPreview] = useState<Template | null>(null);
 
   const load = () => {
     setLoading(true);
     const tok = getAccessToken();
-    fetch(`${BASE}/api/templates`, {
-      headers: tok ? { Authorization: `Bearer ${tok}` } : {},
-      credentials: 'include',
-    })
-      .then((r) => r.json())
-      .then((d) => { if (Array.isArray(d)) setTemplates(d); })
-      .catch(() => toast.error('Failed to load templates'))
-      .finally(() => setLoading(false));
+    const headers: Record<string, string> = tok ? { Authorization: `Bearer ${tok}` } : {};
+    Promise.all([
+      fetch(`${BASE}/api/templates`, { headers, credentials: 'include' }).then((r) => r.json()).catch(() => []),
+      fetch(`${BASE}/api/wa-personal-templates`, { headers, credentials: 'include' }).then((r) => r.json()).catch(() => []),
+    ]).then(([general, wap]) => {
+      if (Array.isArray(general)) setTemplates(general);
+      if (Array.isArray(wap)) setWaPersonalTemplates(wap);
+    }).catch(() => toast.error('Failed to load templates')).finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
@@ -462,12 +556,11 @@ export default function AutomationTemplatesPage() {
   const email = byType('email');
   const sms = byType('sms');
 
-  const current = tab === 'waba' ? waba : tab === 'email' ? email : sms;
-
   const tabs = [
     { key: 'waba' as TemplateType, label: 'WhatsApp (WABA)', count: waba.length },
     { key: 'email' as TemplateType, label: 'Email', count: email.length },
     { key: 'sms' as TemplateType, label: 'SMS', count: sms.length },
+    { key: 'wa_personal' as TemplateType, label: 'WA Personal', count: waPersonalTemplates.length },
   ];
 
   const handleSaved = (saved: Template) => {
@@ -494,15 +587,41 @@ export default function AutomationTemplatesPage() {
     } catch { toast.error('Delete failed'); }
   };
 
+  const handleWaPersonalSaved = (saved: WaPersonalTemplate) => {
+    setWaPersonalTemplates((prev) => {
+      const idx = prev.findIndex((t) => t.id === saved.id);
+      return idx >= 0 ? prev.map((t) => t.id === saved.id ? saved : t) : [saved, ...prev];
+    });
+    setEditWaPersonal(null);
+    setShowCreate(false);
+  };
+
+  const handleWaPersonalDelete = async (id: string) => {
+    if (!confirm('Delete this template? This cannot be undone.')) return;
+    const tok = getAccessToken();
+    try {
+      const resp = await fetch(`${BASE}/api/wa-personal-templates/${id}`, {
+        method: 'DELETE',
+        headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+        credentials: 'include',
+      });
+      if (!resp.ok) throw new Error();
+      setWaPersonalTemplates((prev) => prev.filter((t) => t.id !== id));
+      toast.success('Template deleted');
+    } catch { toast.error('Delete failed'); }
+  };
+
   const emptyLabel: Record<TemplateType, string> = {
     waba: 'No WhatsApp (WABA) templates yet',
     email: 'No Email templates yet',
     sms: 'No SMS templates yet',
+    wa_personal: 'No WA Personal templates yet',
   };
   const emptyDesc: Record<TemplateType, string> = {
     waba: 'Create approved message templates — with images, videos or documents — for automated WhatsApp campaigns.',
     email: 'Build reusable email templates with file attachments for automated outreach.',
     sms: 'Create short SMS templates for quick automated notifications.',
+    wa_personal: 'Create reusable message templates for your personal WhatsApp (QR-linked) number. Supports images, PDFs and documents.',
   };
 
   return (
@@ -538,37 +657,28 @@ export default function AutomationTemplatesPage() {
       {/* List */}
       {loading ? (
         <div className="flex justify-center py-16"><Loader2 className="w-7 h-7 animate-spin text-muted-foreground" /></div>
-      ) : current.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-muted/30 flex items-center justify-center">
-            <FileText className="w-7 h-7 text-muted-foreground" />
+      ) : tab === 'wa_personal' ? (
+        waPersonalTemplates.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-muted/30 flex items-center justify-center">
+              <FileText className="w-7 h-7 text-muted-foreground" />
+            </div>
+            <p className="font-semibold text-foreground">{emptyLabel.wa_personal}</p>
+            <p className="text-sm text-muted-foreground max-w-sm">{emptyDesc.wa_personal}</p>
+            {canManage && (
+              <Button onClick={() => setShowCreate(true)}>
+                <Plus className="w-4 h-4 mr-1" />Create First Template
+              </Button>
+            )}
           </div>
-          <p className="font-semibold text-foreground">{emptyLabel[tab]}</p>
-          <p className="text-sm text-muted-foreground max-w-sm">{emptyDesc[tab]}</p>
-          {canManage && (
-            <Button onClick={() => setShowCreate(true)}>
-              <Plus className="w-4 h-4 mr-1" />Create First Template
-            </Button>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {current.map((t) => {
-            const btns = parseButtons(t.buttons);
-            return (
+        ) : (
+          <div className="space-y-3">
+            {waPersonalTemplates.map((t) => (
               <div key={t.id} className="bg-white rounded-2xl border border-black/5 p-4 hover:shadow-md transition-all">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    {/* Name row with badges */}
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className={cn('text-sm font-bold text-[#1c1410]', tab === 'waba' && 'font-mono')}>{t.name}</p>
-                      {tab === 'waba' && t.category && !['EMAIL','SMS'].includes(t.category) && (
-                        <Badge className={cn('border-0 text-xs', catColor[t.category] ?? 'bg-gray-100 text-gray-700')}>{t.category}</Badge>
-                      )}
-                      {tab === 'waba' && (
-                        <Badge className={cn('border-0 text-xs capitalize', statusColor[t.status] ?? 'bg-gray-100 text-gray-700')}>{t.status}</Badge>
-                      )}
-                      {tab === 'waba' && t.language && <span className="text-[11px] text-[#7a6b5c] uppercase">{t.language}</span>}
+                      <p className="text-sm font-bold text-[#1c1410]">{t.name}</p>
                       {t.file_name && (
                         <span className="flex items-center gap-1 text-[11px] text-teal-700 bg-teal-50 border border-teal-100 px-1.5 py-0.5 rounded-md">
                           {fileIcon(t.file_type)}
@@ -576,52 +686,100 @@ export default function AutomationTemplatesPage() {
                         </span>
                       )}
                     </div>
-                    {/* Subject (email) */}
-                    {tab === 'email' && t.subject && (
-                      <p className="text-[11px] text-[#7a6b5c] mt-0.5 font-medium">Subject: {t.subject}</p>
-                    )}
-                    {/* WABA header */}
-                    {tab === 'waba' && t.header && <p className="text-sm font-semibold text-[#1c1410] mt-2">{t.header}</p>}
-                    {/* Body */}
-                    <p className="text-[13px] text-[#7a6b5c] mt-1 line-clamp-2 whitespace-pre-line">{t.body}</p>
-                    {/* WABA buttons */}
-                    {tab === 'waba' && btns.length > 0 && (
-                      <div className="flex gap-2 mt-2 flex-wrap">
-                        {btns.map((btn) => (
-                          <span key={btn.id} className={cn('text-xs px-2.5 py-1 rounded-lg border font-medium', btn.type === 'QUICK_REPLY' ? 'border-primary/30 text-primary bg-primary/5' : 'border-blue-200 text-blue-600 bg-blue-50')}>
-                            {btn.type === 'CALL_TO_ACTION' ? '🔗 ' : ''}{btn.label}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {/* SMS char count */}
-                    {tab === 'sms' && (
-                      <p className="text-[11px] text-[#7a6b5c] mt-1">{t.body.length}/160 chars · {t.body.length > 160 ? '2 SMS' : '1 SMS'}</p>
-                    )}
+                    <p className="text-[13px] text-[#7a6b5c] mt-1 line-clamp-2 whitespace-pre-line">{t.message}</p>
                   </div>
-                  {/* Actions */}
                   <div className="flex gap-1 shrink-0">
-                    {tab === 'waba' && <button onClick={() => setPreview(t)} className="p-1.5 rounded-md hover:bg-[#f5ede3] text-muted-foreground hover:text-foreground transition-colors" title="Preview"><Eye className="w-4 h-4" /></button>}
                     <button onClick={() => { copyToClipboard(t.name); toast.success('Template name copied'); }} className="p-1.5 rounded-md hover:bg-[#f5ede3] text-muted-foreground hover:text-foreground transition-colors" title="Copy name"><Copy className="w-4 h-4" /></button>
-                    {canManage && <button onClick={() => setEditItem(t)} className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-colors" title="Edit"><Pencil className="w-4 h-4" /></button>}
-                    {canManage && <button onClick={() => handleDelete(t.id)} className="p-1.5 rounded-md hover:bg-red-50 text-muted-foreground hover:text-destructive transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>}
+                    {canManage && <button onClick={() => setEditWaPersonal(t)} className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-colors" title="Edit"><Pencil className="w-4 h-4" /></button>}
+                    {canManage && <button onClick={() => handleWaPersonalDelete(t.id)} className="p-1.5 rounded-md hover:bg-red-50 text-muted-foreground hover:text-destructive transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>}
                   </div>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      )}
+            ))}
+          </div>
+        )
+      ) : (() => {
+        const current = tab === 'waba' ? waba : tab === 'email' ? email : sms;
+        return current.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-muted/30 flex items-center justify-center">
+              <FileText className="w-7 h-7 text-muted-foreground" />
+            </div>
+            <p className="font-semibold text-foreground">{emptyLabel[tab]}</p>
+            <p className="text-sm text-muted-foreground max-w-sm">{emptyDesc[tab]}</p>
+            {canManage && (
+              <Button onClick={() => setShowCreate(true)}>
+                <Plus className="w-4 h-4 mr-1" />Create First Template
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {current.map((t) => {
+              const btns = parseButtons(t.buttons);
+              return (
+                <div key={t.id} className="bg-white rounded-2xl border border-black/5 p-4 hover:shadow-md transition-all">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className={cn('text-sm font-bold text-[#1c1410]', tab === 'waba' && 'font-mono')}>{t.name}</p>
+                        {tab === 'waba' && t.category && !['EMAIL','SMS'].includes(t.category) && (
+                          <Badge className={cn('border-0 text-xs', catColor[t.category] ?? 'bg-gray-100 text-gray-700')}>{t.category}</Badge>
+                        )}
+                        {tab === 'waba' && (
+                          <Badge className={cn('border-0 text-xs capitalize', statusColor[t.status] ?? 'bg-gray-100 text-gray-700')}>{t.status}</Badge>
+                        )}
+                        {tab === 'waba' && t.language && <span className="text-[11px] text-[#7a6b5c] uppercase">{t.language}</span>}
+                        {t.file_name && (
+                          <span className="flex items-center gap-1 text-[11px] text-teal-700 bg-teal-50 border border-teal-100 px-1.5 py-0.5 rounded-md">
+                            {fileIcon(t.file_type)}
+                            <span className="max-w-[130px] truncate">{t.file_name}</span>
+                          </span>
+                        )}
+                      </div>
+                      {tab === 'email' && t.subject && (
+                        <p className="text-[11px] text-[#7a6b5c] mt-0.5 font-medium">Subject: {t.subject}</p>
+                      )}
+                      {tab === 'waba' && t.header && <p className="text-sm font-semibold text-[#1c1410] mt-2">{t.header}</p>}
+                      <p className="text-[13px] text-[#7a6b5c] mt-1 line-clamp-2 whitespace-pre-line">{t.body}</p>
+                      {tab === 'waba' && btns.length > 0 && (
+                        <div className="flex gap-2 mt-2 flex-wrap">
+                          {btns.map((btn) => (
+                            <span key={btn.id} className={cn('text-xs px-2.5 py-1 rounded-lg border font-medium', btn.type === 'QUICK_REPLY' ? 'border-primary/30 text-primary bg-primary/5' : 'border-blue-200 text-blue-600 bg-blue-50')}>
+                              {btn.type === 'CALL_TO_ACTION' ? '🔗 ' : ''}{btn.label}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {tab === 'sms' && (
+                        <p className="text-[11px] text-[#7a6b5c] mt-1">{t.body.length}/160 chars · {t.body.length > 160 ? '2 SMS' : '1 SMS'}</p>
+                      )}
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      {tab === 'waba' && <button onClick={() => setPreview(t)} className="p-1.5 rounded-md hover:bg-[#f5ede3] text-muted-foreground hover:text-foreground transition-colors" title="Preview"><Eye className="w-4 h-4" /></button>}
+                      <button onClick={() => { copyToClipboard(t.name); toast.success('Template name copied'); }} className="p-1.5 rounded-md hover:bg-[#f5ede3] text-muted-foreground hover:text-foreground transition-colors" title="Copy name"><Copy className="w-4 h-4" /></button>
+                      {canManage && <button onClick={() => setEditItem(t)} className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-colors" title="Edit"><Pencil className="w-4 h-4" /></button>}
+                      {canManage && <button onClick={() => handleDelete(t.id)} className="p-1.5 rounded-md hover:bg-red-50 text-muted-foreground hover:text-destructive transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* Create modal */}
-      {showCreate && tab === 'waba'  && <WABAModal  onClose={() => setShowCreate(false)} onSaved={handleSaved} />}
-      {showCreate && tab === 'email' && <EmailModal onClose={() => setShowCreate(false)} onSaved={handleSaved} />}
-      {showCreate && tab === 'sms'   && <SMSModal   onClose={() => setShowCreate(false)} onSaved={handleSaved} />}
+      {showCreate && tab === 'waba'        && <WABAModal        onClose={() => setShowCreate(false)} onSaved={handleSaved} />}
+      {showCreate && tab === 'email'       && <EmailModal       onClose={() => setShowCreate(false)} onSaved={handleSaved} />}
+      {showCreate && tab === 'sms'         && <SMSModal         onClose={() => setShowCreate(false)} onSaved={handleSaved} />}
+      {showCreate && tab === 'wa_personal' && <WAPersonalModal  onClose={() => setShowCreate(false)} onSaved={handleWaPersonalSaved} />}
 
       {/* Edit modal */}
       {editItem && editItem.template_type === 'waba'  && <WABAModal  initial={editItem} onClose={() => setEditItem(null)} onSaved={handleSaved} />}
       {editItem && editItem.template_type === 'email' && <EmailModal initial={editItem} onClose={() => setEditItem(null)} onSaved={handleSaved} />}
       {editItem && editItem.template_type === 'sms'   && <SMSModal   initial={editItem} onClose={() => setEditItem(null)} onSaved={handleSaved} />}
+      {editWaPersonal && <WAPersonalModal initial={editWaPersonal} onClose={() => setEditWaPersonal(null)} onSaved={handleWaPersonalSaved} />}
 
       {/* WABA preview */}
       {preview && <WABAPreview template={preview} onClose={() => setPreview(null)} />}
