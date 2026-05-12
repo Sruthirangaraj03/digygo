@@ -185,7 +185,7 @@ router.get('/', checkPermission('inbox:send'), async (req: AuthRequest, res: Res
   // Format anonymous phone as +E164 for display; leads.phone is shown as-is (already formatted)
   let sql = `
     SELECT c.*,
-           COALESCE(l.name, '+' || c.phone, 'Unknown')   AS lead_name,
+           COALESCE(l.name, CASE WHEN LENGTH(REGEXP_REPLACE(COALESCE(c.phone,''),'[^0-9]','','g')) >= 14 THEN 'WA Contact (' || RIGHT(REGEXP_REPLACE(c.phone,'[^0-9]','','g'),6) || ')' ELSE '+' || c.phone END, 'Unknown') AS lead_name,
            COALESCE(l.phone, '+' || c.phone)             AS lead_phone,
            u.name AS assigned_name
     FROM conversations c
