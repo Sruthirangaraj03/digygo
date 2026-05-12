@@ -3,15 +3,13 @@ import { emitToTenant } from '../../socket';
 import { normalizePhone, fromJID, isGroupJID } from './phoneUtils';
 
 /**
- * Extracts a human-readable text label from any Baileys message type.
- * Unwraps ephemeral (disappearing), viewOnce, and other container types first,
- * then extracts the actual content from the inner message.
+ * Unwraps container message types (disappearing, view-once, etc.)
+ * then extracts a human-readable text label from the inner content.
  */
 function extractText(msg: any): string {
   const m = msg.message;
   if (!m) return '';
 
-  // Unwrap container types: disappearing messages, view-once, captioned documents, etc.
   const inner: any =
     m.ephemeralMessage?.message ??
     m.viewOnceMessage?.message ??
@@ -21,18 +19,15 @@ function extractText(msg: any): string {
     m.editedMessage?.message ??
     m;
 
-  // Plain text (most common)
-  if (inner.conversation) return inner.conversation;
+  if (inner.conversation)              return inner.conversation;
   if (inner.extendedTextMessage?.text) return inner.extendedTextMessage.text;
 
-  // Media with optional caption
   if (inner.imageMessage)    return inner.imageMessage.caption?.trim()    || '[Image]';
   if (inner.videoMessage)    return inner.videoMessage.caption?.trim()    || '[Video]';
   if (inner.audioMessage)    return inner.audioMessage.ptt                ? '[Voice note]' : '[Audio]';
   if (inner.documentMessage) return inner.documentMessage.fileName
     ? `[Document: ${inner.documentMessage.fileName}]` : '[Document]';
 
-  // Other rich types
   if (inner.stickerMessage)             return '[Sticker]';
   if (inner.locationMessage)            return '[Location]';
   if (inner.liveLocationMessage)        return '[Live Location]';
@@ -52,20 +47,58 @@ function extractText(msg: any): string {
   return '[Media message]';
 }
 
-export async function handleInboundMessage(tenantId: string, msg: any): Promise<void> {
-  // Ignore group messages, status messages, and messages we sent
-  if (!msg.message) return;
-  if (isGroupJID(msg.key?.remoteJid ?? '')) return;
-  if (msg.key?.fromMe) return;
+/** Returns true if the message carries a downloadable media attachment. */
+function detectMedia(msg: any): boolean {
+  const m = msg.message;
+  if (!m) return false;
+  const inner: any =
+    m.ephemeralMessage?.message ??
+    m.viewOnceMessage?.message ??
+    m.viewOnceMessageV2?.message ??
+    m.viewOnceMessageV2Extension?.message ??
+    m.documentWithCaptionMessage?.message ??
+    m.editedMessage?.message ??
+    m;
+  return !!(
+    inner.imageMessage ||
+    inner.videoMessage ||
+    inner.audioMessage ||
+    inner.documentMessage ||
+    inner.stickerMessage
+  );
+}
 
-  const senderJID = msg.key?.remoteJid ?? '';
-  const rawPhone = fromJID(senderJID);
-  const phone = normalizePhone(rawPhone);
+/**
+ * Processes one Baileys message and persists it to the DB.
+ *
+ * @param opts.historical  true for history-sync messages (type:'append') —
+ *                         skips socket emit, workflow trigger, and unread increment.
+ *
+ * @returns { msgId, hasMedia } on success, or null if the message was a duplicate / empty.
+ */
+export async function handleInboundMessage(
+  tenantId: string,
+  msg: any,
+  opts?: { historical?: boolean },
+): Promise<{ msgId: string; hasMedia: boolean } | null> {
+  if (!msg.message) return null;
+  if (isGroupJID(msg.key?.remoteJid ?? '')) return null;
 
-  const text = extractText(msg);
-  if (!text) return;
+  const fromMe: boolean  = msg.key?.fromMe ?? false;
+  const historical       = opts?.historical ?? false;
 
-  // Find matching lead by phone number (last 10 digits match)
+  const remoteJID  = msg.key?.remoteJid ?? '';
+  const rawPhone   = fromJID(remoteJID);
+  const phone      = normalizePhone(rawPhone);
+  const text       = extractText(msg);
+  if (!text) return null;
+
+  // Use the WA message timestamp (unix seconds); fall back to NOW() only if missing
+  const msgTimestamp: Date = msg.messageTimestamp
+    ? new Date(Number(msg.messageTimestamp) * 1000)
+    : new Date();
+
+  // ── Find matching lead by last-10-digit phone match ──────────────────────
   const leadRes = await query(
     `SELECT id, name, phone, assigned_to
      FROM leads
@@ -74,22 +107,21 @@ export async function handleInboundMessage(tenantId: string, msg: any): Promise<
      LIMIT 1`,
     [tenantId, phone],
   );
-
-  const lead = leadRes.rows[0] ?? null;
-  const leadId = lead?.id ?? null;
+  const lead     = leadRes.rows[0] ?? null;
+  const leadId   = lead?.id ?? null;
   const leadName = lead?.name ?? `+${phone}`;
 
-  // Find or create conversation for this phone/channel
+  // ── Find or create conversation ───────────────────────────────────────────
   let convId: string;
   if (leadId) {
-    const existingConv = await query(
+    const existing = await query(
       `SELECT id FROM conversations
        WHERE tenant_id=$1::uuid AND channel='personal_wa' AND lead_id=$2::uuid
        ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
       [tenantId, leadId],
     );
-    if (existingConv.rows[0]) {
-      convId = existingConv.rows[0].id;
+    if (existing.rows[0]) {
+      convId = existing.rows[0].id;
     } else {
       const newConv = await query(
         `INSERT INTO conversations (tenant_id, lead_id, channel, status, unread_count, last_message_at)
@@ -99,15 +131,14 @@ export async function handleInboundMessage(tenantId: string, msg: any): Promise<
       convId = newConv.rows[0].id;
     }
   } else {
-    // Unknown number — find existing conversation by phone to avoid duplicate threads
-    const existingAnon = await query(
+    const existing = await query(
       `SELECT id FROM conversations
        WHERE tenant_id=$1::uuid AND channel='personal_wa' AND lead_id IS NULL AND phone=$2
        ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
       [tenantId, phone],
     );
-    if (existingAnon.rows[0]) {
-      convId = existingAnon.rows[0].id;
+    if (existing.rows[0]) {
+      convId = existing.rows[0].id;
     } else {
       const newConv = await query(
         `INSERT INTO conversations (tenant_id, lead_id, channel, status, unread_count, last_message_at, phone)
@@ -118,55 +149,83 @@ export async function handleInboundMessage(tenantId: string, msg: any): Promise<
     }
   }
 
-  // Insert message
-  const wamid = msg.key?.id ?? null;
+  // ── Insert message (idempotent on wamid) ─────────────────────────────────
+  const wamid    = msg.key?.id ?? null;
+  const sender   = fromMe ? 'agent' : 'customer';
+  const initStatus = fromMe ? 'sent' : 'delivered';
+  const hasMedia = detectMedia(msg);
+
   const msgRes = await query(
-    `INSERT INTO messages (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, status, created_at)
-     VALUES ($1, $2::uuid, $3, 'customer', $4, FALSE, $5, 'delivered', NOW())
+    `INSERT INTO messages
+       (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, remote_jid, status, created_at)
+     VALUES ($1, $2::uuid, $3, $4, $5, FALSE, $6, $7, $8, $9)
      ON CONFLICT (wamid) WHERE wamid IS NOT NULL DO NOTHING
      RETURNING *`,
-    [convId, tenantId, leadId, text, wamid],
+    [convId, tenantId, leadId, sender, text, wamid, remoteJID || null, initStatus, msgTimestamp],
   );
 
-  if (!msgRes.rows[0]) return; // Duplicate — already processed
+  if (!msgRes.rows[0]) return null; // Already processed (duplicate)
 
-  // Update conversation unread + last message
-  await query(
-    `UPDATE conversations
-     SET last_message=$1, last_message_at=NOW(), unread_count=unread_count+1
-     WHERE id=$2`,
-    [text.slice(0, 200), convId],
-  );
+  const msgId = msgRes.rows[0].id as string;
 
-  // Increment daily received count
-  await query(
-    `INSERT INTO wa_personal_stats (tenant_id, date, messages_received)
-     VALUES ($1::uuid, CURRENT_DATE, 1)
-     ON CONFLICT (tenant_id, date) DO UPDATE SET messages_received = wa_personal_stats.messages_received + 1`,
-    [tenantId],
-  ).catch(() => null);
+  // ── Update conversation preview ───────────────────────────────────────────
+  if (historical) {
+    // Only update if this message is actually newer than the stored preview
+    await query(
+      `UPDATE conversations
+       SET last_message     = CASE WHEN last_message_at IS NULL OR last_message_at < $1 THEN $2 ELSE last_message END,
+           last_message_at  = CASE WHEN last_message_at IS NULL OR last_message_at < $1 THEN $1 ELSE last_message_at END
+       WHERE id = $3`,
+      [msgTimestamp, text.slice(0, 200), convId],
+    );
+    // No socket emit, no workflow trigger, no unread increment for history sync
+    return { msgId, hasMedia };
+  }
 
-  // Emit real-time events
-  const payload = {
+  if (fromMe) {
+    // Message sent from the owner's phone (not via CRM) — update preview only
+    await query(
+      `UPDATE conversations SET last_message=$1, last_message_at=$2 WHERE id=$3`,
+      [text.slice(0, 200), msgTimestamp, convId],
+    );
+  } else {
+    // Inbound customer message — increment unread and update preview
+    await query(
+      `UPDATE conversations
+       SET last_message=$1, last_message_at=$2, unread_count=unread_count+1
+       WHERE id=$3`,
+      [text.slice(0, 200), msgTimestamp, convId],
+    );
+
+    await query(
+      `INSERT INTO wa_personal_stats (tenant_id, date, messages_received)
+       VALUES ($1::uuid, CURRENT_DATE, 1)
+       ON CONFLICT (tenant_id, date) DO UPDATE SET messages_received = wa_personal_stats.messages_received + 1`,
+      [tenantId],
+    ).catch(() => null);
+  }
+
+  // ── Real-time socket events ───────────────────────────────────────────────
+  emitToTenant(tenantId, 'message:new', {
     ...msgRes.rows[0],
-    lead_name: leadName,
+    lead_name:  leadName,
     lead_phone: `+${phone}`,
-    channel: 'personal_wa',
-  };
-  emitToTenant(tenantId, 'message:new', payload);
+    channel:    'personal_wa',
+  });
   emitToTenant(tenantId, 'conversation:updated', {
-    id: convId,
-    lead_id: leadId,
-    lead_name: leadName,
-    lead_phone: `+${phone}`,
-    channel: 'personal_wa',
-    status: 'open',
-    last_message: text.slice(0, 200),
-    last_message_at: new Date().toISOString(),
+    id:             convId,
+    lead_id:        leadId,
+    lead_name:      leadName,
+    lead_phone:     `+${phone}`,
+    channel:        'personal_wa',
+    status:         'open',
+    last_message:   text.slice(0, 200),
+    last_message_at: msgTimestamp.toISOString(),
+    ...(fromMe ? {} : { unread_count: 1 }),
   });
 
-  // Trigger inbox_message workflow if lead exists
-  if (lead) {
+  // ── Workflow trigger (inbound only) ───────────────────────────────────────
+  if (!fromMe && lead) {
     try {
       const { triggerWorkflows } = await import('../../routes/workflows');
       await triggerWorkflows('inbox_message', {
@@ -176,4 +235,6 @@ export async function handleInboundMessage(tenantId: string, msg: any): Promise<
       } as any, tenantId, 'system');
     } catch { /* ignore */ }
   }
+
+  return { msgId, hasMedia };
 }

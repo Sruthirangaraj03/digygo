@@ -62,6 +62,7 @@ const MIGRATIONS = [
   'migration_060_wa_personal_sessions.sql',
   'migration_061_conversations_messages_schema.sql',
   'migration_062_conversations_phone.sql',
+  'migration_063_messages_enhancements.sql',
 ];
 
 // Split SQL file into individual statements and execute each one separately.

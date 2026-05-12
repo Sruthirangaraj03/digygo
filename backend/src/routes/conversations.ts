@@ -1,3 +1,5 @@
+import path from 'path';
+import fs from 'fs';
 import { Router, Response } from 'express';
 import { query } from '../db';
 import { requireAuth, requireTenant, AuthRequest } from '../middleware/auth';
@@ -6,12 +8,14 @@ import { maskPhone } from '../utils/phone';
 import { decrypt } from '../utils/crypto';
 import { emitToTenant } from '../socket';
 import https from 'https';
-import { sendText } from '../services/whatsapp/sessionManager';
+import { sendText, getSession } from '../services/whatsapp/sessionManager';
 import { toJID } from '../services/whatsapp/phoneUtils';
 
 const router = Router();
 router.use(requireAuth);
 router.use(requireTenant);
+
+const WA_MEDIA_DIR = process.env.WA_MEDIA_DIR || path.join(process.cwd(), 'wa_media');
 
 function sendWAMessage(phoneNumberId: string, token: string, toPhone: string, text: string): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -50,7 +54,6 @@ router.get('/', checkPermission('inbox:send'), async (req: AuthRequest, res: Res
   const { status, assigned_to, search } = req.query as Record<string, string>;
   const isSuperAdmin = role === 'super_admin';
 
-  // Determine whether user can see all conversations or only their own
   let viewAll = isSuperAdmin;
   if (!isSuperAdmin) {
     try {
@@ -76,14 +79,13 @@ router.get('/', checkPermission('inbox:send'), async (req: AuthRequest, res: Res
   const params: any[] = [tenantId];
 
   if (!viewAll) {
-    // inbox:view_own — only conversations directly assigned to this user or for their assigned leads
     const userIdx = params.push(userId);
     sql += ` AND (c.assigned_to = $${userIdx} OR l.assigned_to = $${userIdx})`;
   }
 
-  if (status) { params.push(status); sql += ` AND c.status = $${params.length}`; }
-  if (assigned_to) { params.push(assigned_to); sql += ` AND c.assigned_to = $${params.length}`; }
-  if (search) { params.push(`%${search}%`); sql += ` AND l.name ILIKE $${params.length}`; }
+  if (status)      { params.push(status);          sql += ` AND c.status = $${params.length}`; }
+  if (assigned_to) { params.push(assigned_to);     sql += ` AND c.assigned_to = $${params.length}`; }
+  if (search)      { params.push(`%${search}%`);   sql += ` AND l.name ILIKE $${params.length}`; }
   sql += ' ORDER BY c.last_message_at DESC NULLS LAST';
 
   try {
@@ -98,14 +100,45 @@ router.get('/', checkPermission('inbox:send'), async (req: AuthRequest, res: Res
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
+// GET /api/conversations/media/:msgId — serve downloaded WA media with auth
+router.get('/media/:msgId', async (req: AuthRequest, res: Response) => {
+  try {
+    const { tenantId } = req.user!;
+    const msgRes = await query(
+      `SELECT media_url FROM messages WHERE id=$1 AND tenant_id=$2`,
+      [req.params.msgId, tenantId],
+    );
+    const relPath = msgRes.rows[0]?.media_url;
+    if (!relPath) { res.status(404).json({ error: 'Media not found' }); return; }
+
+    const filePath = path.join(process.cwd(), relPath);
+    if (!fs.existsSync(filePath)) { res.status(404).json({ error: 'File not found' }); return; }
+
+    res.sendFile(filePath);
+  } catch { res.status(500).json({ error: 'Server error' }); }
+});
+
 // GET /api/conversations/:id/messages
+// Supports: ?limit=50&before=<ISO timestamp> for cursor-based pagination (newest-first page)
 router.get('/:id/messages', checkPermission('inbox:send'), async (req: AuthRequest, res: Response) => {
   try {
-    const result = await query(
-      `SELECT * FROM messages WHERE conversation_id=$1 AND tenant_id=$2 ORDER BY created_at ASC`,
-      [req.params.id, req.user!.tenantId]
-    );
-    res.json(result.rows);
+    const limit  = Math.min(parseInt(req.query.limit as string) || 50, 100);
+    const before = req.query.before as string | undefined;
+
+    const params: any[] = [req.params.id, req.user!.tenantId];
+    let sql = `SELECT * FROM messages WHERE conversation_id=$1 AND tenant_id=$2`;
+
+    if (before) {
+      params.push(before);
+      sql += ` AND created_at < $${params.length}::timestamptz`;
+    }
+
+    params.push(limit);
+    sql += ` ORDER BY created_at DESC LIMIT $${params.length}`;
+
+    const result = await query(sql, params);
+    // Return ascending (oldest first) so the UI can append without reversing
+    res.json(result.rows.reverse());
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 
@@ -119,17 +152,19 @@ router.post('/:id/messages', checkPermission('inbox:send'), async (req: AuthRequ
        FROM conversations c
        LEFT JOIN leads l ON l.id = c.lead_id
        WHERE c.id=$1 AND c.tenant_id=$2`,
-      [req.params.id, req.user!.tenantId]
+      [req.params.id, req.user!.tenantId],
     );
     if (!convRes.rows[0]) { res.status(404).json({ error: 'Conversation not found' }); return; }
     const conv = convRes.rows[0];
 
     let wamid: string | null = null;
+
+    // Send via WABA
     if (!is_note && conv.channel === 'whatsapp' && conv.lead_phone) {
       try {
         const wabaRes = await query(
           'SELECT phone_number_id, access_token FROM waba_integrations WHERE tenant_id=$1 AND is_active=TRUE',
-          [req.user!.tenantId]
+          [req.user!.tenantId],
         );
         if (wabaRes.rows[0]) {
           const { phone_number_id, access_token: encToken } = wabaRes.rows[0];
@@ -140,15 +175,15 @@ router.post('/:id/messages', checkPermission('inbox:send'), async (req: AuthRequ
       } catch (e) { console.error('WABA send error:', e); }
     }
 
-    // Send via Personal WhatsApp (Baileys) — track success/failure for message status
+    // Send via Personal WhatsApp (Baileys)
     let deliveryFailed = false;
     if (!is_note && conv.channel === 'personal_wa') {
       if (!conv.lead_phone) {
-        console.error('[Personal WA] No phone on conversation', req.params.id, '— cannot send');
+        console.error('[Personal WA] No phone on conversation', req.params.id);
         deliveryFailed = true;
       } else {
         try {
-          await sendText(req.user!.tenantId!, toJID(conv.lead_phone), body.trim());
+          wamid = await sendText(req.user!.tenantId!, toJID(conv.lead_phone), body.trim());
         } catch (e: any) {
           console.error('[Personal WA] Send error:', e?.message ?? e);
           deliveryFailed = true;
@@ -160,13 +195,13 @@ router.post('/:id/messages', checkPermission('inbox:send'), async (req: AuthRequ
     const msgRes = await query(
       `INSERT INTO messages (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, status, created_at)
        VALUES ($1,$2,$3,'agent',$4,$5,$6,$7,NOW()) RETURNING *`,
-      [req.params.id, req.user!.tenantId, conv.lead_id ?? null, body.trim(), is_note ?? false, wamid, msgStatus]
+      [req.params.id, req.user!.tenantId, conv.lead_id ?? null, body.trim(), is_note ?? false, wamid, msgStatus],
     );
 
     if (!is_note) {
       await query(
         `UPDATE conversations SET last_message=$1, last_message_at=NOW(), unread_count=0 WHERE id=$2`,
-        [body.trim(), req.params.id]
+        [body.trim(), req.params.id],
       );
     }
 
@@ -175,16 +210,40 @@ router.post('/:id/messages', checkPermission('inbox:send'), async (req: AuthRequ
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
+// POST /api/conversations/:id/typing — sends WA typing presence update
+router.post('/:id/typing', checkPermission('inbox:send'), async (req: AuthRequest, res: Response) => {
+  try {
+    const convRes = await query(
+      `SELECT c.channel, COALESCE(l.phone, c.phone) AS lead_phone
+       FROM conversations c
+       LEFT JOIN leads l ON l.id = c.lead_id
+       WHERE c.id=$1 AND c.tenant_id=$2`,
+      [req.params.id, req.user!.tenantId],
+    );
+    if (!convRes.rows[0]) { res.json({ success: false }); return; }
+    const { channel, lead_phone } = convRes.rows[0];
+
+    if (channel === 'personal_wa' && lead_phone) {
+      const sock = getSession(req.user!.tenantId!);
+      if (sock) {
+        const jid = toJID(lead_phone);
+        sock.sendPresenceUpdate('composing', jid).catch(() => null);
+        setTimeout(() => sock.sendPresenceUpdate('paused', jid).catch(() => null), 3000);
+      }
+    }
+    res.json({ success: true });
+  } catch { res.status(500).json({ error: 'Server error' }); }
+});
+
 // PATCH /api/conversations/:id/assign
 router.patch('/:id/assign', checkPermission('inbox:send'), async (req: AuthRequest, res: Response) => {
   const { assigned_to } = req.body as { assigned_to?: string | null };
   try {
     const result = await query(
       'UPDATE conversations SET assigned_to=$1 WHERE id=$2 AND tenant_id=$3 RETURNING *',
-      [assigned_to ?? null, req.params.id, req.user!.tenantId]
+      [assigned_to ?? null, req.params.id, req.user!.tenantId],
     );
     if (!result.rows[0]) { res.status(404).json({ error: 'Not found' }); return; }
-    // Re-fetch with JOINs so socket payload includes lead_name, lead_phone, assigned_name
     const full = await query(
       `SELECT c.*,
               COALESCE(l.name, c.phone, 'Unknown') AS lead_name,
@@ -194,7 +253,7 @@ router.patch('/:id/assign', checkPermission('inbox:send'), async (req: AuthReque
        LEFT JOIN leads l ON l.id = c.lead_id
        LEFT JOIN users u ON u.id = c.assigned_to
        WHERE c.id=$1`,
-      [req.params.id]
+      [req.params.id],
     );
     const payload = full.rows[0] ?? result.rows[0];
     emitToTenant(req.user!.tenantId!, 'conversation:updated', payload);
@@ -209,10 +268,9 @@ router.patch('/:id/status', checkPermission('inbox:send'), async (req: AuthReque
   try {
     const result = await query(
       'UPDATE conversations SET status=$1 WHERE id=$2 AND tenant_id=$3 RETURNING *',
-      [status, req.params.id, req.user!.tenantId]
+      [status, req.params.id, req.user!.tenantId],
     );
     if (!result.rows[0]) { res.status(404).json({ error: 'Not found' }); return; }
-    // Re-fetch with JOINs so socket payload includes lead_name, lead_phone, assigned_name
     const full = await query(
       `SELECT c.*,
               COALESCE(l.name, c.phone, 'Unknown') AS lead_name,
@@ -222,7 +280,7 @@ router.patch('/:id/status', checkPermission('inbox:send'), async (req: AuthReque
        LEFT JOIN leads l ON l.id = c.lead_id
        LEFT JOIN users u ON u.id = c.assigned_to
        WHERE c.id=$1`,
-      [req.params.id]
+      [req.params.id],
     );
     const payload = full.rows[0] ?? result.rows[0];
     emitToTenant(req.user!.tenantId!, 'conversation:updated', payload);
@@ -230,13 +288,40 @@ router.patch('/:id/status', checkPermission('inbox:send'), async (req: AuthReque
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 
-// PATCH /api/conversations/:id/read
+// PATCH /api/conversations/:id/read — mark as read + send blue-tick receipts back to WA
 router.patch('/:id/read', checkPermission('inbox:send'), async (req: AuthRequest, res: Response) => {
   try {
     await query(
       'UPDATE conversations SET unread_count=0 WHERE id=$1 AND tenant_id=$2',
-      [req.params.id, req.user!.tenantId]
+      [req.params.id, req.user!.tenantId],
     );
+
+    // Send read receipts back to WhatsApp Personal (blue ticks)
+    const sock = getSession(req.user!.tenantId!);
+    if (sock) {
+      const unread = await query(
+        `SELECT wamid, remote_jid FROM messages
+         WHERE conversation_id=$1 AND sender='customer' AND status='delivered'
+           AND wamid IS NOT NULL AND remote_jid IS NOT NULL`,
+        [req.params.id],
+      );
+      if (unread.rows.length > 0) {
+        const keys = unread.rows.map((r: any) => ({
+          remoteJid: r.remote_jid,
+          id:        r.wamid,
+          fromMe:    false,
+        }));
+        sock.readMessages(keys).catch(() => null);
+
+        // Optimistically update status in DB
+        const wamids = unread.rows.map((r: any) => r.wamid);
+        await query(
+          `UPDATE messages SET status='read' WHERE wamid = ANY($1) AND tenant_id=$2`,
+          [wamids, req.user!.tenantId],
+        ).catch(() => null);
+      }
+    }
+
     res.json({ success: true });
   } catch { res.status(500).json({ error: 'Server error' }); }
 });

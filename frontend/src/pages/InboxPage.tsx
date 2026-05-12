@@ -6,6 +6,7 @@ import { getSocket } from '@/lib/socket';
 import {
   Search, Send, Paperclip, Check, CheckCheck, MessageCircle,
   ArrowLeft, StickyNote, Zap, ChevronDown, UserCheck, X, Smartphone, AlertCircle,
+  Loader2, Download,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -37,30 +38,83 @@ interface ApiMessage {
   sender: 'agent' | 'customer';
   body: string;
   is_note: boolean;
+  is_deleted?: boolean;
+  media_url?: string | null;
   status: string;
   created_at: string;
 }
 
+// Renders WA media fetched with auth headers → blob URL
+function MediaMessage({ msgId }: { msgId: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [isImg, setIsImg] = useState(false);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    const token = localStorage.getItem('dg_tok');
+    fetch(`/api/conversations/media/${msgId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => {
+        if (!r.ok) return null;
+        const ct = r.headers.get('content-type') ?? '';
+        setIsImg(ct.startsWith('image/'));
+        return r.blob();
+      })
+      .then((blob) => {
+        if (blob) {
+          objectUrl = URL.createObjectURL(blob);
+          setSrc(objectUrl);
+        }
+      })
+      .catch(() => null)
+      .finally(() => setLoading(false));
+
+    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [msgId]);
+
+  if (loading) return <div className="w-36 h-24 rounded-lg bg-black/10 animate-pulse" />;
+  if (!src) return null;
+  if (isImg) return <img src={src} alt="media" className="max-w-[220px] rounded-lg" />;
+  return (
+    <a href={src} download className="flex items-center gap-2 text-sm underline">
+      <Download className="w-4 h-4" /> Download file
+    </a>
+  );
+}
+
+const PAGE_SIZE = 50;
+
 export default function InboxPage() {
   const { staff, quickReplies } = useCrmStore();
   const currentUser = useAuthStore((s) => s.currentUser);
-  const [conversations, setConversations] = useState<ApiConversation[]>([]);
-  const [messages, setMessages] = useState<ApiMessage[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [filterTab, setFilterTab] = useState<FilterTab>('all');
-  const [channelFilter, setChannelFilter] = useState<ChannelFilter>('all');
-  const [messageText, setMessageText] = useState('');
-  const [isNote, setIsNote] = useState(false);
-  const [showAssign, setShowAssign] = useState(false);
+
+  const [conversations, setConversations]   = useState<ApiConversation[]>([]);
+  const [messages, setMessages]             = useState<ApiMessage[]>([]);
+  const [selectedId, setSelectedId]         = useState<string | null>(null);
+  const [search, setSearch]                 = useState('');
+  const [filterTab, setFilterTab]           = useState<FilterTab>('all');
+  const [channelFilter, setChannelFilter]   = useState<ChannelFilter>('all');
+  const [messageText, setMessageText]       = useState('');
+  const [isNote, setIsNote]                 = useState(false);
+  const [showAssign, setShowAssign]         = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
-  const [showList, setShowList] = useState(true);
-  const [sending, setSending] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [showList, setShowList]             = useState(true);
+  const [sending, setSending]               = useState(false);
+  const [hasMore, setHasMore]               = useState(false);
+  const [loadingMore, setLoadingMore]       = useState(false);
+
+  const messagesEndRef       = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const selectedIdRef        = useRef<string | null>(null);
+  const typingTimeoutRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Keep ref in sync so socket handlers don't stale-close
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
 
-  // If the selected conversation disappears (e.g. filtered out after reload), show the list
   useEffect(() => {
     if (!selected && !showList) setShowList(true);
   }, [selected]);
@@ -73,55 +127,115 @@ export default function InboxPage() {
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
 
-  // Real-time: listen for new messages and conversation updates via Socket.io
+  // Load a page of messages; `before` is an ISO timestamp for the oldest visible message
+  const loadMessages = useCallback(async (convId: string, before?: string) => {
+    const url = `/api/conversations/${convId}/messages?limit=${PAGE_SIZE}${before ? `&before=${encodeURIComponent(before)}` : ''}`;
+    const rows = await api.get<ApiMessage[]>(url);
+    return rows;
+  }, []);
+
+  // When conversation changes: load latest messages, mark read
+  useEffect(() => {
+    if (!selectedId) { setMessages([]); setHasMore(false); return; }
+    loadMessages(selectedId).then((rows) => {
+      setMessages(rows);
+      setHasMore(rows.length >= PAGE_SIZE);
+    }).catch(() => {});
+    api.patch(`/api/conversations/${selectedId}/read`, {}).catch(() => {});
+    setConversations((prev) =>
+      prev.map((c) => c.id === selectedId ? { ...c, unread_count: 0 } : c),
+    );
+  }, [selectedId, loadMessages]);
+
+  // Scroll to bottom when conversation first opens
+  useEffect(() => {
+    if (messages.length > 0 && !loadingMore) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    }
+  }, [selectedId]); // only on conv switch, not every new message
+
+  // Scroll to bottom on new outgoing message
+  useEffect(() => {
+    const last = messages[messages.length - 1];
+    if (last?.sender === 'agent') {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages.length]);
+
+  // Load older messages when scrolled to top
+  const handleLoadMore = useCallback(async () => {
+    if (!selectedId || loadingMore || !hasMore) return;
+    const oldest = messages[0];
+    if (!oldest) return;
+    setLoadingMore(true);
+    const container = messagesContainerRef.current;
+    const prevHeight = container?.scrollHeight ?? 0;
+    try {
+      const older = await loadMessages(selectedId, oldest.created_at);
+      setMessages((prev) => [...older, ...prev]);
+      setHasMore(older.length >= PAGE_SIZE);
+      // Preserve scroll position after prepend
+      requestAnimationFrame(() => {
+        if (container) {
+          container.scrollTop = container.scrollHeight - prevHeight;
+        }
+      });
+    } catch {
+      toast.error('Failed to load older messages');
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [selectedId, messages, loadingMore, hasMore, loadMessages]);
+
+  // Socket: real-time events
   useEffect(() => {
     const socket = getSocket();
 
     const onNewMessage = (msg: ApiMessage) => {
-      if (msg.sender === 'customer') {
-        setMessages((prev) =>
-          prev[0]?.conversation_id === msg.conversation_id ? [...prev, msg] : prev
-        );
-        setConversations((prev) =>
-          prev.map((c) =>
-            c.id === msg.conversation_id
-              ? { ...c, last_message: msg.body, last_message_at: msg.created_at, unread_count: c.unread_count + 1 }
-              : c
-          )
-        );
-      }
+      setMessages((prev) => {
+        if (msg.conversation_id !== selectedIdRef.current) return prev;
+        if (prev.some((m) => m.id === msg.id)) return prev; // deduplicate
+        return [...prev, msg];
+      });
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === msg.conversation_id
+            ? {
+                ...c,
+                last_message:    msg.body,
+                last_message_at: msg.created_at,
+                unread_count:    msg.sender === 'customer' && c.id !== selectedIdRef.current
+                  ? c.unread_count + 1
+                  : c.unread_count,
+              }
+            : c,
+        ),
+      );
+    };
+
+    const onMessageUpdated = (update: Partial<ApiMessage> & { id: string }) => {
+      setMessages((prev) =>
+        prev.map((m) => m.id === update.id ? { ...m, ...update } : m),
+      );
     };
 
     const onConvUpdated = (conv: ApiConversation) => {
       setConversations((prev) =>
         prev.some((c) => c.id === conv.id)
           ? prev.map((c) => c.id === conv.id ? { ...c, ...conv } : c)
-          : [conv, ...prev]
+          : [conv, ...prev],
       );
     };
 
-    socket.on('message:new', onNewMessage);
+    socket.on('message:new',     onNewMessage);
+    socket.on('message:updated', onMessageUpdated);
     socket.on('conversation:updated', onConvUpdated);
     return () => {
-      socket.off('message:new', onNewMessage);
+      socket.off('message:new',     onNewMessage);
+      socket.off('message:updated', onMessageUpdated);
       socket.off('conversation:updated', onConvUpdated);
     };
   }, []);
-
-  useEffect(() => {
-    if (!selectedId) { setMessages([]); return; }
-    api.get<ApiMessage[]>(`/api/conversations/${selectedId}/messages`)
-      .then(setMessages)
-      .catch(() => {});
-    api.patch(`/api/conversations/${selectedId}/read`, {}).catch(() => {});
-    setConversations((prev) =>
-      prev.map((c) => c.id === selectedId ? { ...c, unread_count: 0 } : c)
-    );
-  }, [selectedId]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
 
   const getInitials = (name: string | null | undefined, phone: string | null | undefined) => {
     const display = name || phone || '?';
@@ -130,30 +244,32 @@ export default function InboxPage() {
 
   const filtered = conversations.filter((c) => {
     if (search && !(c.lead_name || '').toLowerCase().includes(search.toLowerCase())) return false;
-    if (channelFilter === 'waba' && c.channel !== 'whatsapp') return false;
+    if (channelFilter === 'waba'        && c.channel !== 'whatsapp')    return false;
     if (channelFilter === 'personal_wa' && c.channel !== 'personal_wa') return false;
-    if (filterTab === 'mine') return c.assigned_to === currentUser?.id;
-    if (filterTab === 'unread') return c.unread_count > 0;
+    if (filterTab === 'mine')       return c.assigned_to === currentUser?.id;
+    if (filterTab === 'unread')     return c.unread_count > 0;
     if (filterTab === 'unassigned') return !c.assigned_to;
-    if (filterTab === 'resolved') return c.status === 'resolved';
+    if (filterTab === 'resolved')   return c.status === 'resolved';
     return true;
   });
 
   const handleSend = async () => {
     if (!messageText.trim() || !selectedId || sending) return;
     setSending(true);
+    // Stop any typing presence update
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     try {
       const msg = await api.post<ApiMessage>(`/api/conversations/${selectedId}/messages`, {
         body: messageText.trim(),
         is_note: isNote,
       });
-      setMessages((prev) => [...prev, msg]);
+      setMessages((prev) => prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]);
       if (!isNote) {
         setConversations((prev) =>
           prev.map((c) => c.id === selectedId
             ? { ...c, last_message: messageText.trim(), last_message_at: new Date().toISOString() }
-            : c
-          )
+            : c,
+          ),
         );
       }
       if (msg.status === 'failed') {
@@ -162,11 +278,25 @@ export default function InboxPage() {
       setMessageText('');
       setIsNote(false);
       setShowQuickReplies(false);
+      requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }));
     } catch {
       toast.error('Failed to send message');
     } finally {
       setSending(false);
     }
+  };
+
+  // Debounced typing indicator — fires POST /typing, auto-stops after 3s
+  const handleTypingChange = (val: string) => {
+    setMessageText(val);
+    if (!selectedId) return;
+    const conv = conversations.find((c) => c.id === selectedId);
+    if (conv?.channel !== 'personal_wa') return;
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    api.post(`/api/conversations/${selectedId}/typing`, {}).catch(() => null);
+    typingTimeoutRef.current = setTimeout(() => {
+      typingTimeoutRef.current = null;
+    }, 3000);
   };
 
   const handleAssign = async (staffId: string) => {
@@ -177,8 +307,8 @@ export default function InboxPage() {
       setConversations((prev) =>
         prev.map((c) => c.id === selectedId
           ? { ...c, assigned_to: staffId, assigned_name: member?.name ?? null }
-          : c
-        )
+          : c,
+        ),
       );
       toast.success(`Assigned to ${member?.name ?? 'staff'}`);
     } catch { toast.error('Failed to assign'); }
@@ -190,7 +320,7 @@ export default function InboxPage() {
     try {
       await api.patch(`/api/conversations/${selectedId}/status`, { status });
       setConversations((prev) =>
-        prev.map((c) => c.id === selectedId ? { ...c, status } : c)
+        prev.map((c) => c.id === selectedId ? { ...c, status } : c),
       );
       toast.success(status === 'resolved' ? 'Conversation resolved' : 'Conversation reopened');
     } catch { toast.error('Failed to update status'); }
@@ -208,7 +338,7 @@ export default function InboxPage() {
 
   const formatMsgDate = (ts: string) => {
     const d = new Date(ts);
-    if (isToday(d)) return 'Today';
+    if (isToday(d))     return 'Today';
     if (isYesterday(d)) return 'Yesterday';
     return format(d, 'MMM d');
   };
@@ -235,7 +365,7 @@ export default function InboxPage() {
           </div>
           <div className="flex gap-1 overflow-x-auto pb-0.5">
             {tabs.map(({ key, label }) => {
-              const count = key === 'unread' ? conversations.filter((c) => c.unread_count > 0).length
+              const count = key === 'unread'     ? conversations.filter((c) => c.unread_count > 0).length
                 : key === 'unassigned' ? conversations.filter((c) => !c.assigned_to).length : 0;
               return (
                 <button key={key} onClick={() => setFilterTab(key)}
@@ -293,8 +423,8 @@ export default function InboxPage() {
                 </div>
                 <div className="flex items-center gap-1 mt-0.5">
                   <Badge variant="secondary" className={cn('text-[10px] px-1.5 py-0 border-0',
-                    conv.status === 'open' && 'bg-green-100 text-green-700',
-                    conv.status === 'pending' && 'bg-yellow-100 text-yellow-700',
+                    conv.status === 'open'     && 'bg-green-100 text-green-700',
+                    conv.status === 'pending'  && 'bg-yellow-100 text-yellow-700',
                     conv.status === 'resolved' && 'bg-muted text-muted-foreground')}>
                     {conv.status}
                   </Badge>
@@ -330,8 +460,8 @@ export default function InboxPage() {
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="secondary" className={cn('text-xs',
-                  selected.status === 'open' && 'bg-green-100 text-green-700',
-                  selected.status === 'pending' && 'bg-yellow-100 text-yellow-700',
+                  selected.status === 'open'     && 'bg-green-100 text-green-700',
+                  selected.status === 'pending'  && 'bg-yellow-100 text-yellow-700',
                   selected.status === 'resolved' && 'bg-muted text-muted-foreground')}>
                   {selected.status}
                 </Badge>
@@ -369,9 +499,24 @@ export default function InboxPage() {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+              {/* Load older messages */}
+              {hasMore && (
+                <div className="flex justify-center py-2">
+                  <button
+                    onClick={handleLoadMore}
+                    disabled={loadingMore}
+                    className="text-xs text-[#7a6b5c] hover:text-primary flex items-center gap-1 px-3 py-1.5 rounded-lg hover:bg-[#f5ede3] transition-colors disabled:opacity-50">
+                    {loadingMore
+                      ? <><Loader2 className="w-3 h-3 animate-spin" /> Loading…</>
+                      : 'Load older messages'}
+                  </button>
+                </div>
+              )}
+
               {messages.map((msg, i) => {
                 const showDate = i === 0 || formatMsgDate(msg.created_at) !== formatMsgDate(messages[i - 1].created_at);
+                const isDeleted = msg.is_deleted;
                 return (
                   <div key={msg.id}>
                     {showDate && (
@@ -381,27 +526,44 @@ export default function InboxPage() {
                     )}
                     <div className={cn('flex', msg.sender === 'agent' ? 'justify-end' : 'justify-start')}>
                       <div className={cn('max-w-[70%] p-3 text-sm',
-                        msg.is_note ? 'bg-yellow-50 border border-yellow-200 rounded-2xl'
+                        isDeleted                 ? 'bg-muted rounded-2xl'
+                          : msg.is_note           ? 'bg-yellow-50 border border-yellow-200 rounded-2xl'
                           : msg.sender === 'customer' ? 'bg-muted rounded-2xl rounded-tl-sm'
-                          : msg.status === 'failed' ? 'bg-red-500/80 text-white rounded-2xl rounded-tr-sm'
+                          : msg.status === 'failed'   ? 'bg-red-500/80 text-white rounded-2xl rounded-tr-sm'
                           : 'bg-primary text-primary-foreground rounded-2xl rounded-tr-sm')}>
-                        {msg.is_note && (
+
+                        {msg.is_note && !isDeleted && (
                           <p className="text-[10px] font-semibold text-yellow-600 mb-1 flex items-center gap-1">
                             <StickyNote className="w-3 h-3" /> Internal Note
                           </p>
                         )}
-                        <p className={msg.is_note ? 'text-yellow-800' : ''}>{msg.body}</p>
+
+                        {/* Media attachment (if downloaded) */}
+                        {msg.media_url && !isDeleted && (
+                          <div className="mb-1.5">
+                            <MediaMessage msgId={msg.id} />
+                          </div>
+                        )}
+
+                        <p className={cn(
+                          msg.is_note && !isDeleted    ? 'text-yellow-800' : '',
+                          isDeleted                    ? 'text-muted-foreground italic text-xs' : '',
+                        )}>
+                          {msg.body}
+                        </p>
+
                         <div className={cn('flex items-center gap-1 mt-1', msg.sender === 'agent' ? 'justify-end' : '')}>
                           <span className={cn('text-xs',
-                            msg.is_note ? 'text-yellow-600'
-                              : msg.sender === 'customer' ? 'text-muted-foreground'
+                            isDeleted                    ? 'text-muted-foreground'
+                              : msg.is_note              ? 'text-yellow-600'
+                              : msg.sender === 'customer'? 'text-muted-foreground'
                               : 'text-primary-foreground/70')}>
                             {format(new Date(msg.created_at), 'HH:mm')}
                           </span>
-                          {msg.sender === 'agent' && !msg.is_note && msg.status === 'read' && <CheckCheck className="w-3 h-3 text-blue-300" />}
-                          {msg.sender === 'agent' && !msg.is_note && msg.status === 'delivered' && <CheckCheck className="w-3 h-3 text-primary-foreground/50" />}
-                          {msg.sender === 'agent' && !msg.is_note && msg.status === 'sent' && <Check className="w-3 h-3 text-primary-foreground/50" />}
-                          {msg.sender === 'agent' && !msg.is_note && msg.status === 'failed' && (
+                          {msg.sender === 'agent' && !msg.is_note && !isDeleted && msg.status === 'read'      && <CheckCheck className="w-3 h-3 text-blue-300" />}
+                          {msg.sender === 'agent' && !msg.is_note && !isDeleted && msg.status === 'delivered' && <CheckCheck className="w-3 h-3 text-primary-foreground/50" />}
+                          {msg.sender === 'agent' && !msg.is_note && !isDeleted && msg.status === 'sent'      && <Check className="w-3 h-3 text-primary-foreground/50" />}
+                          {msg.sender === 'agent' && !msg.is_note && !isDeleted && msg.status === 'failed'    && (
                             <AlertCircle className="w-3 h-3 text-red-200" title="Not delivered to WhatsApp" />
                           )}
                         </div>
@@ -455,12 +617,12 @@ export default function InboxPage() {
                   className={cn('flex-1', isNote && 'border-yellow-300 bg-yellow-50 focus-visible:ring-yellow-200')}
                   placeholder={isNote ? 'Write an internal note...' : 'Type a message...'}
                   value={messageText}
-                  onChange={(e) => setMessageText(e.target.value)}
+                  onChange={(e) => handleTypingChange(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
                 />
                 <Button onClick={handleSend} disabled={!messageText.trim() || sending}
                   className={isNote ? 'bg-yellow-500 hover:bg-yellow-600' : ''}>
-                  <Send className="w-4 h-4" />
+                  {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </Button>
               </div>
             </div>
