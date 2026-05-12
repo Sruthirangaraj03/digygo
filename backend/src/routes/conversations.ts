@@ -304,7 +304,19 @@ router.post('/:id/messages', checkPermission('inbox:send'), async (req: AuthRequ
         deliveryFailed = true;
       } else {
         try {
-          wamid = await sendText(req.user!.tenantId!, toJID(conv.lead_phone), body.trim());
+          // For multi-device WA contacts the conversation phone is a raw LID digit string.
+          // Use the remote_jid stored on their last message so the reply goes to the @lid JID.
+          let targetJid = toJID(conv.lead_phone);
+          const lidMsgRes = await query(
+            `SELECT remote_jid FROM messages
+             WHERE conversation_id=$1 AND remote_jid LIKE '%@lid'
+             ORDER BY created_at DESC LIMIT 1`,
+            [req.params.id],
+          ).catch(() => null);
+          if (lidMsgRes?.rows[0]?.remote_jid) {
+            targetJid = lidMsgRes.rows[0].remote_jid;
+          }
+          wamid = await sendText(req.user!.tenantId!, targetJid, body.trim());
         } catch (e: any) {
           console.error('[Personal WA] Send error:', e?.message ?? e);
           deliveryFailed = true;
@@ -370,13 +382,19 @@ router.post('/:id/media', checkPermission('inbox:send'), upload.single('file'), 
     fs.writeFileSync(filePath, req.file.buffer);
     const relPath  = `wa_media/${req.user!.tenantId}/${filename}`;
 
-    // Send via Baileys
+    // Send via Baileys — resolve @lid JID the same way as text send
     let wamid: string | null = null;
     let deliveryFailed = false;
     try {
+      let mediaTargetJid = toJID(conv.lead_phone);
+      const lidMR = await query(
+        `SELECT remote_jid FROM messages WHERE conversation_id=$1 AND remote_jid LIKE '%@lid' ORDER BY created_at DESC LIMIT 1`,
+        [req.params.id],
+      ).catch(() => null);
+      if (lidMR?.rows[0]?.remote_jid) mediaTargetJid = lidMR.rows[0].remote_jid;
       wamid = await sendMedia(
         req.user!.tenantId!,
-        toJID(conv.lead_phone),
+        mediaTargetJid,
         req.file.buffer,
         req.file.mimetype,
         req.file.originalname,

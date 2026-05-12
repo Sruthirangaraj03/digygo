@@ -100,12 +100,16 @@ export async function handleInboundMessage(
   const historical       = opts?.historical ?? false;
   const waPhone          = opts?.waPhone ?? null;
   const rawPhone   = fromJID(remoteJID);
-  const phone      = normalizePhone(rawPhone);
+  // @lid JIDs are multi-device WA identifiers — don't normalizePhone (that would prepend country
+  // code to 14-digit LID digits, making them 16 digits and failing the length check).
+  // Use raw LID digits as the phone key; the remote_jid stored on messages lets us reply later.
+  const isLid  = remoteJID.endsWith('@lid');
+  const phone  = isLid ? rawPhone : normalizePhone(rawPhone);
   if (!phone || phone.length > 15) { console.log('[MSG] skip: invalid phone', phone); return null; }
 
   const hasMedia = detectMedia(msg);
   const text     = extractText(msg);
-  console.log(`[MSG] remoteJid=${remoteJID} fromMe=${fromMe} phone=${phone} text="${text}" hasMedia=${hasMedia} historical=${historical}`);
+  console.log(`[MSG] remoteJid=${remoteJID} fromMe=${fromMe} phone=${phone} isLid=${isLid} text="${text}" hasMedia=${hasMedia} historical=${historical}`);
   if (!text) { console.log('[MSG] skip: empty text'); return null; }
   if (text === '[Media message]' && !hasMedia) { console.log('[MSG] skip: protocol catch-all'); return null; }
 
