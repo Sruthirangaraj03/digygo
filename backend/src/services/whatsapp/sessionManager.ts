@@ -110,6 +110,8 @@ async function storeLidMapping(tenantId: string, lidDigits: string, phoneDigits:
         [phoneDigits, lidConvId],
       );
       console.log(`[WA] Updated LID conv phone: ${lidDigits} → ${phoneDigits}`);
+      // Notify frontend so the card shows the real phone number immediately
+      emitToTenant(tenantId, 'conversation:updated', { id: lidConvId, phone: `+${phoneDigits}` });
     }
   } catch (e) {
     console.error('[WA] LID merge error:', e);

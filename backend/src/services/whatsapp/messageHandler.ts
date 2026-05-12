@@ -100,11 +100,25 @@ export async function handleInboundMessage(
   const historical       = opts?.historical ?? false;
   const waPhone          = opts?.waPhone ?? null;
   const rawPhone   = fromJID(remoteJID);
-  // @lid JIDs are multi-device WA identifiers — don't normalizePhone (that would prepend country
-  // code to 14-digit LID digits, making them 16 digits and failing the length check).
-  // Use raw LID digits as the phone key; the remote_jid stored on messages lets us reply later.
-  const isLid  = remoteJID.endsWith('@lid');
-  const phone  = isLid ? rawPhone : normalizePhone(rawPhone);
+  // @lid JIDs are multi-device WA identifiers. Check the LID→phone map first so we always
+  // store and display the real phone number, not the 14-digit LID identifier.
+  let isLid = remoteJID.endsWith('@lid');
+  let phone: string;
+  if (isLid) {
+    const lidMap = await query(
+      'SELECT phone_digits FROM wa_lid_phone_map WHERE tenant_id=$1::uuid AND lid_digits=$2',
+      [tenantId, rawPhone],
+    ).catch(() => null);
+    if (lidMap?.rows[0]?.phone_digits) {
+      phone = normalizePhone(lidMap.rows[0].phone_digits);
+      isLid = false;
+    } else {
+      // Mapping not yet known — use LID digits temporarily; storeLidMapping will fix it later
+      phone = rawPhone;
+    }
+  } else {
+    phone = normalizePhone(rawPhone);
+  }
   if (!phone || phone.length > 15) { console.log('[MSG] skip: invalid phone', phone); return null; }
 
   const hasMedia = detectMedia(msg);
