@@ -117,8 +117,68 @@ async function storeLidMapping(tenantId: string, lidDigits: string, phoneDigits:
 }
 
 /**
+ * Query WA servers for LIDs of a batch of phone numbers.
+ * Uses executeUSyncQuery with both contact + LID protocols (duck-typed, no internal imports).
+ * Returns Map<phoneDigits, lidDigits>.
+ */
+async function lookupLidForPhonesBatch(sock: any, phones: string[]): Promise<Map<string, string>> {
+  const phoneToLid = new Map<string, string>();
+  if (!phones.length) return phoneToLid;
+  try {
+    const findChild = (node: any, tag: string): any =>
+      (Array.isArray(node?.content) ? node.content : []).find((n: any) => n.tag === tag);
+
+    const usyncQuery = {
+      protocols: [
+        {
+          name: 'contact',
+          getQueryElement: () => ({ tag: 'contact', attrs: {} }),
+          getUserElement: (_u: any) => ({ tag: 'contact', attrs: {} }),
+        },
+        {
+          name: 'lid',
+          getQueryElement: () => ({ tag: 'lid', attrs: {} }),
+          getUserElement: (_u: any) => null,
+        },
+      ],
+      users: phones.map(phone => ({ phone: `+${phone}` })),
+      context: 'interactive',
+      mode:    'query',
+      parseUSyncQueryResult(rawResult: any) {
+        if (rawResult?.attrs?.type !== 'result') return null;
+        try {
+          const usync = findChild(rawResult, 'usync');
+          const list  = findChild(usync, 'list');
+          const items: any[] = [];
+          for (const uNode of (list?.content ?? [])) {
+            if (!Array.isArray(uNode?.content)) continue;
+            const phoneJid = uNode.attrs?.jid as string | undefined;
+            const lidNode  = uNode.content.find((c: any) => c.tag === 'lid');
+            const lidJid   = lidNode?.attrs?.val as string | undefined;
+            if (phoneJid) items.push({ id: phoneJid, lid: lidJid ?? null });
+          }
+          return { list: items, sideList: [] };
+        } catch { return null; }
+      },
+    };
+
+    const queryResult = await sock.executeUSyncQuery(usyncQuery);
+    for (const item of (queryResult?.list ?? [])) {
+      if (item?.id && item?.lid) {
+        const phone    = (item.id  as string).split('@')[0];
+        const lidDigit = (item.lid as string).split('@')[0];
+        if (phone && lidDigit) phoneToLid.set(phone, lidDigit);
+      }
+    }
+  } catch (e: any) {
+    console.error('[WA] LID batch lookup error:', e?.message ?? e);
+  }
+  return phoneToLid;
+}
+
+/**
  * Query WA servers for the LID of every known conversation phone in this tenant.
- * Runs once 5s after session connects. Rate-limited to avoid WA throttling.
+ * Runs once 5s after session connects.
  */
 async function resolveLidsForTenant(tenantId: string, sock: ReturnType<typeof makeWASocket>): Promise<void> {
   const rows = await query(
@@ -132,25 +192,21 @@ async function resolveLidsForTenant(tenantId: string, sock: ReturnType<typeof ma
     [tenantId],
   );
 
-  for (const row of rows.rows) {
-    const phone = row.phone as string;
-    if (!phone) continue;
-    // Skip phones that already have a LID mapping
-    const alreadyMapped = [...lidToPhone.values()].includes(phone);
-    if (alreadyMapped) continue;
-    try {
-      const result = await (sock as any).onWhatsApp(phone);
-      const info = Array.isArray(result) ? result[0] : result;
-      if (info?.lid) {
-        const lidDigits = (info.lid as string).split('@')[0];
-        if (lidDigits && !lidToPhone.has(lidDigits)) {
-          console.log(`[WA] onWhatsApp resolved: ${phone} → lid=${lidDigits}`);
-          await storeLidMapping(tenantId, lidDigits, phone);
-        }
-      }
-    } catch { /* ignore per-phone errors */ }
-    // Rate-limit: 1 query per 800ms to avoid WA throttling
-    await new Promise(r => setTimeout(r, 800));
+  const alreadyMappedPhones = new Set(lidToPhone.values());
+  const phones = rows.rows
+    .map(r => r.phone as string)
+    .filter(p => p && !alreadyMappedPhones.has(p));
+
+  if (!phones.length) return;
+  console.log(`[WA] Resolving LIDs for ${phones.length} phone(s) via USync...`);
+
+  const phoneToLid = await lookupLidForPhonesBatch(sock as any, phones);
+  for (const [phone, lidDigits] of phoneToLid) {
+    console.log(`[WA] USync resolved: ${phone} → lid=${lidDigits}`);
+    await storeLidMapping(tenantId, lidDigits, phone);
+  }
+  if (!phoneToLid.size) {
+    console.log(`[WA] USync: no LID mappings found for ${phones.length} phone(s)`);
   }
 }
 
@@ -621,13 +677,11 @@ export async function sendText(tenantId: string, jid: string, text: string): Pro
 
   // Pre-populate LID mapping for this recipient so their replies are routed correctly
   const recipientDigits = jid.split('@')[0];
-  if (recipientDigits && !jid.endsWith('@lid')) {
-    (sock as any).onWhatsApp(recipientDigits).then((result: any) => {
-      const info = Array.isArray(result) ? result[0] : result;
-      if (info?.lid) {
-        const lidDigits = (info.lid as string).split('@')[0];
-        if (lidDigits && !lidToPhone.has(lidDigits)) {
-          storeLidMapping(tenantId, lidDigits, recipientDigits).catch(() => null);
+  if (recipientDigits && !jid.endsWith('@lid') && ![...lidToPhone.values()].includes(recipientDigits)) {
+    lookupLidForPhonesBatch(sock as any, [recipientDigits]).then(async (map) => {
+      for (const [phone, lidDigits] of map) {
+        if (!lidToPhone.has(lidDigits)) {
+          await storeLidMapping(tenantId, lidDigits, phone).catch(() => null);
         }
       }
     }).catch(() => null);
