@@ -44,6 +44,9 @@ const intentionallyStopped = new Set<string>();
 // WA contacts cache (phone book contacts from the connected device)
 const waContactsCache = new Map<string, { id: string; name: string; phone: string }[]>();
 
+// LID → real phone mapping (multi-device WhatsApp sends @lid JIDs instead of phone JIDs)
+const lidToPhone = new Map<string, string>(); // key: "86256281202697" → value: "918072256598"
+
 const MAX_RETRIES = 5;
 
 function sessionDir(tenantId: string): string {
@@ -281,7 +284,20 @@ export async function startSession(tenantId: string): Promise<void> {
     const sessionPhone = sock.user?.id ? jidNormalizedUser(sock.user.id).split('@')[0] : null;
 
     console.log(`[WA] messages.upsert type=${type} count=${messages.length} session=${sessionPhone}`);
-    for (const msg of messages) {
+    for (let msg of messages) {
+      // Resolve @lid JIDs to real phone JIDs using our contacts map
+      const remoteJid = msg.key?.remoteJid ?? '';
+      if (remoteJid.endsWith('@lid')) {
+        const lidDigits = remoteJid.split('@')[0];
+        const realPhone = lidToPhone.get(lidDigits);
+        if (realPhone) {
+          // Patch the message key so handleInboundMessage sees the real phone JID
+          msg = { ...msg, key: { ...msg.key, remoteJid: `${realPhone}@s.whatsapp.net` } };
+          console.log(`[WA] LID resolved: ${remoteJid} → ${realPhone}@s.whatsapp.net`);
+        } else {
+          console.log(`[WA] LID not resolved: ${remoteJid} (no contact mapping yet)`);
+        }
+      }
       console.log(`[WA] msg remoteJid=${msg.key?.remoteJid} fromMe=${msg.key?.fromMe} hasMsg=${!!msg.message} keys=${msg.message ? Object.keys(msg.message).join(',') : 'none'}`);
       const result = await handleInboundMessage(tenantId, msg, { historical, waPhone: sessionPhone }).catch((e) => {
         console.error('[WA] handleInboundMessage error:', e?.message ?? e);
@@ -361,6 +377,13 @@ export async function startSession(tenantId: string): Promise<void> {
     for (const contact of contacts) {
       const digits = contact.id?.split('@')[0];
       if (!digits) continue;
+
+      // Build LID → phone mapping for multi-device contacts
+      // contact.id is the real JID (phone@s.whatsapp.net), contact.lid is the linked device id
+      const lidDigits = (contact as any).lid?.split('@')[0];
+      if (lidDigits && digits) {
+        lidToPhone.set(lidDigits, digits);
+      }
 
       if (contact.name) {
         // Update or add to in-memory cache

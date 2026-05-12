@@ -22,7 +22,10 @@ function extractText(msg: any): string {
   // Skip known protocol/system message types — no human content
   if (inner.senderKeyDistributionMessage) return '';
   if (inner.protocolMessage)              return '';
-  if (inner.messageContextInfo)           return '';
+  // messageContextInfo is ONLY a system frame when it is the sole key — skip only in that case
+  if (inner.messageContextInfo && !inner.conversation && !inner.extendedTextMessage &&
+      !inner.imageMessage && !inner.videoMessage && !inner.audioMessage &&
+      !inner.documentMessage && !inner.stickerMessage && !inner.reactionMessage) return '';
 
   if (inner.conversation)              return inner.conversation;
   if (inner.extendedTextMessage?.text) return inner.extendedTextMessage.text;
