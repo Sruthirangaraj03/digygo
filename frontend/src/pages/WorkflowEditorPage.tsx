@@ -13,6 +13,7 @@ import {
   ListChecks, Code2, CalendarDays, CalendarClock, CalendarRange, ArrowRight,
   UserMinus, UserX, FolderX, PlayCircle, PauseCircle, LogOut, SquareMinus, Users, UserRoundCog,
   RotateCcw, ChevronRight, Copy, Power, Info, ExternalLink, Loader2, TrendingUp, MapPin, RefreshCw,
+  Paperclip, Upload, Eye, Edit2,
 } from 'lucide-react';
 import type { ElementType } from 'react';
 import { Button } from '@/components/ui/button';
@@ -288,6 +289,7 @@ type PipelineOpt = { id: string; name: string; stages: Array<{ id: string; name:
 type StaffOpt = { id: string; name: string };
 type FormOpt = { id: string; name: string };
 type TemplateOpt = { id: string; name: string; body?: string };
+type WaTemplate = { id: string; name: string; message: string; file_path: string | null; file_type: string | null; file_name: string | null; created_at: string; updated_at: string };
 
 function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff, forms, metaForms, eventTypes, bookingLinks, metaPages, webhookUrls, contactGroups, allowReentry, onToggleReentry, workflowId, apiToken, onRegenerateToken }: {
   node: WFNode;
@@ -1384,6 +1386,156 @@ function AssignStaffPanel({ cfg, staff, onUpdate }: {
   );
 }
 
+// ── WA Personal Templates Modal ───────────────────────────────────────────────
+function WaTemplatesModal({ onClose, onSelect }: { onClose: () => void; onSelect?: (t: WaTemplate) => void }) {
+  const [templates, setTemplates] = useState<WaTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [editItem, setEditItem] = useState<Partial<WaTemplate> | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editMessage, setEditMessage] = useState('');
+  const [editFile, setEditFile] = useState<File | null>(null);
+  const [removeFile, setRemoveFile] = useState(false);
+  const [preview, setPreview] = useState<WaTemplate | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const load = () => {
+    setLoading(true);
+    api.get<WaTemplate[]>('/wa-personal-templates').then((rows) => {
+      setTemplates(rows);
+    }).catch(() => toast.error('Failed to load templates')).finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const openCreate = () => { setEditItem({}); setEditName(''); setEditMessage(''); setEditFile(null); setRemoveFile(false); };
+  const openEdit = (t: WaTemplate) => { setEditItem(t); setEditName(t.name); setEditMessage(t.message); setEditFile(null); setRemoveFile(false); };
+
+  const handleSave = async () => {
+    if (!editName.trim()) { toast.error('Name is required'); return; }
+    setSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append('name', editName.trim());
+      fd.append('message', editMessage);
+      if (removeFile) fd.append('removeFile', 'true');
+      if (editFile) fd.append('file', editFile);
+      const tok = getAccessToken();
+      if (editItem?.id) {
+        await fetch(`${BASE}/api/wa-personal-templates/${editItem.id}`, { method: 'PATCH', headers: tok ? { Authorization: `Bearer ${tok}` } : {}, credentials: 'include', body: fd });
+      } else {
+        await fetch(`${BASE}/api/wa-personal-templates`, { method: 'POST', headers: tok ? { Authorization: `Bearer ${tok}` } : {}, credentials: 'include', body: fd });
+      }
+      toast.success(editItem?.id ? 'Template updated' : 'Template created');
+      setEditItem(null);
+      load();
+    } catch { toast.error('Save failed'); } finally { setSaving(false); }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this template?')) return;
+    await fetch(`${BASE}/api/wa-personal-templates/${id}`, { method: 'DELETE', headers: (() => { const t = getAccessToken(); return t ? { Authorization: `Bearer ${t}` } : {}; })(), credentials: 'include' });
+    toast.success('Deleted');
+    load();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b">
+          <div className="flex items-center gap-2">
+            <Paperclip className="w-5 h-5 text-teal-600" />
+            <span className="font-bold text-lg">WA Personal Templates</span>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
+        </div>
+
+        {editItem !== null ? (
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <h3 className="font-semibold text-base">{editItem.id ? 'Edit Template' : 'New Template'}</h3>
+            <div>
+              <label className="text-sm font-semibold block mb-1">Name <span className="text-destructive">*</span></label>
+              <input className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="e.g. Welcome Message" />
+            </div>
+            <div>
+              <label className="text-sm font-semibold block mb-1">Message</label>
+              <textarea className="w-full border border-border rounded-lg px-3 py-2 text-sm min-h-[100px] resize-y focus:outline-none focus:ring-2 focus:ring-primary/20" value={editMessage} onChange={(e) => setEditMessage(e.target.value)} placeholder="Type message... Supports {first_name}, {last_name}, {phone}, {email}" />
+            </div>
+            <div>
+              <label className="text-sm font-semibold block mb-1">Attachment (optional)</label>
+              {editItem.id && editItem.file_name && !removeFile && (
+                <div className="flex items-center gap-2 mb-2 text-sm text-muted-foreground bg-muted/30 rounded-lg px-3 py-2">
+                  <Paperclip className="w-4 h-4 shrink-0" />
+                  <span className="flex-1 truncate">{editItem.file_name}</span>
+                  <button onClick={() => setRemoveFile(true)} className="text-destructive hover:underline text-xs">Remove</button>
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 text-sm px-3 py-1.5 border border-border rounded-lg hover:bg-muted/30">
+                  <Upload className="w-4 h-4" /> {editFile ? editFile.name : 'Choose file'}
+                </button>
+                {editFile && <button onClick={() => setEditFile(null)} className="text-xs text-muted-foreground hover:underline">Clear</button>}
+              </div>
+              <input ref={fileRef} type="file" className="hidden" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.mp4,.mp3" onChange={(e) => { setEditFile(e.target.files?.[0] ?? null); e.target.value = ''; }} />
+              <p className="text-xs text-muted-foreground mt-1">Supported: images, PDF, Word, Excel, PowerPoint, ZIP, video, audio. Max 25MB.</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setEditItem(null)}>Cancel</Button>
+              <Button size="sm" disabled={saving} onClick={handleSave}>{saving ? 'Saving…' : 'Save Template'}</Button>
+            </div>
+          </div>
+        ) : preview !== null ? (
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <div className="flex items-center gap-2 mb-2">
+              <button onClick={() => setPreview(null)} className="text-muted-foreground hover:text-foreground"><ArrowLeft className="w-4 h-4" /></button>
+              <span className="font-semibold">{preview.name}</span>
+            </div>
+            <div className="bg-muted/20 rounded-xl p-4 text-sm whitespace-pre-wrap">{preview.message || <span className="text-muted-foreground italic">No message text</span>}</div>
+            {preview.file_name && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/30 rounded-lg px-3 py-2">
+                <Paperclip className="w-4 h-4" /><span className="truncate">{preview.file_name}</span>
+                <span className="text-xs ml-auto">{preview.file_type}</span>
+              </div>
+            )}
+            {onSelect && (
+              <Button className="w-full" onClick={() => { onSelect(preview!); onClose(); }}>Use This Template</Button>
+            )}
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <span className="text-sm text-muted-foreground">{templates.length} template{templates.length !== 1 ? 's' : ''}</span>
+              <Button size="sm" onClick={openCreate}><Plus className="w-4 h-4 mr-1" />New Template</Button>
+            </div>
+            {loading ? (
+              <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+            ) : templates.length === 0 ? (
+              <div className="text-center py-10 text-muted-foreground text-sm">No templates yet. Click "New Template" to create one.</div>
+            ) : (
+              <div className="space-y-2">
+                {templates.map((t) => (
+                  <div key={t.id} className="flex items-center gap-3 border border-border rounded-xl px-4 py-3 hover:bg-muted/20">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm truncate">{t.name}</div>
+                      <div className="text-xs text-muted-foreground truncate">{t.message || '(no text)'}{t.file_name ? ` · 📎 ${t.file_name}` : ''}</div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {onSelect && <button onClick={() => { onSelect(t); onClose(); }} className="text-xs px-2 py-1 bg-teal-50 text-teal-700 border border-teal-200 rounded-lg hover:bg-teal-100">Use</button>}
+                      <button onClick={() => setPreview(t)} className="p-1.5 rounded-lg hover:bg-muted/30 text-muted-foreground hover:text-foreground"><Eye className="w-4 h-4" /></button>
+                      <button onClick={() => openEdit(t)} className="p-1.5 rounded-lg hover:bg-muted/30 text-muted-foreground hover:text-foreground"><Edit2 className="w-4 h-4" /></button>
+                      <button onClick={() => handleDelete(t.id)} className="p-1.5 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-destructive"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Action Config Panel ────────────────────────────────────────────────────────
 function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workflows, routingSets, contactGroups, onRefreshPipelines, refreshingPipelines }: {
   node: WFNode;
@@ -1404,6 +1556,21 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
   const customFields = useCrmStore((s) => s.customFields);
   const additionalFields = useCrmStore((s) => s.additionalFields);
   const systemFields = useCrmStore((s) => s.systemFields);
+
+  // WA Personal template state
+  const [waTemplates, setWaTemplates] = useState<WaTemplate[]>([]);
+  const [loadingWaTemplates, setLoadingWaTemplates] = useState(false);
+  const [showWaTemplatesModal, setShowWaTemplatesModal] = useState(false);
+  const [waTemplateMode, setWaTemplateMode] = useState<'write' | 'template'>((cfg.templateId as string) ? 'template' : 'write');
+
+  useEffect(() => {
+    if (node.actionType === 'send_whatsapp_personal') {
+      setLoadingWaTemplates(true);
+      api.get<WaTemplate[]>('/wa-personal-templates').then(setWaTemplates).catch(() => {}).finally(() => setLoadingWaTemplates(false));
+    }
+  }, [node.actionType]);
+
+  const selectedWaTemplate = waTemplates.find((t) => t.id === (cfg.templateId as string));
 
   return (
     <div className="space-y-5">
@@ -1935,15 +2102,70 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
 
       {/* WhatsApp Personal */}
       {node.actionType === 'send_whatsapp_personal' && (<>
-        <p className="text-sm text-muted-foreground leading-relaxed">Send a message via your connected personal WhatsApp session (QR scan). Requires an active personal WA connection in Integrations.</p>
-        <FieldRow label="Message" required>
-          <textarea
-            className="w-full border border-border rounded-lg px-3 py-2 text-sm min-h-[120px] resize-y focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
-            placeholder={`Type your message... Supports variables: {first_name}, {last_name}, {phone}, {email}`}
-            value={(cfg.message as string) ?? ''}
-            onChange={(e) => onUpdate({ config: { ...cfg, message: e.target.value } })}
+        {showWaTemplatesModal && (
+          <WaTemplatesModal
+            onClose={() => { setShowWaTemplatesModal(false); setLoadingWaTemplates(true); api.get<WaTemplate[]>('/wa-personal-templates').then(setWaTemplates).catch(() => {}).finally(() => setLoadingWaTemplates(false)); }}
+            onSelect={(t) => { onUpdate({ config: { ...cfg, templateId: t.id, message: undefined } }); setWaTemplateMode('template'); }}
           />
-        </FieldRow>
+        )}
+        <p className="text-sm text-muted-foreground leading-relaxed">Send a message via your connected personal WhatsApp session (QR scan). Requires an active personal WA connection in Integrations.</p>
+
+        {/* Source toggle */}
+        <div className="flex rounded-lg border border-border overflow-hidden text-sm">
+          <button
+            className={cn('flex-1 py-2 font-medium transition-colors', waTemplateMode === 'write' ? 'bg-teal-600 text-white' : 'bg-white text-muted-foreground hover:bg-muted/30')}
+            onClick={() => { setWaTemplateMode('write'); onUpdate({ config: { ...cfg, templateId: undefined } }); }}
+          >Write Message</button>
+          <button
+            className={cn('flex-1 py-2 font-medium transition-colors', waTemplateMode === 'template' ? 'bg-teal-600 text-white' : 'bg-white text-muted-foreground hover:bg-muted/30')}
+            onClick={() => { setWaTemplateMode('template'); onUpdate({ config: { ...cfg, message: undefined } }); }}
+          >Use Template</button>
+        </div>
+
+        {waTemplateMode === 'write' ? (
+          <FieldRow label="Message" required>
+            <textarea
+              className="w-full border border-border rounded-lg px-3 py-2 text-sm min-h-[120px] resize-y focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
+              placeholder="Type your message... Supports variables: {first_name}, {last_name}, {phone}, {email}"
+              value={(cfg.message as string) ?? ''}
+              onChange={(e) => onUpdate({ config: { ...cfg, message: e.target.value } })}
+            />
+          </FieldRow>
+        ) : (
+          <FieldRow label="Template" required>
+            <div className="space-y-2">
+              {loadingWaTemplates ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-2"><Loader2 className="w-4 h-4 animate-spin" />Loading templates…</div>
+              ) : waTemplates.length === 0 ? (
+                <div className="text-sm text-muted-foreground py-2">No templates yet.</div>
+              ) : (
+                <select
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
+                  value={(cfg.templateId as string) ?? ''}
+                  onChange={(e) => onUpdate({ config: { ...cfg, templateId: e.target.value } })}
+                >
+                  <option value="">— Select a template —</option>
+                  {waTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              )}
+              {selectedWaTemplate && (
+                <div className="bg-teal-50 border border-teal-200 rounded-xl p-3 space-y-1.5">
+                  <div className="text-xs font-semibold text-teal-700">{selectedWaTemplate.name}</div>
+                  {selectedWaTemplate.message && <div className="text-xs text-teal-800 whitespace-pre-wrap">{selectedWaTemplate.message}</div>}
+                  {selectedWaTemplate.file_name && (
+                    <div className="flex items-center gap-1.5 text-xs text-teal-600 mt-1">
+                      <Paperclip className="w-3 h-3" /><span>{selectedWaTemplate.file_name}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+              <button onClick={() => setShowWaTemplatesModal(true)} className="flex items-center gap-1.5 text-xs text-teal-700 hover:underline font-medium">
+                <Settings className="w-3.5 h-3.5" />Manage Templates
+              </button>
+            </div>
+          </FieldRow>
+        )}
+
         <div className="flex items-start gap-2 p-3 bg-teal-50 border border-teal-200 rounded-lg text-xs text-teal-700">
           <span className="shrink-0 mt-0.5">ℹ️</span>
           <span>Messages are sent from your personal WhatsApp account. They are not formal templates and do not require Meta approval.</span>
@@ -3897,7 +4119,7 @@ export default function WorkflowEditorPage() {
         if (node.actionType === 'change_stage' && !node.config.stage_id) return `"Change Pipeline Stage" is missing a stage.`;
         if (node.actionType === 'send_email' && !node.config.subject) return `"Send Email" is missing a subject.`;
         if (node.actionType === 'send_whatsapp' && !node.config.template) return `"WhatsApp Message" is missing a template.`;
-        if (node.actionType === 'send_whatsapp_personal' && !node.config.message) return `"WhatsApp Personal" is missing a message.`;
+        if (node.actionType === 'send_whatsapp_personal' && !node.config.message && !node.config.templateId) return `"WhatsApp Personal" is missing a message or template.`;
         if (node.actionType === 'webhook_call' && !node.config.url) return `"Webhook Call" is missing a URL.`;
         if (node.actionType === 'execute_automation' && !node.config.workflow_id) return `"Execute Automation" has no workflow selected.`;
         if (node.actionType === 'add_tag' && !(node.config.tag || (node.config.tags as string[])?.length)) return `"Add Tag" is missing at least one tag.`;

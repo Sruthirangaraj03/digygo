@@ -39,6 +39,7 @@ import fieldRoutingRoutes     from './routes/field_routing';
 import leadGenerationRoutes   from './routes/leadGeneration';
 import reportsRoutes          from './routes/reports';
 import contactGroupsRoutes    from './routes/contact_groups';
+import waPersonalTemplatesRoutes from './routes/wa_personal_templates';
 
 const app        = express();
 const httpServer = createServer(app);
@@ -151,6 +152,7 @@ app.use('/api/lead-generation',   leadGenerationRoutes);
 app.use('/api/reports',           reportsRoutes);
 app.use('/api/contact-groups',    contactGroupsRoutes);
 app.use('/api/whatsapp-personal', waPersonalRoutes);
+app.use('/api/wa-personal-templates', waPersonalTemplatesRoutes);
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));

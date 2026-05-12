@@ -1063,25 +1063,58 @@ export async function executeNodes(
           if (!toPhone) {
             status = 'skipped'; message = 'send_whatsapp_personal: lead has no phone number'; break;
           }
-          const msgText = interpolate(
-            (node.config.message ?? '') as string, lead
-          );
-          if (!msgText) {
-            status = 'skipped'; message = 'send_whatsapp_personal: no message body configured'; break;
-          }
-          const { sendText, getSession } = await import('../services/whatsapp/sessionManager');
+          const { sendText, sendMedia, getSession } = await import('../services/whatsapp/sessionManager');
           const { toJID } = await import('../services/whatsapp/phoneUtils');
           if (!getSession(tenantId)) {
             status = 'failed'; message = 'send_whatsapp_personal: WhatsApp Personal session not connected — scan QR under Integrations'; break;
           }
-          await sendText(tenantId, toJID(toPhone), msgText);
-          // Log in lead activity
+
+          let msgText = '';
+          let filePath: string | null = null;
+          let fileType: string | null = null;
+          let fileName: string | null = null;
+
+          if (node.config.templateId) {
+            // Load from saved WA personal template
+            const tmplRes = await query(
+              `SELECT message, file_path, file_type, file_name FROM wa_personal_templates WHERE id=$1::uuid AND tenant_id=$2::uuid`,
+              [node.config.templateId, tenantId],
+            );
+            if (!tmplRes.rows[0]) {
+              status = 'failed'; message = 'send_whatsapp_personal: template not found'; break;
+            }
+            msgText  = interpolate(tmplRes.rows[0].message as string, lead);
+            filePath = tmplRes.rows[0].file_path ?? null;
+            fileType = tmplRes.rows[0].file_type ?? null;
+            fileName = tmplRes.rows[0].file_name ?? null;
+          } else {
+            msgText = interpolate((node.config.message ?? '') as string, lead);
+          }
+
+          if (!msgText && !filePath) {
+            status = 'skipped'; message = 'send_whatsapp_personal: no message or file configured'; break;
+          }
+
+          const jid = toJID(toPhone);
+          if (filePath) {
+            const fsMod  = await import('fs');
+            const pathMod = await import('path');
+            const fullPath = pathMod.resolve(process.cwd(), filePath);
+            if (!fsMod.existsSync(fullPath)) {
+              status = 'failed'; message = `send_whatsapp_personal: template file not found on disk`; break;
+            }
+            const buffer = fsMod.readFileSync(fullPath);
+            await sendMedia(tenantId, jid, buffer, fileType ?? 'application/octet-stream', fileName ?? 'file', msgText || undefined);
+          } else {
+            await sendText(tenantId, jid, msgText);
+          }
+
           await query(
             `INSERT INTO lead_activities (lead_id, tenant_id, type, title, detail, created_by)
              VALUES ($1::uuid, $2::uuid, 'whatsapp', 'WhatsApp sent (Personal via Automation)', $3, NULL)`,
-            [lead.id, tenantId, msgText.slice(0, 255)],
+            [lead.id, tenantId, (msgText || fileName || 'media').slice(0, 255)],
           ).catch(() => null);
-          message = `WhatsApp Personal sent to ${toPhone}`;
+          message = `WhatsApp Personal sent to ${toPhone}${filePath ? ' (with attachment)' : ''}`;
           break;
         }
 
