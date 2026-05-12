@@ -60,8 +60,15 @@ export default function InboxPage() {
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
 
+  // If the selected conversation disappears (e.g. filtered out after reload), show the list
+  useEffect(() => {
+    if (!selected && !showList) setShowList(true);
+  }, [selected]);
+
   const loadConversations = useCallback(() => {
-    api.get<ApiConversation[]>('/api/conversations').then(setConversations).catch(() => {});
+    api.get<ApiConversation[]>('/api/conversations')
+      .then(setConversations)
+      .catch(() => toast.error('Failed to load conversations'));
   }, []);
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
@@ -116,8 +123,13 @@ export default function InboxPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
+  const getInitials = (name: string | null | undefined, phone: string | null | undefined) => {
+    const display = name || phone || '?';
+    return display.split(' ').map((n) => n[0] || '').join('').slice(0, 2).toUpperCase() || '?';
+  };
+
   const filtered = conversations.filter((c) => {
-    if (search && !c.lead_name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search && !(c.lead_name || '').toLowerCase().includes(search.toLowerCase())) return false;
     if (channelFilter === 'waba' && c.channel !== 'whatsapp') return false;
     if (channelFilter === 'personal_wa' && c.channel !== 'personal_wa') return false;
     if (filterTab === 'mine') return c.assigned_to === currentUser?.id;
@@ -261,11 +273,11 @@ export default function InboxPage() {
               className={cn('w-full text-left px-4 py-3 border-b border-black/5 hover:bg-[#faf8f6] transition-colors flex gap-3',
                 conv.id === selectedId && 'bg-accent/30 border-l-2 border-l-primary')}>
               <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary shrink-0">
-                {conv.lead_name.split(' ').map((n) => n[0]).join('')}
+                {getInitials(conv.lead_name, conv.lead_phone)}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm text-foreground">{conv.lead_name}</span>
+                  <span className="font-medium text-sm text-foreground">{conv.lead_name || conv.lead_phone || 'Unknown'}</span>
                   <span className="text-[11px] text-[#7a6b5c]">
                     {conv.last_message_at ? formatDistanceToNow(new Date(conv.last_message_at), { addSuffix: false }) : ''}
                   </span>
@@ -304,11 +316,13 @@ export default function InboxPage() {
               <div className="flex items-center gap-3">
                 <button onClick={handleBack} className="sm:hidden p-1 hover:bg-[#f5ede3] rounded-lg"><ArrowLeft className="w-5 h-5" /></button>
                 <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-semibold">
-                  {selected.lead_name.split(' ').map((n) => n[0]).join('')}
+                  {getInitials(selected.lead_name, selected.lead_phone)}
                 </div>
                 <div>
-                  <h3 className="font-headline font-bold text-[#1c1410]">{selected.lead_name}</h3>
-                  <a href={`tel:${selected.lead_phone}`} className="text-[11px] text-[#7a6b5c] hover:text-primary transition-colors">{selected.lead_phone}</a>
+                  <h3 className="font-headline font-bold text-[#1c1410]">{selected.lead_name || selected.lead_phone || 'Unknown'}</h3>
+                  {selected.lead_phone && (
+                    <a href={`tel:${selected.lead_phone}`} className="text-[11px] text-[#7a6b5c] hover:text-primary transition-colors">{selected.lead_phone}</a>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2">

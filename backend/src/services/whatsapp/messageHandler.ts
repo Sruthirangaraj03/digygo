@@ -56,13 +56,23 @@ export async function handleInboundMessage(tenantId: string, msg: any): Promise<
       convId = newConv.rows[0].id;
     }
   } else {
-    // Unknown number — create anonymous conversation each time (no lead to link)
-    const newConv = await query(
-      `INSERT INTO conversations (tenant_id, lead_id, channel, status, unread_count, last_message_at)
-       VALUES ($1::uuid, NULL, 'personal_wa', 'open', 0, NOW()) RETURNING id`,
-      [tenantId],
+    // Unknown number — find existing conversation by phone to avoid duplicate threads
+    const existingAnon = await query(
+      `SELECT id FROM conversations
+       WHERE tenant_id=$1::uuid AND channel='personal_wa' AND lead_id IS NULL AND phone=$2
+       ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
+      [tenantId, phone],
     );
-    convId = newConv.rows[0].id;
+    if (existingAnon.rows[0]) {
+      convId = existingAnon.rows[0].id;
+    } else {
+      const newConv = await query(
+        `INSERT INTO conversations (tenant_id, lead_id, channel, status, unread_count, last_message_at, phone)
+         VALUES ($1::uuid, NULL, 'personal_wa', 'open', 0, NOW(), $2) RETURNING id`,
+        [tenantId, phone],
+      );
+      convId = newConv.rows[0].id;
+    }
   }
 
   // Insert message

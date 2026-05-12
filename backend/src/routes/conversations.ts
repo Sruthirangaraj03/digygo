@@ -6,6 +6,8 @@ import { maskPhone } from '../utils/phone';
 import { decrypt } from '../utils/crypto';
 import { emitToTenant } from '../socket';
 import https from 'https';
+import { sendText } from '../services/whatsapp/sessionManager';
+import { toJID } from '../services/whatsapp/phoneUtils';
 
 const router = Router();
 router.use(requireAuth);
@@ -43,9 +45,24 @@ function sendWAMessage(phoneNumberId: string, token: string, toPhone: string, te
 }
 
 // GET /api/conversations
-router.get('/', checkPermission('inbox:view_all'), async (req: AuthRequest, res: Response) => {
+router.get('/', checkPermission('inbox:send'), async (req: AuthRequest, res: Response) => {
   const { userId, tenantId, role } = req.user!;
   const { status, assigned_to, search } = req.query as Record<string, string>;
+  const isSuperAdmin = role === 'super_admin';
+
+  // Determine whether user can see all conversations or only their own
+  let viewAll = isSuperAdmin;
+  if (!isSuperAdmin) {
+    try {
+      const ownerRes = await query('SELECT is_owner FROM users WHERE id=$1', [userId]);
+      if (ownerRes.rows[0]?.is_owner) {
+        viewAll = true;
+      } else {
+        viewAll = await hasPermission(userId, 'inbox:view_all', tenantId);
+      }
+    } catch { viewAll = false; }
+  }
+
   let sql = `
     SELECT c.*, l.name AS lead_name, l.phone AS lead_phone,
            u.name AS assigned_name
@@ -55,24 +72,32 @@ router.get('/', checkPermission('inbox:view_all'), async (req: AuthRequest, res:
     WHERE c.tenant_id = $1
   `;
   const params: any[] = [tenantId];
+
+  if (!viewAll) {
+    // inbox:view_own — only conversations directly assigned to this user or for their assigned leads
+    const userIdx = params.push(userId);
+    sql += ` AND (c.assigned_to = $${userIdx} OR l.assigned_to = $${userIdx})`;
+  }
+
   if (status) { params.push(status); sql += ` AND c.status = $${params.length}`; }
   if (assigned_to) { params.push(assigned_to); sql += ` AND c.assigned_to = $${params.length}`; }
   if (search) { params.push(`%${search}%`); sql += ` AND l.name ILIKE $${params.length}`; }
   sql += ' ORDER BY c.last_message_at DESC NULLS LAST';
+
   try {
     const result = await query(sql, params);
     let rows = result.rows;
-    if (role !== 'super_admin') {
+    if (!isSuperAdmin) {
       let shouldMask = false;
       try { shouldMask = await hasPermission(userId, 'leads:mask_phone', tenantId); } catch {}
       if (shouldMask) rows = rows.map((r: any) => ({ ...r, lead_phone: maskPhone(r.lead_phone) }));
     }
     res.json(rows);
-  } catch { res.status(500).json({ error: 'Server error' }); }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
 // GET /api/conversations/:id/messages
-router.get('/:id/messages', checkPermission('inbox:view_all'), async (req: AuthRequest, res: Response) => {
+router.get('/:id/messages', checkPermission('inbox:send'), async (req: AuthRequest, res: Response) => {
   try {
     const result = await query(
       `SELECT * FROM messages WHERE conversation_id=$1 AND tenant_id=$2 ORDER BY created_at ASC`,
@@ -112,6 +137,13 @@ router.post('/:id/messages', checkPermission('inbox:send'), async (req: AuthRequ
       } catch (e) { console.error('WABA send error:', e); }
     }
 
+    // Send via Personal WhatsApp (Baileys) if the conversation is on that channel
+    if (!is_note && conv.channel === 'personal_wa' && conv.lead_phone) {
+      try {
+        await sendText(req.user!.tenantId!, toJID(conv.lead_phone), body.trim());
+      } catch (e) { console.error('Personal WA send error:', e); }
+    }
+
     const msgRes = await query(
       `INSERT INTO messages (conversation_id, tenant_id, sender, body, is_note, wamid, status, created_at)
        VALUES ($1,$2,'agent',$3,$4,$5,'sent',NOW()) RETURNING *`,
@@ -139,8 +171,18 @@ router.patch('/:id/assign', checkPermission('inbox:send'), async (req: AuthReque
       [assigned_to ?? null, req.params.id, req.user!.tenantId]
     );
     if (!result.rows[0]) { res.status(404).json({ error: 'Not found' }); return; }
-    emitToTenant(req.user!.tenantId!, 'conversation:updated', result.rows[0]);
-    res.json(result.rows[0]);
+    // Re-fetch with JOINs so socket payload includes lead_name, lead_phone, assigned_name
+    const full = await query(
+      `SELECT c.*, l.name AS lead_name, l.phone AS lead_phone, u.name AS assigned_name
+       FROM conversations c
+       LEFT JOIN leads l ON l.id = c.lead_id
+       LEFT JOIN users u ON u.id = c.assigned_to
+       WHERE c.id=$1`,
+      [req.params.id]
+    );
+    const payload = full.rows[0] ?? result.rows[0];
+    emitToTenant(req.user!.tenantId!, 'conversation:updated', payload);
+    res.json(payload);
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 
@@ -154,13 +196,23 @@ router.patch('/:id/status', checkPermission('inbox:send'), async (req: AuthReque
       [status, req.params.id, req.user!.tenantId]
     );
     if (!result.rows[0]) { res.status(404).json({ error: 'Not found' }); return; }
-    emitToTenant(req.user!.tenantId!, 'conversation:updated', result.rows[0]);
-    res.json(result.rows[0]);
+    // Re-fetch with JOINs so socket payload includes lead_name, lead_phone, assigned_name
+    const full = await query(
+      `SELECT c.*, l.name AS lead_name, l.phone AS lead_phone, u.name AS assigned_name
+       FROM conversations c
+       LEFT JOIN leads l ON l.id = c.lead_id
+       LEFT JOIN users u ON u.id = c.assigned_to
+       WHERE c.id=$1`,
+      [req.params.id]
+    );
+    const payload = full.rows[0] ?? result.rows[0];
+    emitToTenant(req.user!.tenantId!, 'conversation:updated', payload);
+    res.json(payload);
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 
 // PATCH /api/conversations/:id/read
-router.patch('/:id/read', checkPermission('inbox:view_all'), async (req: AuthRequest, res: Response) => {
+router.patch('/:id/read', checkPermission('inbox:send'), async (req: AuthRequest, res: Response) => {
   try {
     await query(
       'UPDATE conversations SET unread_count=0 WHERE id=$1 AND tenant_id=$2',

@@ -265,18 +265,21 @@ async function processWhatsAppMessage(payload: any) {
 
           // Find or create lead
           let leadId: string;
+          let leadName: string = waPhone;
           const leadRes = await query(
-            `SELECT id FROM leads WHERE phone=$1 AND tenant_id=$2 AND is_deleted=FALSE LIMIT 1`,
+            `SELECT id, name FROM leads WHERE phone=$1 AND tenant_id=$2 AND is_deleted=FALSE LIMIT 1`,
             [waPhone, tenantId]
           );
           if (leadRes.rows[0]) {
             leadId = leadRes.rows[0].id;
+            leadName = leadRes.rows[0].name;
           } else {
             const newLead = await query(
               `INSERT INTO leads (tenant_id, name, phone, source) VALUES ($1,$2,$3,'whatsapp') RETURNING *`,
               [tenantId, waPhone, waPhone]
             );
             leadId = newLead.rows[0].id;
+            leadName = newLead.rows[0].name;
             emitToTenant(tenantId, 'lead:created', newLead.rows[0]);
             sendNewLeadNotification(tenantId, newLead.rows[0], null).catch(() => null);
             setImmediate(() => {
@@ -295,24 +298,36 @@ async function processWhatsAppMessage(payload: any) {
             convId = convRes.rows[0].id;
           } else {
             const newConv = await query(
-              `INSERT INTO conversations (tenant_id, lead_id, channel, status) VALUES ($1,$2,'whatsapp','open') RETURNING id`,
-              [tenantId, leadId]
+              `INSERT INTO conversations (tenant_id, lead_id, channel, status, unread_count, last_message, last_message_at)
+               VALUES ($1,$2,'whatsapp','open',1,$3,NOW()) RETURNING id`,
+              [tenantId, leadId, content]
             );
             convId = newConv.rows[0].id;
           }
 
-          await query(
-            `INSERT INTO messages (conversation_id, tenant_id, lead_id, direction, content, wamid, type)
-             VALUES ($1,$2,$3,'inbound',$4,$5,$6)`,
-            [convId, tenantId, leadId, content, wamid, msgType]
+          const msgRes = await query(
+            `INSERT INTO messages (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, status, created_at)
+             VALUES ($1,$2,$3,'customer',$4,FALSE,$5,'delivered',NOW()) RETURNING *`,
+            [convId, tenantId, leadId, content, wamid]
           );
 
           await query(
-            `UPDATE conversations SET unread_count=unread_count+1, last_message_at=NOW() WHERE id=$1`,
-            [convId]
+            `UPDATE conversations SET unread_count=unread_count+1, last_message=$1, last_message_at=NOW() WHERE id=$2`,
+            [content, convId]
           );
 
-          const lead = { id: leadId, tenant_id: tenantId, phone: waPhone, name: waPhone };
+          if (msgRes.rows[0]) {
+            emitToTenant(tenantId, 'message:new', {
+              ...msgRes.rows[0], lead_name: leadName, lead_phone: waPhone, channel: 'whatsapp',
+            });
+            emitToTenant(tenantId, 'conversation:updated', {
+              id: convId, lead_id: leadId, lead_name: leadName, lead_phone: waPhone,
+              channel: 'whatsapp', status: 'open',
+              last_message: content, last_message_at: new Date().toISOString(),
+            });
+          }
+
+          const lead = { id: leadId, tenant_id: tenantId, phone: waPhone, name: leadName };
           setImmediate(() =>
             triggerWorkflows('inbox_message', lead, tenantId, 'webhook',
               { triggerContext: { channel: 'whatsapp', messageBody: content } }
