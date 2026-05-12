@@ -157,6 +157,50 @@ export async function startSession(tenantId: string): Promise<void> {
       const phone = jid ? jid.split('@')[0] : null;
       console.log(`[WA] Connected for tenant ${tenantId.slice(0, 8)}: ${phone ?? 'unknown'}`);
       await upsertSessionStatus(tenantId, 'connected', phone ? `+${phone}` : null);
+
+      // Wait 60s for history sync to finish, then backfill phones on anonymous conversations
+      // whose messages now have remote_jid filled in by the ON CONFLICT UPDATE
+      setTimeout(async () => {
+        try {
+          const upd = await query(
+            `UPDATE conversations c
+             SET phone = SPLIT_PART(m.remote_jid, '@', 1)
+             FROM (
+               SELECT DISTINCT ON (conversation_id) conversation_id, remote_jid
+               FROM messages
+               WHERE remote_jid IS NOT NULL AND remote_jid LIKE '%@s.whatsapp.net'
+               ORDER BY conversation_id, created_at ASC
+             ) m
+             WHERE c.id = m.conversation_id
+               AND c.tenant_id = $1::uuid
+               AND c.lead_id IS NULL
+               AND c.channel = 'personal_wa'
+               AND (c.phone IS NULL OR c.phone = '')`,
+            [tenantId],
+          );
+          const count = upd.rowCount ?? 0;
+          if (count > 0) {
+            console.log(`[WA] Post-connect backfill: fixed ${count} anonymous conversation(s) with phone`);
+            // Re-emit those conversations so frontend refreshes names
+            const fixed = await query(
+              `SELECT c.id, '+' || c.phone AS lead_phone, c.last_message, c.last_message_at,
+                      c.status, c.unread_count, c.assigned_to
+               FROM conversations c
+               WHERE c.tenant_id = $1::uuid AND c.channel='personal_wa'
+                 AND c.lead_id IS NULL AND c.phone IS NOT NULL AND c.phone != ''`,
+              [tenantId],
+            );
+            for (const conv of fixed.rows) {
+              emitToTenant(tenantId, 'conversation:updated', {
+                ...conv,
+                lead_name: conv.lead_phone,
+              });
+            }
+          }
+        } catch (e) {
+          console.error('[WA] Post-connect backfill error:', e);
+        }
+      }, 60_000);
     }
 
     if (connection === 'close') {
