@@ -248,7 +248,8 @@ async function resolveLidsForTenant(tenantId: string, sock: ReturnType<typeof ma
       const d = row.digits as string;
       if (d && !knownPhoneSet.has(d) && !lidToPhone.has(d)) {
         const lidJid = `${d}@lid`;
-        console.log(`[WA] Subscribing presence for unresolved LID conversation: ${lidJid}`);
+        console.log(`[WA] Requesting contact info for unresolved LID conversation: ${lidJid}`);
+        sock.assertSessions([lidJid], true).catch(() => null);
         sock.presenceSubscribe(lidJid).catch(() => null);
       }
     }
@@ -553,9 +554,10 @@ export async function startSession(tenantId: string): Promise<void> {
           msg = { ...msg, key: { ...msg.key, remoteJid: `${realPhone}@s.whatsapp.net` } };
           console.log(`[WA] LID resolved: ${remoteJid} → ${realPhone}@s.whatsapp.net`);
         } else {
-          console.log(`[WA] LID not resolved: ${remoteJid} — subscribing to presence to trigger contact sync`);
-          // Presence subscribe prompts WA to fire contacts.upsert with the real phone JID,
-          // which will then call storeLidMapping and fix the conversation phone automatically.
+          console.log(`[WA] LID not resolved: ${remoteJid} — requesting contact info from WA`);
+          // assertSessions + presenceSubscribe prompt WA to fire contacts.upsert with the
+          // real phone JID, which storeLidMapping then uses to fix the conversation.
+          sock.assertSessions([remoteJid], true).catch(() => null);
           sock.presenceSubscribe(remoteJid).catch(() => null);
         }
       }
@@ -639,10 +641,23 @@ export async function startSession(tenantId: string): Promise<void> {
       const digits = contact.id?.split('@')[0];
       if (!digits) continue;
 
+      // Log any contact that has a @lid JID or a lid field — helps debug mapping issues
+      const rawLid = (contact as any).lid;
+      if (contact.id?.endsWith('@lid') || rawLid) {
+        console.log(`[WA] contacts.upsert entry: id=${contact.id} lid=${rawLid ?? 'none'} name=${contact.name ?? ''}`);
+      }
+
       // Build LID → phone mapping for multi-device contacts
-      const lidDigits = (contact as any).lid?.split('@')[0];
+      const lidDigits = rawLid?.split('@')[0];
       if (lidDigits && digits && !lidToPhone.has(lidDigits)) {
         await storeLidMapping(tenantId, lidDigits, digits);
+      }
+      // Also handle the case where contact.id is itself a @lid JID and the real phone
+      // was delivered via a different field (e.g. contact.notify contains the phone)
+      if (!lidDigits && contact.id?.endsWith('@lid')) {
+        // Check if we have any known phone that resolves to this LID via USync
+        // (handled on next resolveLidsForTenant run — nothing more to do here)
+        console.log(`[WA] contacts.upsert: @lid contact with no phone JID yet: ${contact.id}`);
       }
 
       if (contact.name) {
