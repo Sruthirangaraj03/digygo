@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { ArrowLeft, Upload, X, FileText, Film, Loader2, Check } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Upload, X, FileText, Film, Loader2, Check } from 'lucide-react';
 import { Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -205,49 +205,57 @@ export default function WaPersonalTemplateEditorPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#fffbf7] flex items-center justify-center">
+      <div className="flex-1 flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-orange-400" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#fffbf7] flex flex-col">
+    // Negative margins cancel AppLayout's padding so the editor fills edge-to-edge
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden -mx-3 -my-4 md:-mx-6 md:-my-5">
 
       {/* ── Header ── */}
-      <header className="bg-white border-b border-orange-100 px-6 py-4 flex items-center justify-between shrink-0 sticky top-0 z-20">
-        <div className="flex items-center gap-3">
+      <header className="bg-white border-b border-orange-100 px-5 py-0 flex items-center justify-between shrink-0 h-14">
+
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-1.5 min-w-0">
           <button
             onClick={() => navigate('/automation/templates?tab=wa_personal')}
-            className="p-2 rounded-xl hover:bg-orange-50 text-[#7a6b5c] hover:text-[#c2410c] transition-colors"
+            className="flex items-center gap-1.5 text-[13px] text-[#7a6b5c] hover:text-[#c2410c] transition-colors group shrink-0"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
+            <span>Templates</span>
           </button>
-          <div>
-            <h1 className="text-[15px] font-bold text-[#1c1410]">
-              {isEdit ? 'Edit WA Personal Template' : 'New WA Personal Template'}
-            </h1>
-            <p className="text-[11px] text-[#7a6b5c]">
-              Personal WhatsApp (QR-linked) · supports text, images, PDF, documents
-            </p>
-          </div>
+          <ChevronRight className="w-3.5 h-3.5 text-[#7a6b5c]/30 shrink-0" />
+          <span className="text-[13px] font-semibold text-[#1c1410] truncate">
+            {isEdit ? 'Edit Template' : 'New Template'}
+          </span>
+          <span className="ml-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 border border-green-200 text-[11px] font-medium text-green-700 shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+            WA Personal
+          </span>
         </div>
-        <div className="flex items-center gap-2">
+
+        {/* Actions */}
+        <div className="flex items-center gap-2 shrink-0">
           <Button
             variant="outline"
+            size="sm"
             onClick={() => navigate('/automation/templates?tab=wa_personal')}
-            className="border-orange-200 text-[#7a6b5c] hover:bg-orange-50 hover:border-orange-300"
+            className="h-8 text-[13px] border-orange-200 text-[#7a6b5c] hover:bg-orange-50 hover:border-orange-300"
           >
             Cancel
           </Button>
           <Button
+            size="sm"
             onClick={handleSave}
             disabled={saving}
-            className="bg-gradient-to-r from-[#c2410c] to-[#ea580c] hover:opacity-90 text-white border-0 shadow-sm"
+            className="h-8 text-[13px] bg-[#ea580c] hover:bg-[#c2410c] text-white border-0 shadow-sm px-4"
           >
             {saving
-              ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" />Saving…</>
-              : <><Check className="w-4 h-4 mr-1.5" />{isEdit ? 'Save Changes' : 'Create Template'}</>}
+              ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Saving…</>
+              : <><Check className="w-3.5 h-3.5 mr-1.5" />{isEdit ? 'Save Changes' : 'Create Template'}</>}
           </Button>
         </div>
       </header>

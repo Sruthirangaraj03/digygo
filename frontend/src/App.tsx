@@ -103,13 +103,15 @@ const App = () => (
             {/* Super Admin */}
             <Route path="/admin" element={<SuperAdminPage />} />
             <Route path="/admin/create" element={<CreateBusinessPage />} />
+
+            {/* WA Personal template editor — inside AppLayout (sidebar visible) */}
+            <Route path="/automation/templates/wa-personal/new" element={<WaPersonalTemplateEditorPage />} />
+            <Route path="/automation/templates/wa-personal/:id" element={<WaPersonalTemplateEditorPage />} />
           </Route>
 
           {/* Full-screen editors — outside AppLayout but still protected */}
           <Route path="/automation/editor/:id" element={<WorkflowEditorPage />} />
           <Route path="/automation/analytics/:id" element={<WorkflowAnalyticsPage />} />
-          <Route path="/automation/templates/wa-personal/new" element={<WaPersonalTemplateEditorPage />} />
-          <Route path="/automation/templates/wa-personal/:id" element={<WaPersonalTemplateEditorPage />} />
           </Route>{/* closes AuthGuard */}
 
           <Route path="*" element={<NotFound />} />
