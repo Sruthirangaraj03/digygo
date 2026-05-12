@@ -51,27 +51,31 @@ function MediaMessage({ msgId }: { msgId: string }) {
   const [isImg, setIsImg] = useState(false);
 
   useEffect(() => {
+    let mounted = true;
     let objectUrl: string | null = null;
     const token = localStorage.getItem('dg_tok');
     fetch(`/api/conversations/media/${msgId}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => {
-        if (!r.ok) return null;
+        if (!r.ok || !mounted) return null;
         const ct = r.headers.get('content-type') ?? '';
-        setIsImg(ct.startsWith('image/'));
+        if (mounted) setIsImg(ct.startsWith('image/'));
         return r.blob();
       })
       .then((blob) => {
-        if (blob) {
+        if (blob && mounted) {
           objectUrl = URL.createObjectURL(blob);
           setSrc(objectUrl);
         }
       })
       .catch(() => null)
-      .finally(() => setLoading(false));
+      .finally(() => { if (mounted) setLoading(false); });
 
-    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
+    return () => {
+      mounted = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
   }, [msgId]);
 
   if (loading) return <div className="w-36 h-24 rounded-lg bg-black/10 animate-pulse" />;
@@ -134,25 +138,19 @@ export default function InboxPage() {
     return rows;
   }, []);
 
-  // When conversation changes: load latest messages, mark read
+  // When conversation changes: load latest messages, mark read, scroll to bottom
   useEffect(() => {
     if (!selectedId) { setMessages([]); setHasMore(false); return; }
     loadMessages(selectedId).then((rows) => {
       setMessages(rows);
       setHasMore(rows.length >= PAGE_SIZE);
+      requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: 'auto' }));
     }).catch(() => {});
     api.patch(`/api/conversations/${selectedId}/read`, {}).catch(() => {});
     setConversations((prev) =>
       prev.map((c) => c.id === selectedId ? { ...c, unread_count: 0 } : c),
     );
   }, [selectedId, loadMessages]);
-
-  // Scroll to bottom when conversation first opens
-  useEffect(() => {
-    if (messages.length > 0 && !loadingMore) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
-    }
-  }, [selectedId]); // only on conv switch, not every new message
 
   // Scroll to bottom on new outgoing message
   useEffect(() => {
@@ -191,6 +189,13 @@ export default function InboxPage() {
   useEffect(() => {
     const socket = getSocket();
 
+    const sortByRecent = (list: ApiConversation[]) =>
+      [...list].sort((a, b) => {
+        const ta = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+        const tb = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+        return tb - ta;
+      });
+
     const onNewMessage = (msg: ApiMessage) => {
       setMessages((prev) => {
         if (msg.conversation_id !== selectedIdRef.current) return prev;
@@ -198,7 +203,7 @@ export default function InboxPage() {
         return [...prev, msg];
       });
       setConversations((prev) =>
-        prev.map((c) =>
+        sortByRecent(prev.map((c) =>
           c.id === msg.conversation_id
             ? {
                 ...c,
@@ -209,7 +214,7 @@ export default function InboxPage() {
                   : c.unread_count,
               }
             : c,
-        ),
+        )),
       );
     };
 
@@ -220,11 +225,12 @@ export default function InboxPage() {
     };
 
     const onConvUpdated = (conv: ApiConversation) => {
-      setConversations((prev) =>
-        prev.some((c) => c.id === conv.id)
+      setConversations((prev) => {
+        const base = prev.some((c) => c.id === conv.id)
           ? prev.map((c) => c.id === conv.id ? { ...c, ...conv } : c)
-          : [conv, ...prev],
-      );
+          : [conv, ...prev];
+        return sortByRecent(base);
+      });
     };
 
     socket.on('message:new',     onNewMessage);
@@ -243,7 +249,12 @@ export default function InboxPage() {
   };
 
   const filtered = conversations.filter((c) => {
-    if (search && !(c.lead_name || '').toLowerCase().includes(search.toLowerCase())) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const matchName  = (c.lead_name  || '').toLowerCase().includes(q);
+      const matchPhone = (c.lead_phone || '').toLowerCase().includes(q);
+      if (!matchName && !matchPhone) return false;
+    }
     if (channelFilter === 'waba'        && c.channel !== 'whatsapp')    return false;
     if (channelFilter === 'personal_wa' && c.channel !== 'personal_wa') return false;
     if (filterTab === 'mine')       return c.assigned_to === currentUser?.id;

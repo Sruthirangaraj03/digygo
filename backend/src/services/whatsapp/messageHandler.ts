@@ -82,12 +82,14 @@ export async function handleInboundMessage(
   opts?: { historical?: boolean },
 ): Promise<{ msgId: string; hasMedia: boolean } | null> {
   if (!msg.message) return null;
-  if (isGroupJID(msg.key?.remoteJid ?? '')) return null;
+
+  const remoteJID = msg.key?.remoteJid ?? '';
+  if (!remoteJID || !remoteJID.includes('@')) return null;
+  if (remoteJID === 'status@broadcast') return null;
+  if (isGroupJID(remoteJID)) return null;
 
   const fromMe: boolean  = msg.key?.fromMe ?? false;
   const historical       = opts?.historical ?? false;
-
-  const remoteJID  = msg.key?.remoteJid ?? '';
   const rawPhone   = fromJID(remoteJID);
   const phone      = normalizePhone(rawPhone);
   const text       = extractText(msg);

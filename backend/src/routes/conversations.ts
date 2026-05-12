@@ -66,10 +66,11 @@ router.get('/', checkPermission('inbox:send'), async (req: AuthRequest, res: Res
     } catch { viewAll = false; }
   }
 
+  // Format anonymous phone as +E164 for display; leads.phone is shown as-is (already formatted)
   let sql = `
     SELECT c.*,
-           COALESCE(l.name, c.phone, 'Unknown') AS lead_name,
-           COALESCE(l.phone, c.phone)           AS lead_phone,
+           COALESCE(l.name, '+' || c.phone, 'Unknown')   AS lead_name,
+           COALESCE(l.phone, '+' || c.phone)             AS lead_phone,
            u.name AS assigned_name
     FROM conversations c
     LEFT JOIN leads l ON l.id = c.lead_id
@@ -83,9 +84,13 @@ router.get('/', checkPermission('inbox:send'), async (req: AuthRequest, res: Res
     sql += ` AND (c.assigned_to = $${userIdx} OR l.assigned_to = $${userIdx})`;
   }
 
-  if (status)      { params.push(status);          sql += ` AND c.status = $${params.length}`; }
-  if (assigned_to) { params.push(assigned_to);     sql += ` AND c.assigned_to = $${params.length}`; }
-  if (search)      { params.push(`%${search}%`);   sql += ` AND l.name ILIKE $${params.length}`; }
+  if (status)      { params.push(status);        sql += ` AND c.status = $${params.length}`; }
+  if (assigned_to) { params.push(assigned_to);   sql += ` AND c.assigned_to = $${params.length}`; }
+  // Search by lead name OR anonymous phone
+  if (search) {
+    params.push(`%${search}%`);
+    sql += ` AND (l.name ILIKE $${params.length} OR c.phone ILIKE $${params.length})`;
+  }
   sql += ' ORDER BY c.last_message_at DESC NULLS LAST';
 
   try {
@@ -119,7 +124,7 @@ router.get('/media/:msgId', async (req: AuthRequest, res: Response) => {
 });
 
 // GET /api/conversations/:id/messages
-// Supports: ?limit=50&before=<ISO timestamp> for cursor-based pagination (newest-first page)
+// Supports: ?limit=50&before=<ISO timestamp> for cursor-based pagination
 router.get('/:id/messages', checkPermission('inbox:send'), async (req: AuthRequest, res: Response) => {
   try {
     const limit  = Math.min(parseInt(req.query.limit as string) || 50, 100);
@@ -137,8 +142,7 @@ router.get('/:id/messages', checkPermission('inbox:send'), async (req: AuthReque
     sql += ` ORDER BY created_at DESC LIMIT $${params.length}`;
 
     const result = await query(sql, params);
-    // Return ascending (oldest first) so the UI can append without reversing
-    res.json(result.rows.reverse());
+    res.json(result.rows.reverse()); // return ascending (oldest first)
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 
@@ -203,6 +207,13 @@ router.post('/:id/messages', checkPermission('inbox:send'), async (req: AuthRequ
         `UPDATE conversations SET last_message=$1, last_message_at=NOW(), unread_count=0 WHERE id=$2`,
         [body.trim(), req.params.id],
       );
+      // Emit conversation:updated so all connected clients update the preview and re-sort
+      emitToTenant(req.user!.tenantId!, 'conversation:updated', {
+        id:              req.params.id,
+        last_message:    body.trim(),
+        last_message_at: new Date().toISOString(),
+        unread_count:    0,
+      });
     }
 
     emitToTenant(req.user!.tenantId!, 'message:new', msgRes.rows[0]);
@@ -246,14 +257,14 @@ router.patch('/:id/assign', checkPermission('inbox:send'), async (req: AuthReque
     if (!result.rows[0]) { res.status(404).json({ error: 'Not found' }); return; }
     const full = await query(
       `SELECT c.*,
-              COALESCE(l.name, c.phone, 'Unknown') AS lead_name,
-              COALESCE(l.phone, c.phone)           AS lead_phone,
+              COALESCE(l.name, '+' || c.phone, 'Unknown') AS lead_name,
+              COALESCE(l.phone, '+' || c.phone)           AS lead_phone,
               u.name AS assigned_name
        FROM conversations c
        LEFT JOIN leads l ON l.id = c.lead_id
        LEFT JOIN users u ON u.id = c.assigned_to
-       WHERE c.id=$1`,
-      [req.params.id],
+       WHERE c.id=$1 AND c.tenant_id=$2`,
+      [req.params.id, req.user!.tenantId],
     );
     const payload = full.rows[0] ?? result.rows[0];
     emitToTenant(req.user!.tenantId!, 'conversation:updated', payload);
@@ -273,14 +284,14 @@ router.patch('/:id/status', checkPermission('inbox:send'), async (req: AuthReque
     if (!result.rows[0]) { res.status(404).json({ error: 'Not found' }); return; }
     const full = await query(
       `SELECT c.*,
-              COALESCE(l.name, c.phone, 'Unknown') AS lead_name,
-              COALESCE(l.phone, c.phone)           AS lead_phone,
+              COALESCE(l.name, '+' || c.phone, 'Unknown') AS lead_name,
+              COALESCE(l.phone, '+' || c.phone)           AS lead_phone,
               u.name AS assigned_name
        FROM conversations c
        LEFT JOIN leads l ON l.id = c.lead_id
        LEFT JOIN users u ON u.id = c.assigned_to
-       WHERE c.id=$1`,
-      [req.params.id],
+       WHERE c.id=$1 AND c.tenant_id=$2`,
+      [req.params.id, req.user!.tenantId],
     );
     const payload = full.rows[0] ?? result.rows[0];
     emitToTenant(req.user!.tenantId!, 'conversation:updated', payload);
@@ -301,9 +312,9 @@ router.patch('/:id/read', checkPermission('inbox:send'), async (req: AuthRequest
     if (sock) {
       const unread = await query(
         `SELECT wamid, remote_jid FROM messages
-         WHERE conversation_id=$1 AND sender='customer' AND status='delivered'
+         WHERE conversation_id=$1 AND tenant_id=$2 AND sender='customer' AND status='delivered'
            AND wamid IS NOT NULL AND remote_jid IS NOT NULL`,
-        [req.params.id],
+        [req.params.id, req.user!.tenantId],
       );
       if (unread.rows.length > 0) {
         const keys = unread.rows.map((r: any) => ({
@@ -313,7 +324,6 @@ router.patch('/:id/read', checkPermission('inbox:send'), async (req: AuthRequest
         }));
         sock.readMessages(keys).catch(() => null);
 
-        // Optimistically update status in DB
         const wamids = unread.rows.map((r: any) => r.wamid);
         await query(
           `UPDATE messages SET status='read' WHERE wamid = ANY($1) AND tenant_id=$2`,
