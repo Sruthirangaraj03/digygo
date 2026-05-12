@@ -67,6 +67,7 @@ const MIGRATIONS = [
   'migration_065_wa_account.sql',
   'migration_066_wa_enhancements.sql',
   'migration_067_normalize_conv_phones.sql',
+  'migration_068_wa_lid_mapping.sql',
 ];
 
 // Split SQL file into individual statements and execute each one separately.

@@ -190,6 +190,21 @@ export async function startSession(tenantId: string): Promise<void> {
         ).catch(() => null);
       }
 
+      // Pre-load persisted LID → phone mappings for this tenant so @lid messages
+      // arriving immediately after connect can be resolved without waiting for contacts.upsert
+      try {
+        const lidRows = await query(
+          `SELECT lid_digits, phone_digits FROM wa_lid_phone_map WHERE tenant_id=$1::uuid`,
+          [tenantId],
+        );
+        for (const row of lidRows.rows) {
+          lidToPhone.set(row.lid_digits, row.phone_digits);
+        }
+        if (lidRows.rows.length > 0) {
+          console.log(`[WA] Pre-loaded ${lidRows.rows.length} LID mappings from DB for tenant ${tenantId.slice(0, 8)}`);
+        }
+      } catch { /* non-critical */ }
+
       // Wait 60s for history sync to finish, then backfill phones on anonymous conversations
       // whose messages now have remote_jid filled in by the ON CONFLICT UPDATE
       setTimeout(async () => {
@@ -289,13 +304,28 @@ export async function startSession(tenantId: string): Promise<void> {
       const remoteJid = msg.key?.remoteJid ?? '';
       if (remoteJid.endsWith('@lid')) {
         const lidDigits = remoteJid.split('@')[0];
-        const realPhone = lidToPhone.get(lidDigits);
+        let realPhone = lidToPhone.get(lidDigits);
+
+        // In-memory miss — fall back to persisted DB mapping
+        if (!realPhone) {
+          try {
+            const dbRow = await query(
+              `SELECT phone_digits FROM wa_lid_phone_map WHERE tenant_id=$1::uuid AND lid_digits=$2`,
+              [tenantId, lidDigits],
+            );
+            if (dbRow.rows[0]?.phone_digits) {
+              realPhone = dbRow.rows[0].phone_digits;
+              lidToPhone.set(lidDigits, realPhone!); // warm the in-memory cache
+              console.log(`[WA] LID resolved from DB: ${remoteJid} → ${realPhone}@s.whatsapp.net`);
+            }
+          } catch { /* non-critical */ }
+        }
+
         if (realPhone) {
-          // Patch the message key so handleInboundMessage sees the real phone JID
           msg = { ...msg, key: { ...msg.key, remoteJid: `${realPhone}@s.whatsapp.net` } };
           console.log(`[WA] LID resolved: ${remoteJid} → ${realPhone}@s.whatsapp.net`);
         } else {
-          console.log(`[WA] LID not resolved: ${remoteJid} (no contact mapping yet)`);
+          console.log(`[WA] LID not resolved: ${remoteJid} (no mapping in memory or DB yet)`);
         }
       }
       console.log(`[WA] msg remoteJid=${msg.key?.remoteJid} fromMe=${msg.key?.fromMe} hasMsg=${!!msg.message} keys=${msg.message ? Object.keys(msg.message).join(',') : 'none'}`);
@@ -383,6 +413,13 @@ export async function startSession(tenantId: string): Promise<void> {
       const lidDigits = (contact as any).lid?.split('@')[0];
       if (lidDigits && digits) {
         lidToPhone.set(lidDigits, digits);
+        // Persist to DB so it survives server restarts
+        await query(
+          `INSERT INTO wa_lid_phone_map (tenant_id, lid_digits, phone_digits, updated_at)
+           VALUES ($1::uuid, $2, $3, NOW())
+           ON CONFLICT (tenant_id, lid_digits) DO UPDATE SET phone_digits=$3, updated_at=NOW()`,
+          [tenantId, lidDigits, digits],
+        ).catch(() => null);
       }
 
       if (contact.name) {
