@@ -115,6 +115,13 @@ export default function InboxPage() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const selectedIdRef        = useRef<string | null>(null);
   const typingTimeoutRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileInputRef         = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [showNewChat, setShowNewChat]     = useState(false);
+  const [newChatPhone, setNewChatPhone]   = useState('');
+  const [newChatText, setNewChatText]     = useState('');
+  const [newChatSending, setNewChatSending] = useState(false);
+  const [waContactSuggestions, setWaContactSuggestions] = useState<{ id: string; name: string; phone: string }[]>([]);
 
   // Keep ref in sync so socket handlers don't stale-close
   useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
@@ -322,6 +329,72 @@ export default function InboxPage() {
     }, 3000);
   };
 
+  const handleFileUpload = async (file: File) => {
+    if (!selectedId || uploading) return;
+    const MAX_MB = 25;
+    if (file.size > MAX_MB * 1024 * 1024) {
+      toast.error(`File too large — max ${MAX_MB} MB`);
+      return;
+    }
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const token = localStorage.getItem('dg_tok');
+      const res   = await fetch(`/api/conversations/${selectedId}/media`, {
+        method:  'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body:    formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Upload failed' }));
+        toast.error(err.error ?? 'Upload failed');
+        return;
+      }
+      const msg: ApiMessage = await res.json();
+      setMessages((prev) => prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]);
+      requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }));
+      if (msg.status === 'failed') {
+        toast.error('File saved but could not be delivered — check WhatsApp Personal connection');
+      }
+    } catch {
+      toast.error('Failed to upload file');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleNewChat = async () => {
+    const digits = newChatPhone.replace(/\D/g, '');
+    if (digits.length < 7 || digits.length > 15) {
+      toast.error('Enter a valid phone number (7–15 digits)');
+      return;
+    }
+    if (!newChatText.trim()) {
+      toast.error('Enter a message to send');
+      return;
+    }
+    setNewChatSending(true);
+    try {
+      // POST to a new-conversation endpoint (creates conv + sends first message)
+      const res = await api.post<{ conversation_id: string; message: ApiMessage }>(
+        '/api/conversations/new',
+        { phone: digits, body: newChatText.trim() },
+      );
+      await loadConversations();
+      setSelectedId(res.conversation_id);
+      setShowList(false);
+      setShowNewChat(false);
+      setNewChatPhone('');
+      setNewChatText('');
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Failed to start conversation');
+    } finally {
+      setNewChatSending(false);
+    }
+  };
+
   const handleAssign = async (staffId: string) => {
     if (!selectedId) return;
     try {
@@ -382,9 +455,17 @@ export default function InboxPage() {
       {/* Conversation List */}
       <div className={cn('w-full sm:w-80 border-r border-black/5 flex flex-col bg-card shrink-0', !showList && 'hidden sm:flex')}>
         <div className="p-3 border-b border-black/5 space-y-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input className="pl-9" placeholder="Search conversations..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input className="pl-9" placeholder="Search conversations..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <button
+              onClick={() => setShowNewChat(true)}
+              className="px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-semibold hover:bg-primary/90 transition-colors whitespace-nowrap"
+              title="Start a new chat">
+              + New
+            </button>
           </div>
           <div className="flex gap-1 overflow-x-auto pb-0.5">
             {tabs.map(({ key, label }) => {
@@ -654,9 +735,23 @@ export default function InboxPage() {
                   <button onClick={() => setIsNote(!isNote)}
                     className={cn('p-2 rounded-lg transition-colors', isNote ? 'bg-yellow-200 text-yellow-700' : 'text-muted-foreground hover:text-foreground hover:bg-[#f5ede3]')}
                     title="Internal note"><StickyNote className="w-5 h-5" /></button>
-                  <button className="p-2 text-muted-foreground hover:text-foreground hover:bg-[#f5ede3] rounded-lg transition-colors" title="Attachment">
-                    <Paperclip className="w-5 h-5" />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading || isNote}
+                    className={cn('p-2 rounded-lg transition-colors',
+                      uploading || isNote
+                        ? 'text-muted-foreground/40 cursor-not-allowed'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-[#f5ede3]')}
+                    title="Send image or file">
+                    {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
                   </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }}
+                  />
                 </div>
                 <Input
                   className={cn('flex-1', isNote && 'border-yellow-300 bg-yellow-50 focus-visible:ring-yellow-200')}
@@ -682,6 +777,74 @@ export default function InboxPage() {
           </div>
         )}
       </div>
+      {/* New Chat Modal */}
+      {showNewChat && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-card rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-[#1c1410]">New Chat</h3>
+              <button onClick={() => { setShowNewChat(false); setWaContactSuggestions([]); }}>
+                <X className="w-5 h-5 text-muted-foreground" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div className="relative">
+                <label className="text-xs font-semibold text-[#7a6b5c] mb-1 block">Search contact or enter number</label>
+                <Input
+                  placeholder="Name or phone with country code"
+                  value={newChatPhone}
+                  onChange={(e) => {
+                    setNewChatPhone(e.target.value);
+                    const q = e.target.value.trim();
+                    if (q.length >= 2) {
+                      api.get<{ id: string; name: string; phone: string }[]>(`/api/conversations/wa-contacts?q=${encodeURIComponent(q)}`)
+                        .then(setWaContactSuggestions)
+                        .catch(() => setWaContactSuggestions([]));
+                    } else {
+                      setWaContactSuggestions([]);
+                    }
+                  }}
+                />
+                {waContactSuggestions.length > 0 && (
+                  <div className="absolute z-10 top-full mt-1 left-0 right-0 bg-card border border-black/10 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                    {waContactSuggestions.map((c) => (
+                      <button key={c.id}
+                        className="w-full text-left px-3 py-2 hover:bg-[#f5ede3] transition-colors flex items-center gap-2"
+                        onClick={() => { setNewChatPhone(c.phone); setWaContactSuggestions([]); }}>
+                        <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary shrink-0">
+                          {c.name.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-[#1c1410]">{c.name}</p>
+                          <p className="text-[11px] text-muted-foreground">+{c.phone}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <p className="text-[11px] text-muted-foreground mt-1">Digits only for direct entry, e.g. 91XXXXXXXXXX</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-[#7a6b5c] mb-1 block">First Message</label>
+                <textarea
+                  className="w-full border border-input rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  rows={3}
+                  placeholder="Type your message..."
+                  value={newChatText}
+                  onChange={(e) => setNewChatText(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => { setShowNewChat(false); setWaContactSuggestions([]); }}>Cancel</Button>
+              <Button onClick={handleNewChat} disabled={newChatSending}>
+                {newChatSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 mr-1" />}
+                Send
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

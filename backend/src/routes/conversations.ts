@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { Router, Response } from 'express';
+import multer from 'multer';
 import { query } from '../db';
 import { requireAuth, requireTenant, AuthRequest } from '../middleware/auth';
 import { checkPermission, hasPermission } from '../middleware/permissions';
@@ -8,7 +9,7 @@ import { maskPhone } from '../utils/phone';
 import { decrypt } from '../utils/crypto';
 import { emitToTenant } from '../socket';
 import https from 'https';
-import { sendText, getSession } from '../services/whatsapp/sessionManager';
+import { sendText, sendMedia, getSession, getWAContacts } from '../services/whatsapp/sessionManager';
 import { toJID } from '../services/whatsapp/phoneUtils';
 
 const router = Router();
@@ -16,6 +17,12 @@ router.use(requireAuth);
 router.use(requireTenant);
 
 const WA_MEDIA_DIR = process.env.WA_MEDIA_DIR || path.join(process.cwd(), 'wa_media');
+
+// Multer: store uploads in memory (max 25 MB — WA limit)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
 
 function sendWAMessage(phoneNumberId: string, token: string, toPhone: string, text: string): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -47,6 +54,105 @@ function sendWAMessage(phoneNumberId: string, token: string, toPhone: string, te
     req.end();
   });
 }
+
+// GET /api/conversations/wa-contacts?q=name — search WA phone-book contacts (cached from Baileys)
+router.get('/wa-contacts', checkPermission('inbox:send'), async (req: AuthRequest, res: Response) => {
+  const q = ((req.query.q as string) ?? '').toLowerCase().trim();
+  const all = getWAContacts(req.user!.tenantId!);
+  const result = q
+    ? all.filter((c) => c.name.toLowerCase().includes(q) || c.phone.includes(q))
+    : all.slice(0, 50);
+  res.json(result.slice(0, 50));
+});
+
+// POST /api/conversations/new — start a new personal WA conversation by phone number
+router.post('/new', checkPermission('inbox:send'), async (req: AuthRequest, res: Response) => {
+  const { phone, body } = req.body as { phone?: string; body?: string };
+  const digits = (phone ?? '').replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 15) {
+    res.status(400).json({ error: 'Invalid phone number' }); return;
+  }
+  if (!body?.trim()) {
+    res.status(400).json({ error: 'body required' }); return;
+  }
+
+  try {
+    const { tenantId } = req.user!;
+
+    // Look up lead by last-10-digit match
+    const leadRes = await query(
+      `SELECT id, name, phone, assigned_to FROM leads
+       WHERE tenant_id=$1::uuid AND is_deleted=FALSE
+         AND REGEXP_REPLACE(phone, '[^0-9]', '', 'g') LIKE '%' || RIGHT($2, 10)
+       LIMIT 1`,
+      [tenantId, digits],
+    );
+    const lead   = leadRes.rows[0] ?? null;
+    const leadId = lead?.id ?? null;
+
+    // Find or create conversation
+    let convId: string;
+    if (leadId) {
+      const ex = await query(
+        `SELECT id FROM conversations WHERE tenant_id=$1::uuid AND channel='personal_wa' AND lead_id=$2::uuid
+         ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
+        [tenantId, leadId],
+      );
+      if (ex.rows[0]) {
+        convId = ex.rows[0].id;
+      } else {
+        const nc = await query(
+          `INSERT INTO conversations (tenant_id, lead_id, channel, status, unread_count, last_message_at)
+           VALUES ($1::uuid, $2::uuid, 'personal_wa', 'open', 0, NOW()) RETURNING id`,
+          [tenantId, leadId],
+        );
+        convId = nc.rows[0].id;
+      }
+    } else {
+      const ex = await query(
+        `SELECT id FROM conversations WHERE tenant_id=$1::uuid AND channel='personal_wa' AND lead_id IS NULL AND phone=$2
+         ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
+        [tenantId, digits],
+      );
+      if (ex.rows[0]) {
+        convId = ex.rows[0].id;
+      } else {
+        const nc = await query(
+          `INSERT INTO conversations (tenant_id, lead_id, channel, status, unread_count, last_message_at, phone)
+           VALUES ($1::uuid, NULL, 'personal_wa', 'open', 0, NOW(), $2) RETURNING id`,
+          [tenantId, digits],
+        );
+        convId = nc.rows[0].id;
+      }
+    }
+
+    // Send via Baileys
+    const jid = toJID(`+${digits}`);
+    let wamid: string | null = null;
+    let deliveryFailed = false;
+    try {
+      wamid = await sendText(tenantId!, jid, body.trim());
+    } catch (e: any) {
+      console.error('[Personal WA] New chat send error:', e?.message ?? e);
+      deliveryFailed = true;
+    }
+
+    const msgStatus = deliveryFailed ? 'failed' : 'sent';
+    const msgRes = await query(
+      `INSERT INTO messages (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, status, created_at)
+       VALUES ($1,$2,$3,'agent',$4,FALSE,$5,$6,NOW()) RETURNING *`,
+      [convId, tenantId, leadId, body.trim(), wamid, msgStatus],
+    );
+    await query(
+      `UPDATE conversations SET last_message=$1, last_message_at=NOW(), unread_count=0 WHERE id=$2`,
+      [body.trim(), convId],
+    );
+
+    emitToTenant(tenantId!, 'message:new', msgRes.rows[0]);
+
+    res.status(201).json({ conversation_id: convId, message: msgRes.rows[0] });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
 
 // GET /api/conversations
 router.get('/', checkPermission('inbox:send'), async (req: AuthRequest, res: Response) => {
@@ -219,6 +325,93 @@ router.post('/:id/messages', checkPermission('inbox:send'), async (req: AuthRequ
 
     emitToTenant(req.user!.tenantId!, 'message:new', msgRes.rows[0]);
     res.status(201).json(msgRes.rows[0]);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// POST /api/conversations/:id/media — send a media file via Personal WA
+router.post('/:id/media', checkPermission('inbox:send'), upload.single('file'), async (req: AuthRequest, res: Response) => {
+  if (!req.file) { res.status(400).json({ error: 'file required' }); return; }
+  const caption = (req.body.caption as string | undefined)?.trim() ?? '';
+
+  try {
+    const convRes = await query(
+      `SELECT c.*, COALESCE(l.phone, c.phone) AS lead_phone
+       FROM conversations c
+       LEFT JOIN leads l ON l.id = c.lead_id
+       WHERE c.id=$1 AND c.tenant_id=$2`,
+      [req.params.id, req.user!.tenantId],
+    );
+    if (!convRes.rows[0]) { res.status(404).json({ error: 'Conversation not found' }); return; }
+    const conv = convRes.rows[0];
+
+    if (conv.channel !== 'personal_wa') {
+      res.status(400).json({ error: 'Media send only supported for Personal WhatsApp' }); return;
+    }
+    if (!conv.lead_phone) {
+      res.status(400).json({ error: 'No phone on conversation' }); return;
+    }
+
+    // Save file to disk
+    const mediaDir = path.join(WA_MEDIA_DIR, req.user!.tenantId!);
+    fs.mkdirSync(mediaDir, { recursive: true });
+    const ext      = path.extname(req.file.originalname) || '.bin';
+    const filename = `${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`;
+    const filePath = path.join(mediaDir, filename);
+    fs.writeFileSync(filePath, req.file.buffer);
+    const relPath  = `wa_media/${req.user!.tenantId}/${filename}`;
+
+    // Send via Baileys
+    let wamid: string | null = null;
+    let deliveryFailed = false;
+    try {
+      wamid = await sendMedia(
+        req.user!.tenantId!,
+        toJID(conv.lead_phone),
+        req.file.buffer,
+        req.file.mimetype,
+        req.file.originalname,
+        caption,
+      );
+    } catch (e: any) {
+      console.error('[Personal WA] Media send error:', e?.message ?? e);
+      deliveryFailed = true;
+    }
+
+    // Derive message body label
+    const mt = req.file.mimetype;
+    let body = caption || (
+      mt.startsWith('image/') ? '[Image]' :
+      mt.startsWith('video/') ? '[Video]' :
+      mt.startsWith('audio/') ? '[Audio]' :
+      `[Document: ${req.file.originalname}]`
+    );
+
+    const msgStatus = deliveryFailed ? 'failed' : 'sent';
+    const msgRes = await query(
+      `INSERT INTO messages (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, media_url, status, created_at)
+       VALUES ($1,$2,$3,'agent',$4,FALSE,$5,$6,$7,NOW()) RETURNING *`,
+      [req.params.id, req.user!.tenantId, conv.lead_id ?? null, body, wamid, relPath, msgStatus],
+    );
+
+    await query(
+      `UPDATE conversations SET last_message=$1, last_message_at=NOW(), unread_count=0 WHERE id=$2`,
+      [body, req.params.id],
+    );
+    emitToTenant(req.user!.tenantId!, 'conversation:updated', {
+      id:              req.params.id,
+      last_message:    body,
+      last_message_at: new Date().toISOString(),
+      unread_count:    0,
+    });
+    emitToTenant(req.user!.tenantId!, 'message:new', {
+      ...msgRes.rows[0],
+      media_url: `/api/conversations/media/${msgRes.rows[0].id}`,
+    });
+
+    res.status(201).json({
+      ...msgRes.rows[0],
+      media_url: `/api/conversations/media/${msgRes.rows[0].id}`,
+    });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 

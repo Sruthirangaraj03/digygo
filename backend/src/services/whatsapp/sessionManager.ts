@@ -41,6 +41,9 @@ const pendingQRs        = new Map<string, string>();
 const retryCount        = new Map<string, number>();
 const intentionallyStopped = new Set<string>();
 
+// WA contacts cache (phone book contacts from the connected device)
+const waContactsCache = new Map<string, { id: string; name: string; phone: string }[]>();
+
 const MAX_RETRIES = 5;
 
 function sessionDir(tenantId: string): string {
@@ -175,6 +178,15 @@ export async function startSession(tenantId: string): Promise<void> {
       console.log(`[WA] Connected for tenant ${tenantId.slice(0, 8)}: ${phone ?? 'unknown'}`);
       await upsertSessionStatus(tenantId, 'connected', phone ? `+${phone}` : null);
 
+      // Record session start in history
+      if (phone) {
+        await query(
+          `INSERT INTO wa_session_history (tenant_id, phone, connected_at)
+           VALUES ($1::uuid, $2, NOW())`,
+          [tenantId, phone],
+        ).catch(() => null);
+      }
+
       // Wait 60s for history sync to finish, then backfill phones on anonymous conversations
       // whose messages now have remote_jid filled in by the ON CONFLICT UPDATE
       setTimeout(async () => {
@@ -225,6 +237,17 @@ export async function startSession(tenantId: string): Promise<void> {
       const code      = (lastDisconnect?.error as any)?.output?.statusCode;
       const loggedOut = code === DisconnectReason.loggedOut || code === 401;
       console.log(`[WA] Connection closed for tenant ${tenantId.slice(0, 8)}: code=${code ?? 'none'}, loggedOut=${loggedOut}`);
+
+      // Record session end in history
+      const sessionPhoneOnDisconnect = sock.user?.id ? jidNormalizedUser(sock.user.id).split('@')[0] : null;
+      if (sessionPhoneOnDisconnect) {
+        const reason = loggedOut ? 'logged_out' : (intentionallyStopped.has(tenantId) ? 'stopped' : 'error');
+        await query(
+          `UPDATE wa_session_history SET disconnected_at=NOW(), disconnect_reason=$1
+           WHERE tenant_id=$2::uuid AND phone=$3 AND disconnected_at IS NULL`,
+          [reason, tenantId, sessionPhoneOnDisconnect],
+        ).catch(() => null);
+      }
 
       if (intentionallyStopped.has(tenantId)) return;
 
@@ -329,23 +352,31 @@ export async function startSession(tenantId: string): Promise<void> {
   // When WA pushes the phone-book contact list, update any lead whose name
   // looks like a raw phone number (i.e. was never resolved to a real name).
   sock.ev.on('contacts.upsert', async (contacts) => {
+    const cached: { id: string; name: string; phone: string }[] = waContactsCache.get(tenantId) ?? [];
     for (const contact of contacts) {
-      if (!contact.name) continue;
       const digits = contact.id?.split('@')[0];
       if (!digits) continue;
 
-      await query(
-        `UPDATE leads
-         SET name=$1, updated_at=NOW()
-         WHERE tenant_id=$2::uuid
-           AND REGEXP_REPLACE(phone, '[^0-9]', '', 'g') LIKE '%' || RIGHT($3, 10)
-           AND (
-             name = phone
-             OR name ~ '^[+0-9][0-9 ()\\-]{6,}$'
-           )`,
-        [contact.name, tenantId, digits],
-      ).catch(() => null);
+      if (contact.name) {
+        // Update or add to in-memory cache
+        const idx = cached.findIndex((c) => c.id === contact.id);
+        const entry = { id: contact.id, name: contact.name, phone: digits };
+        if (idx >= 0) cached[idx] = entry; else cached.push(entry);
+
+        await query(
+          `UPDATE leads
+           SET name=$1, updated_at=NOW()
+           WHERE tenant_id=$2::uuid
+             AND REGEXP_REPLACE(phone, '[^0-9]', '', 'g') LIKE '%' || RIGHT($3, 10)
+             AND (
+               name = phone
+               OR name ~ '^[+0-9][0-9 ()\\-]{6,}$'
+             )`,
+          [contact.name, tenantId, digits],
+        ).catch(() => null);
+      }
     }
+    waContactsCache.set(tenantId, cached);
   });
 }
 
@@ -391,6 +422,11 @@ export async function getStatus(tenantId: string): Promise<{ status: string; pho
   return { status: 'disconnected', phone };
 }
 
+/** Returns WA phone-book contacts cached from contacts.upsert events. */
+export function getWAContacts(tenantId: string): { id: string; name: string; phone: string }[] {
+  return waContactsCache.get(tenantId) ?? [];
+}
+
 /** Restores tenants that had an active session saved to disk on server boot. */
 export async function restoreAllSessions(): Promise<void> {
   if (!fs.existsSync(WA_SESSIONS_DIR)) return;
@@ -412,15 +448,72 @@ export async function sendText(tenantId: string, jid: string, text: string): Pro
   if (!sock || !connectedSessions.has(tenantId)) {
     throw new Error('WhatsApp Personal session not connected');
   }
+  const sessionPhone = sock.user?.id ? jidNormalizedUser(sock.user.id).split('@')[0] : null;
   const result = await sock.sendMessage(jid, { text });
   const wamid  = result?.key?.id ?? null;
 
   await query(
-    `INSERT INTO wa_personal_stats (tenant_id, date, messages_sent)
-     VALUES ($1::uuid, CURRENT_DATE, 1)
+    `INSERT INTO wa_personal_stats (tenant_id, date, messages_sent, wa_account)
+     VALUES ($1::uuid, CURRENT_DATE, 1, $2)
      ON CONFLICT (tenant_id, date) DO UPDATE SET messages_sent = wa_personal_stats.messages_sent + 1`,
-    [tenantId],
+    [tenantId, sessionPhone],
   ).catch(() => null);
+
+  if (wamid && sessionPhone) {
+    await query(
+      `UPDATE messages SET wa_account=$1 WHERE wamid=$2 AND tenant_id=$3::uuid`,
+      [sessionPhone, wamid, tenantId],
+    ).catch(() => null);
+  }
+
+  return wamid;
+}
+
+/**
+ * Sends a media file via Personal WhatsApp.
+ * Returns the WA message ID (wamid).
+ */
+export async function sendMedia(
+  tenantId: string,
+  jid: string,
+  buffer: Buffer,
+  mimetype: string,
+  fileName: string,
+  caption?: string,
+): Promise<string | null> {
+  const sock = sessions.get(tenantId);
+  if (!sock || !connectedSessions.has(tenantId)) {
+    throw new Error('WhatsApp Personal session not connected');
+  }
+
+  let content: any;
+  if (mimetype.startsWith('image/')) {
+    content = { image: buffer, mimetype, caption: caption ?? '' };
+  } else if (mimetype.startsWith('video/')) {
+    content = { video: buffer, mimetype, caption: caption ?? '' };
+  } else if (mimetype.startsWith('audio/')) {
+    content = { audio: buffer, mimetype, ptt: false };
+  } else {
+    content = { document: buffer, mimetype, fileName, caption: caption ?? '' };
+  }
+
+  const sessionPhone = sock.user?.id ? jidNormalizedUser(sock.user.id).split('@')[0] : null;
+  const result = await sock.sendMessage(jid, content);
+  const wamid  = result?.key?.id ?? null;
+
+  await query(
+    `INSERT INTO wa_personal_stats (tenant_id, date, messages_sent, wa_account)
+     VALUES ($1::uuid, CURRENT_DATE, 1, $2)
+     ON CONFLICT (tenant_id, date) DO UPDATE SET messages_sent = wa_personal_stats.messages_sent + 1`,
+    [tenantId, sessionPhone],
+  ).catch(() => null);
+
+  if (wamid && sessionPhone) {
+    await query(
+      `UPDATE messages SET wa_account=$1 WHERE wamid=$2 AND tenant_id=$3::uuid`,
+      [sessionPhone, wamid, tenantId],
+    ).catch(() => null);
+  }
 
   return wamid;
 }

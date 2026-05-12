@@ -125,31 +125,75 @@ router.post('/send', checkPermission('inbox:send'), async (req: AuthRequest, res
   }
 });
 
-// GET /api/whatsapp-personal/stats — sent/received counts
+// GET /api/whatsapp-personal/stats — sent/received counts + 7-day trend + session history
 router.get('/stats', async (req: AuthRequest, res: Response) => {
   try {
-    const todayRes = await query(
-      `SELECT messages_sent, messages_received FROM wa_personal_stats
-       WHERE tenant_id=$1::uuid AND date=CURRENT_DATE`,
-      [req.user!.tenantId],
-    );
-    const monthRes = await query(
-      `SELECT COALESCE(SUM(messages_sent),0) AS total_sent,
-              COALESCE(SUM(messages_received),0) AS total_received
-       FROM wa_personal_stats
-       WHERE tenant_id=$1::uuid AND date >= DATE_TRUNC('month', CURRENT_DATE)`,
-      [req.user!.tenantId],
-    );
+    const [todayRes, monthRes, weekRes, sessionRes] = await Promise.all([
+      query(
+        `SELECT messages_sent, messages_received FROM wa_personal_stats
+         WHERE tenant_id=$1::uuid AND date=CURRENT_DATE`,
+        [req.user!.tenantId],
+      ),
+      query(
+        `SELECT COALESCE(SUM(messages_sent),0) AS total_sent,
+                COALESCE(SUM(messages_received),0) AS total_received
+         FROM wa_personal_stats
+         WHERE tenant_id=$1::uuid AND date >= DATE_TRUNC('month', CURRENT_DATE)`,
+        [req.user!.tenantId],
+      ),
+      query(
+        `SELECT date::text, COALESCE(messages_sent,0) AS sent, COALESCE(messages_received,0) AS received
+         FROM wa_personal_stats
+         WHERE tenant_id=$1::uuid AND date >= CURRENT_DATE - INTERVAL '6 days'
+         ORDER BY date ASC`,
+        [req.user!.tenantId],
+      ),
+      query(
+        `SELECT phone, connected_at, disconnected_at, disconnect_reason
+         FROM wa_session_history
+         WHERE tenant_id=$1::uuid
+         ORDER BY connected_at DESC LIMIT 10`,
+        [req.user!.tenantId],
+      ).catch(() => ({ rows: [] })),
+    ]);
+
     res.json({
       today: {
-        sent: todayRes.rows[0]?.messages_sent ?? 0,
+        sent:     todayRes.rows[0]?.messages_sent     ?? 0,
         received: todayRes.rows[0]?.messages_received ?? 0,
       },
       month: {
-        sent: Number(monthRes.rows[0]?.total_sent ?? 0),
+        sent:     Number(monthRes.rows[0]?.total_sent     ?? 0),
         received: Number(monthRes.rows[0]?.total_received ?? 0),
       },
+      week: weekRes.rows,
+      sessions: sessionRes.rows,
     });
+  } catch { res.status(500).json({ error: 'Server error' }); }
+});
+
+// GET /api/whatsapp-personal/settings — tenant WA personal settings
+router.get('/settings', async (req: AuthRequest, res: Response) => {
+  try {
+    const res2 = await query(
+      `SELECT settings->>'wa_auto_create_lead' AS wa_auto_create_lead FROM tenants WHERE id=$1::uuid`,
+      [req.user!.tenantId],
+    );
+    res.json({ wa_auto_create_lead: res2.rows[0]?.wa_auto_create_lead === 'true' });
+  } catch { res.status(500).json({ error: 'Server error' }); }
+});
+
+// PATCH /api/whatsapp-personal/settings — update WA personal settings
+router.patch('/settings', async (req: AuthRequest, res: Response) => {
+  const { wa_auto_create_lead } = req.body as { wa_auto_create_lead?: boolean };
+  try {
+    await query(
+      `UPDATE tenants
+       SET settings = COALESCE(settings, '{}'::jsonb) || jsonb_build_object('wa_auto_create_lead', $1::text)
+       WHERE id=$2::uuid`,
+      [String(!!wa_auto_create_lead), req.user!.tenantId],
+    );
+    res.json({ success: true });
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 

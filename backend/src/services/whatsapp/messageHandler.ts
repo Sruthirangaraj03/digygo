@@ -121,8 +121,39 @@ export async function handleInboundMessage(
      LIMIT 1`,
     [tenantId, phone],
   );
-  const lead     = leadRes.rows[0] ?? null;
-  const leadId   = lead?.id ?? null;
+  let lead   = leadRes.rows[0] ?? null;
+  let leadId = lead?.id ?? null;
+
+  // ── Auto-create lead for inbound messages from unknown numbers ────────────
+  // Only if: inbound (not fromMe), no existing lead, not historical sync,
+  // and tenant has wa_auto_create_lead enabled in settings.
+  if (!lead && !fromMe && !historical) {
+    try {
+      const settingsRes = await query(
+        `SELECT settings FROM tenants WHERE id=$1::uuid`,
+        [tenantId],
+      );
+      const settings = settingsRes.rows[0]?.settings ?? {};
+      if (settings.wa_auto_create_lead) {
+        const newLead = await query(
+          `INSERT INTO leads (tenant_id, name, phone, source, pipeline_id, stage_id, created_at, updated_at)
+           SELECT $1::uuid, $2, $3, 'whatsapp', p.id, s.id, NOW(), NOW()
+           FROM pipelines p
+           LEFT JOIN pipeline_stages s ON s.pipeline_id = p.id
+           WHERE p.tenant_id=$1::uuid AND p.is_deleted=FALSE
+           ORDER BY p.created_at ASC, s.position ASC
+           LIMIT 1
+           RETURNING id, name, phone`,
+          [tenantId, `+${phone}`, `+${phone}`],
+        );
+        if (newLead.rows[0]) {
+          lead   = newLead.rows[0];
+          leadId = newLead.rows[0].id;
+        }
+      }
+    } catch { /* best-effort */ }
+  }
+
   const leadName = lead?.name ?? `+${phone}`;
 
   // ── Find or create conversation ───────────────────────────────────────────
@@ -180,12 +211,12 @@ export async function handleInboundMessage(
 
   const msgRes = await query(
     `INSERT INTO messages
-       (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, remote_jid, status, created_at)
-     VALUES ($1, $2::uuid, $3, $4, $5, FALSE, $6, $7, $8, $9)
+       (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, remote_jid, status, created_at, wa_account)
+     VALUES ($1, $2::uuid, $3, $4, $5, FALSE, $6, $7, $8, $9, $10)
      ON CONFLICT (wamid) WHERE wamid IS NOT NULL
      DO UPDATE SET remote_jid = COALESCE(messages.remote_jid, EXCLUDED.remote_jid)
      RETURNING *`,
-    [convId, tenantId, leadId, sender, text, wamid, remoteJID || null, initStatus, msgTimestamp],
+    [convId, tenantId, leadId, sender, text, wamid, remoteJID || null, initStatus, msgTimestamp, waPhone ?? null],
   );
 
   if (!msgRes.rows[0]) return null; // Already processed (duplicate)

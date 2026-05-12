@@ -580,7 +580,13 @@ export default function IntegrationsPage() {
   const navigate = useNavigate();
   const [modal, setModal] = useState<ModalType | null>(null);
   const { waPersonalStatus, waPersonalPhone, setWaPersonalStatus } = useCrmStore();
-  const [waStats, setWaStats] = useState<{ today: { sent: number; received: number }; month: { sent: number; received: number } } | null>(null);
+  const [waStats, setWaStats] = useState<{
+    today:    { sent: number; received: number };
+    month:    { sent: number; received: number };
+    week?:    { date: string; sent: number; received: number }[];
+    sessions?: { phone: string; connected_at: string; disconnected_at: string | null; disconnect_reason: string | null }[];
+  } | null>(null);
+  const [waAutoCreate, setWaAutoCreate] = useState(false);
   const [status, setStatus] = useState({
     meta: false,
     waba: false,
@@ -611,6 +617,7 @@ export default function IntegrationsPage() {
     }
 
     api.get<any>('/api/whatsapp-personal/stats').then(setWaStats).catch(() => null);
+    api.get<any>('/api/whatsapp-personal/settings').then((s) => setWaAutoCreate(s.wa_auto_create_lead ?? false)).catch(() => null);
   };
 
   useEffect(() => { loadStatus(); }, []);
@@ -708,9 +715,79 @@ export default function IntegrationsPage() {
               </p>
             )}
             {waStats && waPersonalStatus === 'connected' && (
-              <div className="flex gap-3 mt-2">
-                <span className="text-[11px] text-[#9e8e7e]">Today: <b className="text-[#1c1410]">{waStats.today.sent} sent</b></span>
-                <span className="text-[11px] text-[#9e8e7e]"><b className="text-[#1c1410]">{waStats.today.received} received</b></span>
+              <div className="mt-3 space-y-3">
+                {/* KPI row */}
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: 'Sent today',       val: waStats.today.sent },
+                    { label: 'Received today',   val: waStats.today.received },
+                    { label: 'Sent this month',  val: waStats.month.sent },
+                    { label: 'Recvd this month', val: waStats.month.received },
+                  ].map(({ label, val }) => (
+                    <div key={label} className="rounded-lg border border-black/5 bg-[#faf8f6] px-3 py-2">
+                      <p className="text-[18px] font-bold text-[#1c1410]">{val}</p>
+                      <p className="text-[10px] text-[#9e8e7e]">{label}</p>
+                    </div>
+                  ))}
+                </div>
+                {/* 7-day mini-chart */}
+                {waStats.week && waStats.week.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold text-[#9e8e7e] mb-1 uppercase tracking-wider">7-day activity</p>
+                    <div className="flex items-end gap-1 h-12">
+                      {waStats.week.map((d) => {
+                        const total = d.sent + d.received;
+                        const maxVal = Math.max(...(waStats.week ?? []).map((x) => x.sent + x.received), 1);
+                        const pct = Math.round((total / maxVal) * 100);
+                        return (
+                          <div key={d.date} className="flex-1 flex flex-col items-center gap-0.5" title={`${d.date}: ${d.sent} sent, ${d.received} received`}>
+                            <div className="w-full rounded-sm bg-emerald-500/20 flex items-end" style={{ height: '40px' }}>
+                              <div className="w-full rounded-sm bg-emerald-500" style={{ height: `${pct}%` }} />
+                            </div>
+                            <p className="text-[8px] text-[#9e8e7e]">{d.date.slice(5)}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {/* Auto-create lead toggle */}
+                <div className="flex items-center justify-between rounded-lg border border-black/5 bg-[#faf8f6] px-3 py-2">
+                  <div>
+                    <p className="text-[12px] font-semibold text-[#1c1410]">Auto-create lead</p>
+                    <p className="text-[11px] text-[#9e8e7e]">Automatically create a lead when a new contact messages you</p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const next = !waAutoCreate;
+                      setWaAutoCreate(next);
+                      await api.patch('/api/whatsapp-personal/settings', { wa_auto_create_lead: next }).catch(() => {
+                        setWaAutoCreate(!next);
+                        toast.error('Failed to update setting');
+                      });
+                    }}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${waAutoCreate ? 'bg-emerald-500' : 'bg-gray-200'}`}>
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${waAutoCreate ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+                {/* Session history */}
+                {waStats.sessions && waStats.sessions.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold text-[#9e8e7e] mb-1 uppercase tracking-wider">Recent sessions</p>
+                    <div className="space-y-1">
+                      {waStats.sessions.slice(0, 3).map((s, i) => (
+                        <div key={i} className="flex items-center justify-between text-[11px] rounded-lg border border-black/5 bg-[#faf8f6] px-2 py-1.5">
+                          <span className="font-semibold text-[#1c1410]">+{s.phone}</span>
+                          <span className="text-[#9e8e7e]">
+                            {s.disconnected_at
+                              ? `${new Date(s.connected_at).toLocaleDateString()} → ${new Date(s.disconnected_at).toLocaleDateString()}`
+                              : `${new Date(s.connected_at).toLocaleDateString()} (active)`}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
