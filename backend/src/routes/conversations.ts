@@ -51,7 +51,7 @@ function sendWAMessage(phoneNumberId: string, token: string, toPhone: string, te
 // GET /api/conversations
 router.get('/', checkPermission('inbox:send'), async (req: AuthRequest, res: Response) => {
   const { userId, tenantId, role } = req.user!;
-  const { status, assigned_to, search } = req.query as Record<string, string>;
+  const { status, assigned_to, search, wa_account } = req.query as Record<string, string>;
   const isSuperAdmin = role === 'super_admin';
 
   let viewAll = isSuperAdmin;
@@ -86,6 +86,7 @@ router.get('/', checkPermission('inbox:send'), async (req: AuthRequest, res: Res
 
   if (status)      { params.push(status);        sql += ` AND c.status = $${params.length}`; }
   if (assigned_to) { params.push(assigned_to);   sql += ` AND c.assigned_to = $${params.length}`; }
+  if (wa_account)  { params.push(wa_account);    sql += ` AND c.wa_account = $${params.length}`; }
   // Search by lead name OR anonymous phone
   if (search) {
     params.push(`%${search}%`);

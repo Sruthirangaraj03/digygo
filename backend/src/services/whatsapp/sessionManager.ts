@@ -238,9 +238,10 @@ export async function startSession(tenantId: string): Promise<void> {
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     const historical = type === 'append'; // history sync from WA servers
     if (type !== 'notify' && type !== 'append') return;
+    const sessionPhone = sock.user?.id ? jidNormalizedUser(sock.user.id).split('@')[0] : null;
 
     for (const msg of messages) {
-      const result = await handleInboundMessage(tenantId, msg, { historical }).catch(() => null);
+      const result = await handleInboundMessage(tenantId, msg, { historical, waPhone: sessionPhone }).catch(() => null);
       if (result?.hasMedia && !historical) {
         // Download media asynchronously — don't block message processing
         downloadAndStoreMedia(tenantId, msg, result.msgId).catch(() => null);

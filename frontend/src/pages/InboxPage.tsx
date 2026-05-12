@@ -30,6 +30,7 @@ interface ApiConversation {
   last_message: string;
   last_message_at: string;
   unread_count: number;
+  wa_account: string | null;
 }
 
 interface ApiMessage {
@@ -108,6 +109,7 @@ export default function InboxPage() {
   const [sending, setSending]               = useState(false);
   const [hasMore, setHasMore]               = useState(false);
   const [loadingMore, setLoadingMore]       = useState(false);
+  const [waAccountFilter, setWaAccountFilter] = useState<string | null>(null);
 
   const messagesEndRef       = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -248,6 +250,11 @@ export default function InboxPage() {
     return display.split(' ').map((n) => n[0] || '').join('').slice(0, 2).toUpperCase() || '?';
   };
 
+  // Derive distinct WA personal accounts from conversation list
+  const waAccounts = Array.from(
+    new Set(conversations.filter((c) => c.channel === 'personal_wa' && c.wa_account).map((c) => c.wa_account!))
+  );
+
   const filtered = conversations.filter((c) => {
     if (search) {
       const q = search.toLowerCase();
@@ -257,6 +264,7 @@ export default function InboxPage() {
     }
     if (channelFilter === 'waba'        && c.channel !== 'whatsapp')    return false;
     if (channelFilter === 'personal_wa' && c.channel !== 'personal_wa') return false;
+    if (waAccountFilter && c.wa_account !== waAccountFilter)            return false;
     if (filterTab === 'mine')       return c.assigned_to === currentUser?.id;
     if (filterTab === 'unread')     return c.unread_count > 0;
     if (filterTab === 'unassigned') return !c.assigned_to;
@@ -399,7 +407,7 @@ export default function InboxPage() {
               { key: 'waba' as ChannelFilter, label: 'WA Business', Icon: MessageCircle, color: 'text-emerald-600' },
               { key: 'personal_wa' as ChannelFilter, label: 'WA Personal', Icon: Smartphone, color: 'text-teal-600' },
             ]).map(({ key, label, Icon: Ic, color }) => (
-              <button key={key} onClick={() => setChannelFilter(key)}
+              <button key={key} onClick={() => { setChannelFilter(key); if (key !== 'personal_wa') setWaAccountFilter(null); }}
                 className={cn('px-2.5 py-1 text-[11px] font-medium rounded-lg whitespace-nowrap transition-colors flex items-center gap-1',
                   channelFilter === key ? 'bg-black/10 text-foreground' : 'text-muted-foreground hover:bg-[#f5ede3]')}>
                 {Ic && <Ic className={cn('w-3 h-3', color)} />}
@@ -407,6 +415,25 @@ export default function InboxPage() {
               </button>
             ))}
           </div>
+
+          {/* WA Personal account filter — shown only when multiple accounts exist */}
+          {waAccounts.length > 1 && (
+            <div className="flex gap-1 overflow-x-auto">
+              <button onClick={() => setWaAccountFilter(null)}
+                className={cn('px-2.5 py-1 text-[11px] font-medium rounded-lg whitespace-nowrap transition-colors flex items-center gap-1',
+                  !waAccountFilter ? 'bg-teal-100 text-teal-700' : 'text-muted-foreground hover:bg-[#f5ede3]')}>
+                <Smartphone className="w-3 h-3" /> All Numbers
+              </button>
+              {waAccounts.map((acc) => (
+                <button key={acc} onClick={() => setWaAccountFilter(acc)}
+                  className={cn('px-2.5 py-1 text-[11px] font-medium rounded-lg whitespace-nowrap transition-colors flex items-center gap-1',
+                    waAccountFilter === acc ? 'bg-teal-100 text-teal-700' : 'text-muted-foreground hover:bg-[#f5ede3]')}>
+                  <Smartphone className="w-3 h-3" />
+                  +{acc.slice(-10)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto">
           {filtered.length === 0 && (
@@ -436,6 +463,9 @@ export default function InboxPage() {
                     : <MessageCircle className="w-3 h-3 text-green-500 shrink-0" />}
                   <p className="text-[11px] text-[#7a6b5c] truncate">{conv.last_message}</p>
                 </div>
+                {conv.channel === 'personal_wa' && conv.wa_account && waAccounts.length > 1 && (
+                  <p className="text-[10px] text-teal-600 font-medium mt-0.5">via +{conv.wa_account.slice(-10)}</p>
+                )}
                 <div className="flex items-center gap-1 mt-0.5">
                   <Badge variant="secondary" className={cn('text-[10px] px-1.5 py-0 border-0',
                     conv.status === 'open'     && 'bg-green-100 text-green-700',

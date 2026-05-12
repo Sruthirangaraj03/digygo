@@ -79,7 +79,7 @@ function detectMedia(msg: any): boolean {
 export async function handleInboundMessage(
   tenantId: string,
   msg: any,
-  opts?: { historical?: boolean },
+  opts?: { historical?: boolean; waPhone?: string | null },
 ): Promise<{ msgId: string; hasMedia: boolean } | null> {
   if (!msg.message) return null;
 
@@ -90,10 +90,17 @@ export async function handleInboundMessage(
 
   const fromMe: boolean  = msg.key?.fromMe ?? false;
   const historical       = opts?.historical ?? false;
+  const waPhone          = opts?.waPhone ?? null; // connected session phone (for wa_account tagging)
   const rawPhone   = fromJID(remoteJID);
   const phone      = normalizePhone(rawPhone);
-  const text       = extractText(msg);
+  // Reject LIDs, linked-device JIDs, and any non-standard numbers (E.164 max 15 digits)
+  if (!phone || phone.length > 15) return null;
+
+  const hasMedia = detectMedia(msg);
+  const text     = extractText(msg);
   if (!text) return null;
+  // Skip protocol/system messages that produce [Media message] without being real media
+  if (text === '[Media message]' && !hasMedia) return null;
 
   // Use the WA message timestamp (unix seconds); fall back to NOW() only if missing
   const msgTimestamp: Date = msg.messageTimestamp
@@ -113,22 +120,23 @@ export async function handleInboundMessage(
   const leadId   = lead?.id ?? null;
   const leadName = lead?.name ?? `+${phone}`;
 
-  // ── Find or create conversation ───────────────────────────────────────────
+  // ── Find or create conversation (scoped to wa_account) ───────────────────
   let convId: string;
   if (leadId) {
     const existing = await query(
       `SELECT id FROM conversations
        WHERE tenant_id=$1::uuid AND channel='personal_wa' AND lead_id=$2::uuid
+         AND (wa_account=$3 OR wa_account IS NULL)
        ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
-      [tenantId, leadId],
+      [tenantId, leadId, waPhone],
     );
     if (existing.rows[0]) {
       convId = existing.rows[0].id;
     } else {
       const newConv = await query(
-        `INSERT INTO conversations (tenant_id, lead_id, channel, status, unread_count, last_message_at)
-         VALUES ($1::uuid, $2::uuid, 'personal_wa', 'open', 0, NOW()) RETURNING id`,
-        [tenantId, leadId],
+        `INSERT INTO conversations (tenant_id, lead_id, channel, status, unread_count, last_message_at, wa_account)
+         VALUES ($1::uuid, $2::uuid, 'personal_wa', 'open', 0, NOW(), $3) RETURNING id`,
+        [tenantId, leadId, waPhone],
       );
       convId = newConv.rows[0].id;
     }
@@ -136,26 +144,26 @@ export async function handleInboundMessage(
     const existing = await query(
       `SELECT id FROM conversations
        WHERE tenant_id=$1::uuid AND channel='personal_wa' AND lead_id IS NULL AND phone=$2
+         AND (wa_account=$3 OR wa_account IS NULL)
        ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
-      [tenantId, phone],
+      [tenantId, phone, waPhone],
     );
     if (existing.rows[0]) {
       convId = existing.rows[0].id;
     } else {
       const newConv = await query(
-        `INSERT INTO conversations (tenant_id, lead_id, channel, status, unread_count, last_message_at, phone)
-         VALUES ($1::uuid, NULL, 'personal_wa', 'open', 0, NOW(), $2) RETURNING id`,
-        [tenantId, phone],
+        `INSERT INTO conversations (tenant_id, lead_id, channel, status, unread_count, last_message_at, phone, wa_account)
+         VALUES ($1::uuid, NULL, 'personal_wa', 'open', 0, NOW(), $2, $3) RETURNING id`,
+        [tenantId, phone, waPhone],
       );
       convId = newConv.rows[0].id;
     }
   }
 
   // ── Insert message (idempotent on wamid) ─────────────────────────────────
-  const wamid    = msg.key?.id ?? null;
-  const sender   = fromMe ? 'agent' : 'customer';
+  const wamid      = msg.key?.id ?? null;
+  const sender     = fromMe ? 'agent' : 'customer';
   const initStatus = fromMe ? 'sent' : 'delivered';
-  const hasMedia = detectMedia(msg);
 
   const msgRes = await query(
     `INSERT INTO messages
