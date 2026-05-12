@@ -184,15 +184,18 @@ export async function handleInboundMessage(
   } else {
     const existing = await query(
       `SELECT id FROM conversations
-       WHERE tenant_id=$1::uuid AND channel='personal_wa' AND lead_id IS NULL AND phone=$2
+       WHERE tenant_id=$1::uuid AND channel='personal_wa' AND lead_id IS NULL
+         AND REGEXP_REPLACE(phone, '[^0-9]', '', 'g') LIKE '%' || RIGHT(REGEXP_REPLACE($2, '[^0-9]', '', 'g'), 10)
        ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
       [tenantId, phone],
     );
     if (existing.rows[0]) {
       convId = existing.rows[0].id;
-      if (waPhone) await query(
-        `UPDATE conversations SET wa_account=$1 WHERE id=$2 AND wa_account IS DISTINCT FROM $1`,
-        [waPhone, convId],
+      // Normalize stored phone to full format while we're here
+      await query(
+        `UPDATE conversations SET phone=$1, wa_account=COALESCE(CASE WHEN $2::text IS NOT NULL THEN $2::text END, wa_account)
+         WHERE id=$3 AND (phone IS DISTINCT FROM $1 OR wa_account IS DISTINCT FROM $2)`,
+        [phone, waPhone, convId],
       ).catch(() => null);
     } else {
       const newConv = await query(

@@ -66,6 +66,7 @@ const MIGRATIONS = [
   'migration_064_backfill_conv_phone.sql',
   'migration_065_wa_account.sql',
   'migration_066_wa_enhancements.sql',
+  'migration_067_normalize_conv_phones.sql',
 ];
 
 // Split SQL file into individual statements and execute each one separately.

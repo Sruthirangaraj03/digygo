@@ -10,7 +10,7 @@ import { decrypt } from '../utils/crypto';
 import { emitToTenant } from '../socket';
 import https from 'https';
 import { sendText, sendMedia, getSession, getWAContacts } from '../services/whatsapp/sessionManager';
-import { toJID } from '../services/whatsapp/phoneUtils';
+import { toJID, normalizePhone } from '../services/whatsapp/phoneUtils';
 
 const router = Router();
 router.use(requireAuth);
@@ -79,18 +79,21 @@ router.post('/new', checkPermission('inbox:send'), async (req: AuthRequest, res:
   try {
     const { tenantId } = req.user!;
 
+    // Always work with normalized phone (with country code) to match what Baileys produces
+    const normPhone = normalizePhone(digits);
+
     // Look up lead by last-10-digit match
     const leadRes = await query(
       `SELECT id, name, phone, assigned_to FROM leads
        WHERE tenant_id=$1::uuid AND is_deleted=FALSE
          AND REGEXP_REPLACE(phone, '[^0-9]', '', 'g') LIKE '%' || RIGHT($2, 10)
        LIMIT 1`,
-      [tenantId, digits],
+      [tenantId, normPhone],
     );
     const lead   = leadRes.rows[0] ?? null;
     const leadId = lead?.id ?? null;
 
-    // Find or create conversation
+    // Find or create conversation — use last-10-digit match so format differences never create duplicates
     let convId: string;
     if (leadId) {
       const ex = await query(
@@ -110,24 +113,31 @@ router.post('/new', checkPermission('inbox:send'), async (req: AuthRequest, res:
       }
     } else {
       const ex = await query(
-        `SELECT id FROM conversations WHERE tenant_id=$1::uuid AND channel='personal_wa' AND lead_id IS NULL AND phone=$2
+        `SELECT id FROM conversations
+         WHERE tenant_id=$1::uuid AND channel='personal_wa' AND lead_id IS NULL
+           AND REGEXP_REPLACE(phone, '[^0-9]', '', 'g') LIKE '%' || RIGHT($2, 10)
          ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
-        [tenantId, digits],
+        [tenantId, normPhone],
       );
       if (ex.rows[0]) {
         convId = ex.rows[0].id;
+        // Normalize the stored phone while we're here
+        await query(
+          `UPDATE conversations SET phone=$1 WHERE id=$2 AND phone IS DISTINCT FROM $1`,
+          [normPhone, convId],
+        ).catch(() => null);
       } else {
         const nc = await query(
           `INSERT INTO conversations (tenant_id, lead_id, channel, status, unread_count, last_message_at, phone)
            VALUES ($1::uuid, NULL, 'personal_wa', 'open', 0, NOW(), $2) RETURNING id`,
-          [tenantId, digits],
+          [tenantId, normPhone],  // store normalized phone — matches Baileys format
         );
         convId = nc.rows[0].id;
       }
     }
 
     // Send via Baileys
-    const jid = toJID(`+${digits}`);
+    const jid = toJID(normPhone);
     let wamid: string | null = null;
     let deliveryFailed = false;
     try {
