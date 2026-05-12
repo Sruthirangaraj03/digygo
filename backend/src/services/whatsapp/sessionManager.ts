@@ -47,6 +47,113 @@ const waContactsCache = new Map<string, { id: string; name: string; phone: strin
 // LID → real phone mapping (multi-device WhatsApp sends @lid JIDs instead of phone JIDs)
 const lidToPhone = new Map<string, string>(); // key: "86256281202697" → value: "918072256598"
 
+/**
+ * Persist a LID→phone mapping to DB and memory, then merge any LID-based
+ * anonymous conversation into the real phone conversation.
+ */
+async function storeLidMapping(tenantId: string, lidDigits: string, phoneDigits: string): Promise<void> {
+  lidToPhone.set(lidDigits, phoneDigits);
+  await query(
+    `INSERT INTO wa_lid_phone_map (tenant_id, lid_digits, phone_digits, updated_at)
+     VALUES ($1::uuid, $2, $3, NOW())
+     ON CONFLICT (tenant_id, lid_digits) DO UPDATE SET phone_digits=$3, updated_at=NOW()`,
+    [tenantId, lidDigits, phoneDigits],
+  ).catch(() => null);
+
+  // Find any LID-based anonymous conversation (phone = lidDigits) and merge it
+  // into the real phone conversation so messages appear under the correct contact.
+  try {
+    const lidConv = await query(
+      `SELECT id FROM conversations
+       WHERE tenant_id=$1::uuid AND channel='personal_wa' AND lead_id IS NULL
+         AND REGEXP_REPLACE(phone,'[^0-9]','','g') = $2
+       LIMIT 1`,
+      [tenantId, lidDigits],
+    );
+    if (!lidConv.rows[0]) return; // no LID conversation to merge
+
+    const lidConvId = lidConv.rows[0].id;
+
+    // Find the real phone conversation
+    const realConv = await query(
+      `SELECT id FROM conversations
+       WHERE tenant_id=$1::uuid AND channel='personal_wa'
+         AND REGEXP_REPLACE(COALESCE(phone, (SELECT phone FROM leads WHERE id=lead_id)), '[^0-9]','','g')
+             LIKE '%' || RIGHT($2, 10)
+         AND id != $3
+       ORDER BY last_message_at DESC NULLS LAST LIMIT 1`,
+      [tenantId, phoneDigits, lidConvId],
+    );
+
+    if (realConv.rows[0]) {
+      const realConvId = realConv.rows[0].id;
+      // Move all messages from LID conversation to the real conversation
+      await query(`UPDATE messages SET conversation_id=$1 WHERE conversation_id=$2`, [realConvId, lidConvId]);
+      // Refresh real conversation preview
+      await query(
+        `UPDATE conversations c
+         SET last_message = m.body, last_message_at = m.created_at,
+             unread_count = (SELECT COUNT(*) FROM messages WHERE conversation_id=$1 AND sender='customer')
+         FROM (SELECT body, created_at FROM messages WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 1) m
+         WHERE c.id = $1`,
+        [realConvId],
+      );
+      // Delete the LID conversation
+      await query(`DELETE FROM conversations WHERE id=$1`, [lidConvId]);
+      console.log(`[WA] Merged LID conv ${lidConvId} → real conv ${realConvId} (${phoneDigits})`);
+      emitToTenant(tenantId, 'conversation:deleted', { id: lidConvId });
+      emitToTenant(tenantId, 'conversation:updated', { id: realConvId });
+    } else {
+      // No real conv found yet — update the LID conversation's phone to the real number
+      await query(
+        `UPDATE conversations SET phone=$1 WHERE id=$2`,
+        [phoneDigits, lidConvId],
+      );
+      console.log(`[WA] Updated LID conv phone: ${lidDigits} → ${phoneDigits}`);
+    }
+  } catch (e) {
+    console.error('[WA] LID merge error:', e);
+  }
+}
+
+/**
+ * Query WA servers for the LID of every known conversation phone in this tenant.
+ * Runs once 5s after session connects. Rate-limited to avoid WA throttling.
+ */
+async function resolveLidsForTenant(tenantId: string, sock: ReturnType<typeof makeWASocket>): Promise<void> {
+  const rows = await query(
+    `SELECT DISTINCT REGEXP_REPLACE(COALESCE(l.phone, c.phone), '[^0-9]', '', 'g') AS phone
+     FROM conversations c
+     LEFT JOIN leads l ON l.id = c.lead_id
+     WHERE c.tenant_id=$1::uuid AND c.channel='personal_wa'
+       AND COALESCE(l.phone, c.phone) IS NOT NULL
+       AND LENGTH(REGEXP_REPLACE(COALESCE(l.phone, c.phone), '[^0-9]', '', 'g')) BETWEEN 10 AND 15
+     LIMIT 50`,
+    [tenantId],
+  );
+
+  for (const row of rows.rows) {
+    const phone = row.phone as string;
+    if (!phone) continue;
+    // Skip phones that already have a LID mapping
+    const alreadyMapped = [...lidToPhone.values()].includes(phone);
+    if (alreadyMapped) continue;
+    try {
+      const result = await (sock as any).onWhatsApp(phone);
+      const info = Array.isArray(result) ? result[0] : result;
+      if (info?.lid) {
+        const lidDigits = (info.lid as string).split('@')[0];
+        if (lidDigits && !lidToPhone.has(lidDigits)) {
+          console.log(`[WA] onWhatsApp resolved: ${phone} → lid=${lidDigits}`);
+          await storeLidMapping(tenantId, lidDigits, phone);
+        }
+      }
+    } catch { /* ignore per-phone errors */ }
+    // Rate-limit: 1 query per 800ms to avoid WA throttling
+    await new Promise(r => setTimeout(r, 800));
+  }
+}
+
 const MAX_RETRIES = 5;
 
 function sessionDir(tenantId: string): string {
@@ -205,6 +312,11 @@ export async function startSession(tenantId: string): Promise<void> {
         }
       } catch { /* non-critical */ }
 
+      // 5s after connect: query WA servers for LID of every known conversation phone.
+      // This resolves multi-device contacts (@lid JIDs) to their real phone numbers,
+      // stores the mapping in DB, and merges any duplicate LID-based conversations.
+      setTimeout(() => resolveLidsForTenant(tenantId, sock).catch(() => null), 5_000);
+
       // Wait 60s for history sync to finish, then backfill phones on anonymous conversations
       // whose messages now have remote_jid filled in by the ON CONFLICT UPDATE
       setTimeout(async () => {
@@ -315,7 +427,7 @@ export async function startSession(tenantId: string): Promise<void> {
             );
             if (dbRow.rows[0]?.phone_digits) {
               realPhone = dbRow.rows[0].phone_digits;
-              lidToPhone.set(lidDigits, realPhone!); // warm the in-memory cache
+              lidToPhone.set(lidDigits, realPhone!);
               console.log(`[WA] LID resolved from DB: ${remoteJid} → ${realPhone}@s.whatsapp.net`);
             }
           } catch { /* non-critical */ }
@@ -409,17 +521,9 @@ export async function startSession(tenantId: string): Promise<void> {
       if (!digits) continue;
 
       // Build LID → phone mapping for multi-device contacts
-      // contact.id is the real JID (phone@s.whatsapp.net), contact.lid is the linked device id
       const lidDigits = (contact as any).lid?.split('@')[0];
-      if (lidDigits && digits) {
-        lidToPhone.set(lidDigits, digits);
-        // Persist to DB so it survives server restarts
-        await query(
-          `INSERT INTO wa_lid_phone_map (tenant_id, lid_digits, phone_digits, updated_at)
-           VALUES ($1::uuid, $2, $3, NOW())
-           ON CONFLICT (tenant_id, lid_digits) DO UPDATE SET phone_digits=$3, updated_at=NOW()`,
-          [tenantId, lidDigits, digits],
-        ).catch(() => null);
+      if (lidDigits && digits && !lidToPhone.has(lidDigits)) {
+        await storeLidMapping(tenantId, lidDigits, digits);
       }
 
       if (contact.name) {
@@ -514,6 +618,21 @@ export async function sendText(tenantId: string, jid: string, text: string): Pro
     throw new Error('WhatsApp Personal session not connected');
   }
   const sessionPhone = sock.user?.id ? jidNormalizedUser(sock.user.id).split('@')[0] : null;
+
+  // Pre-populate LID mapping for this recipient so their replies are routed correctly
+  const recipientDigits = jid.split('@')[0];
+  if (recipientDigits && !jid.endsWith('@lid')) {
+    (sock as any).onWhatsApp(recipientDigits).then((result: any) => {
+      const info = Array.isArray(result) ? result[0] : result;
+      if (info?.lid) {
+        const lidDigits = (info.lid as string).split('@')[0];
+        if (lidDigits && !lidToPhone.has(lidDigits)) {
+          storeLidMapping(tenantId, lidDigits, recipientDigits).catch(() => null);
+        }
+      }
+    }).catch(() => null);
+  }
+
   const result = await sock.sendMessage(jid, { text });
   const wamid  = result?.key?.id ?? null;
 
