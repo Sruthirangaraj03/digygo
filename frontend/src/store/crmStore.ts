@@ -654,7 +654,7 @@ export const useCrmStore = create<CrmState>((set) => ({
 
       const fetchedNotifs = safeNotifs.map((n: any) => mapNotifRecord(n));
       const fetchedIds = new Set(fetchedNotifs.map((n) => n.id));
-      const socketOnly = get().notifications.filter((n) => !fetchedIds.has(n.id));
+      const socketOnly = useCrmStore.getState().notifications.filter((n) => !fetchedIds.has(n.id));
       const mappedNotifications = [...socketOnly, ...fetchedNotifs];
 
       const mappedBookingLinks = safeBookings.map((b: any) => ({
