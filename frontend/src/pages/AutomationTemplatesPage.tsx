@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { cn, copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 import { getAccessToken, BASE } from '@/lib/api';
-import { usePermission } from '@/store/authStore';
+import { usePermission } from '@/hooks/usePermission';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type TemplateType = 'waba' | 'email' | 'sms';
