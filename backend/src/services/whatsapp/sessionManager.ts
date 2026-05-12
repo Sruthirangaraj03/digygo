@@ -133,7 +133,8 @@ async function lookupLidForPhonesBatch(sock: any, phones: string[]): Promise<Map
         {
           name: 'contact',
           getQueryElement: () => ({ tag: 'contact', attrs: {} }),
-          getUserElement: (_u: any) => ({ tag: 'contact', attrs: {} }),
+          // Phone number must be in content so WA servers can identify the user
+          getUserElement: (u: any) => ({ tag: 'contact', attrs: {}, content: u.phone }),
         },
         {
           name: 'lid',
