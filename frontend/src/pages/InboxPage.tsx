@@ -456,29 +456,52 @@ export default function InboxPage() {
       {/* Conversation List */}
       <div className={cn('w-full sm:w-80 border-r border-black/5 flex flex-col bg-card shrink-0', !showList && 'hidden sm:flex')}>
         <div className="p-3 border-b border-black/5 space-y-2">
-          {/* Row 1: pill search + channel filter dropdown + round new-chat button */}
-          <div className="flex items-center gap-1.5">
+          {/* Row 1: search bar + round new-chat button */}
+          <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <input
                 className="w-full pl-8 pr-3 py-1.5 text-xs rounded-full border border-black/10 bg-[#f5ede3]/60 placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-colors"
-                placeholder="Search..."
+                placeholder="Search conversations..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
+            <button
+              onClick={() => setShowNewChat(true)}
+              className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xl font-light hover:bg-primary/90 transition-colors shrink-0"
+              title="Start a new chat">
+              +
+            </button>
+          </div>
 
-            {/* Channel + Account filter */}
+          {/* Row 2: status tabs + funnel filter icon */}
+          <div className="flex items-center gap-1">
+            <div className="flex gap-1 overflow-x-auto flex-1 pb-0.5 scrollbar-hide">
+              {tabs.map(({ key, label }) => {
+                const count = key === 'unread'     ? conversations.filter((c) => c.unread_count > 0).length
+                  : key === 'unassigned' ? conversations.filter((c) => !c.assigned_to).length : 0;
+                return (
+                  <button key={key} onClick={() => setFilterTab(key)}
+                    className={cn('px-3 py-1 text-xs font-medium rounded-full whitespace-nowrap transition-colors flex items-center gap-1',
+                      filterTab === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-[#f5ede3]')}>
+                    {label}
+                    {count > 0 && <span className={cn('text-[10px] rounded-full px-1', filterTab === key ? 'bg-white/20' : 'bg-primary/10 text-primary')}>{count}</span>}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Channel filter — funnel icon only, highlights when active */}
             <div className="relative shrink-0">
               <button
                 onClick={() => setShowChannelDropdown((v) => !v)}
-                className={cn('flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-full transition-colors border',
+                title="Filter by channel"
+                className={cn('w-7 h-7 rounded-full flex items-center justify-center transition-colors',
                   channelFilter !== 'all' || waAccountFilter
-                    ? 'bg-primary/10 text-primary border-primary/20'
-                    : 'text-muted-foreground border-black/10 hover:bg-[#f5ede3]')}>
-                <Filter className="w-3 h-3" />
-                {channelFilter === 'waba' ? 'WABA' : channelFilter === 'personal_wa' && waAccountFilter ? `+${waAccountFilter.slice(-10)}` : channelFilter === 'personal_wa' ? 'WA' : 'All'}
-                <ChevronDown className="w-3 h-3" />
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-[#f5ede3]')}>
+                <Filter className="w-3.5 h-3.5" />
               </button>
               {showChannelDropdown && (
                 <>
@@ -524,31 +547,8 @@ export default function InboxPage() {
                 </>
               )}
             </div>
-
-            {/* Round new-chat button */}
-            <button
-              onClick={() => setShowNewChat(true)}
-              className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-lg font-semibold hover:bg-primary/90 transition-colors shrink-0"
-              title="Start a new chat">
-              +
-            </button>
           </div>
 
-          {/* Row 2: status filter tabs */}
-          <div className="flex gap-1 overflow-x-auto pb-0.5 scrollbar-hide">
-            {tabs.map(({ key, label }) => {
-              const count = key === 'unread'     ? conversations.filter((c) => c.unread_count > 0).length
-                : key === 'unassigned' ? conversations.filter((c) => !c.assigned_to).length : 0;
-              return (
-                <button key={key} onClick={() => setFilterTab(key)}
-                  className={cn('px-3 py-1 text-xs font-medium rounded-full whitespace-nowrap transition-colors flex items-center gap-1',
-                    filterTab === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-[#f5ede3]')}>
-                  {label}
-                  {count > 0 && <span className={cn('text-[10px] rounded-full px-1', filterTab === key ? 'bg-white/20' : 'bg-primary/10 text-primary')}>{count}</span>}
-                </button>
-              );
-            })}
-          </div>
         </div>
         <div className="flex-1 overflow-y-auto">
           {filtered.length === 0 && (
