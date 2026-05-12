@@ -2,6 +2,56 @@ import { query } from '../../db';
 import { emitToTenant } from '../../socket';
 import { normalizePhone, fromJID, isGroupJID } from './phoneUtils';
 
+/**
+ * Extracts a human-readable text label from any Baileys message type.
+ * Unwraps ephemeral (disappearing), viewOnce, and other container types first,
+ * then extracts the actual content from the inner message.
+ */
+function extractText(msg: any): string {
+  const m = msg.message;
+  if (!m) return '';
+
+  // Unwrap container types: disappearing messages, view-once, captioned documents, etc.
+  const inner: any =
+    m.ephemeralMessage?.message ??
+    m.viewOnceMessage?.message ??
+    m.viewOnceMessageV2?.message ??
+    m.viewOnceMessageV2Extension?.message ??
+    m.documentWithCaptionMessage?.message ??
+    m.editedMessage?.message ??
+    m;
+
+  // Plain text (most common)
+  if (inner.conversation) return inner.conversation;
+  if (inner.extendedTextMessage?.text) return inner.extendedTextMessage.text;
+
+  // Media with optional caption
+  if (inner.imageMessage)    return inner.imageMessage.caption?.trim()    || '[Image]';
+  if (inner.videoMessage)    return inner.videoMessage.caption?.trim()    || '[Video]';
+  if (inner.audioMessage)    return inner.audioMessage.ptt                ? '[Voice note]' : '[Audio]';
+  if (inner.documentMessage) return inner.documentMessage.fileName
+    ? `[Document: ${inner.documentMessage.fileName}]` : '[Document]';
+
+  // Other rich types
+  if (inner.stickerMessage)             return '[Sticker]';
+  if (inner.locationMessage)            return '[Location]';
+  if (inner.liveLocationMessage)        return '[Live Location]';
+  if (inner.contactMessage)             return `[Contact: ${inner.contactMessage.displayName ?? 'Unknown'}]`;
+  if (inner.contactsArrayMessage)       return '[Contacts]';
+  if (inner.reactionMessage)            return `[Reaction: ${inner.reactionMessage.text ?? ''}]`;
+  if (inner.pollCreationMessage)        return `[Poll: ${inner.pollCreationMessage.name ?? ''}]`;
+  if (inner.pollUpdateMessage)          return '[Poll vote]';
+  if (inner.buttonsResponseMessage)     return inner.buttonsResponseMessage.selectedDisplayText   || '[Button reply]';
+  if (inner.listResponseMessage)        return inner.listResponseMessage.title                    || '[List reply]';
+  if (inner.templateButtonReplyMessage) return inner.templateButtonReplyMessage.selectedDisplayText || '[Reply]';
+  if (inner.groupInviteMessage)         return `[Group invite: ${inner.groupInviteMessage.groupName ?? ''}]`;
+  if (inner.orderMessage)               return '[Order]';
+  if (inner.productMessage)             return '[Product]';
+  if (inner.paymentMessage)             return '[Payment]';
+
+  return '[Media message]';
+}
+
 export async function handleInboundMessage(tenantId: string, msg: any): Promise<void> {
   // Ignore group messages, status messages, and messages we sent
   if (!msg.message) return;
@@ -12,14 +62,7 @@ export async function handleInboundMessage(tenantId: string, msg: any): Promise<
   const rawPhone = fromJID(senderJID);
   const phone = normalizePhone(rawPhone);
 
-  // Extract text content
-  const text =
-    msg.message?.conversation ||
-    msg.message?.extendedTextMessage?.text ||
-    msg.message?.imageMessage?.caption ||
-    msg.message?.videoMessage?.caption ||
-    '[Media message]';
-
+  const text = extractText(msg);
   if (!text) return;
 
   // Find matching lead by phone number (last 10 digits match)

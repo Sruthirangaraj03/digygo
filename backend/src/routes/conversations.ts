@@ -64,7 +64,9 @@ router.get('/', checkPermission('inbox:send'), async (req: AuthRequest, res: Res
   }
 
   let sql = `
-    SELECT c.*, l.name AS lead_name, l.phone AS lead_phone,
+    SELECT c.*,
+           COALESCE(l.name, c.phone, 'Unknown') AS lead_name,
+           COALESCE(l.phone, c.phone)           AS lead_phone,
            u.name AS assigned_name
     FROM conversations c
     LEFT JOIN leads l ON l.id = c.lead_id
@@ -113,7 +115,8 @@ router.post('/:id/messages', checkPermission('inbox:send'), async (req: AuthRequ
   if (!body?.trim()) { res.status(400).json({ error: 'body required' }); return; }
   try {
     const convRes = await query(
-      `SELECT c.*, l.phone AS lead_phone FROM conversations c
+      `SELECT c.*, COALESCE(l.phone, c.phone) AS lead_phone
+       FROM conversations c
        LEFT JOIN leads l ON l.id = c.lead_id
        WHERE c.id=$1 AND c.tenant_id=$2`,
       [req.params.id, req.user!.tenantId]
@@ -137,17 +140,27 @@ router.post('/:id/messages', checkPermission('inbox:send'), async (req: AuthRequ
       } catch (e) { console.error('WABA send error:', e); }
     }
 
-    // Send via Personal WhatsApp (Baileys) if the conversation is on that channel
-    if (!is_note && conv.channel === 'personal_wa' && conv.lead_phone) {
-      try {
-        await sendText(req.user!.tenantId!, toJID(conv.lead_phone), body.trim());
-      } catch (e) { console.error('Personal WA send error:', e); }
+    // Send via Personal WhatsApp (Baileys) — track success/failure for message status
+    let deliveryFailed = false;
+    if (!is_note && conv.channel === 'personal_wa') {
+      if (!conv.lead_phone) {
+        console.error('[Personal WA] No phone on conversation', req.params.id, '— cannot send');
+        deliveryFailed = true;
+      } else {
+        try {
+          await sendText(req.user!.tenantId!, toJID(conv.lead_phone), body.trim());
+        } catch (e: any) {
+          console.error('[Personal WA] Send error:', e?.message ?? e);
+          deliveryFailed = true;
+        }
+      }
     }
 
+    const msgStatus = (is_note || !deliveryFailed) ? 'sent' : 'failed';
     const msgRes = await query(
-      `INSERT INTO messages (conversation_id, tenant_id, sender, body, is_note, wamid, status, created_at)
-       VALUES ($1,$2,'agent',$3,$4,$5,'sent',NOW()) RETURNING *`,
-      [req.params.id, req.user!.tenantId, body.trim(), is_note ?? false, wamid]
+      `INSERT INTO messages (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, status, created_at)
+       VALUES ($1,$2,$3,'agent',$4,$5,$6,$7,NOW()) RETURNING *`,
+      [req.params.id, req.user!.tenantId, conv.lead_id ?? null, body.trim(), is_note ?? false, wamid, msgStatus]
     );
 
     if (!is_note) {
@@ -173,7 +186,10 @@ router.patch('/:id/assign', checkPermission('inbox:send'), async (req: AuthReque
     if (!result.rows[0]) { res.status(404).json({ error: 'Not found' }); return; }
     // Re-fetch with JOINs so socket payload includes lead_name, lead_phone, assigned_name
     const full = await query(
-      `SELECT c.*, l.name AS lead_name, l.phone AS lead_phone, u.name AS assigned_name
+      `SELECT c.*,
+              COALESCE(l.name, c.phone, 'Unknown') AS lead_name,
+              COALESCE(l.phone, c.phone)           AS lead_phone,
+              u.name AS assigned_name
        FROM conversations c
        LEFT JOIN leads l ON l.id = c.lead_id
        LEFT JOIN users u ON u.id = c.assigned_to
@@ -198,7 +214,10 @@ router.patch('/:id/status', checkPermission('inbox:send'), async (req: AuthReque
     if (!result.rows[0]) { res.status(404).json({ error: 'Not found' }); return; }
     // Re-fetch with JOINs so socket payload includes lead_name, lead_phone, assigned_name
     const full = await query(
-      `SELECT c.*, l.name AS lead_name, l.phone AS lead_phone, u.name AS assigned_name
+      `SELECT c.*,
+              COALESCE(l.name, c.phone, 'Unknown') AS lead_name,
+              COALESCE(l.phone, c.phone)           AS lead_phone,
+              u.name AS assigned_name
        FROM conversations c
        LEFT JOIN leads l ON l.id = c.lead_id
        LEFT JOIN users u ON u.id = c.assigned_to

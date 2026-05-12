@@ -5,7 +5,7 @@ import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import {
   Search, Send, Paperclip, Check, CheckCheck, MessageCircle,
-  ArrowLeft, StickyNote, Zap, ChevronDown, UserCheck, X, Smartphone,
+  ArrowLeft, StickyNote, Zap, ChevronDown, UserCheck, X, Smartphone, AlertCircle,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -155,6 +155,9 @@ export default function InboxPage() {
             : c
           )
         );
+      }
+      if (msg.status === 'failed') {
+        toast.error('Message saved but could not be delivered — check WhatsApp Personal connection');
       }
       setMessageText('');
       setIsNote(false);
@@ -380,6 +383,7 @@ export default function InboxPage() {
                       <div className={cn('max-w-[70%] p-3 text-sm',
                         msg.is_note ? 'bg-yellow-50 border border-yellow-200 rounded-2xl'
                           : msg.sender === 'customer' ? 'bg-muted rounded-2xl rounded-tl-sm'
+                          : msg.status === 'failed' ? 'bg-red-500/80 text-white rounded-2xl rounded-tr-sm'
                           : 'bg-primary text-primary-foreground rounded-2xl rounded-tr-sm')}>
                         {msg.is_note && (
                           <p className="text-[10px] font-semibold text-yellow-600 mb-1 flex items-center gap-1">
@@ -397,6 +401,9 @@ export default function InboxPage() {
                           {msg.sender === 'agent' && !msg.is_note && msg.status === 'read' && <CheckCheck className="w-3 h-3 text-blue-300" />}
                           {msg.sender === 'agent' && !msg.is_note && msg.status === 'delivered' && <CheckCheck className="w-3 h-3 text-primary-foreground/50" />}
                           {msg.sender === 'agent' && !msg.is_note && msg.status === 'sent' && <Check className="w-3 h-3 text-primary-foreground/50" />}
+                          {msg.sender === 'agent' && !msg.is_note && msg.status === 'failed' && (
+                            <AlertCircle className="w-3 h-3 text-red-200" title="Not delivered to WhatsApp" />
+                          )}
                         </div>
                       </div>
                     </div>
