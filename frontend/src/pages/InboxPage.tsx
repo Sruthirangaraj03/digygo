@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { formatDistanceToNow, format, isToday, isYesterday } from 'date-fns';
+import { format, isToday, isYesterday } from 'date-fns';
 import { toast } from 'sonner';
 
 type FilterTab = 'all' | 'mine' | 'unread' | 'unassigned' | 'resolved';
@@ -566,11 +566,19 @@ export default function InboxPage() {
                 {getInitials(conv.lead_name, conv.lead_phone)}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm text-foreground">{conv.lead_name || conv.lead_phone || 'Unknown'}</span>
-                  <span className="text-[11px] text-[#7a6b5c]">
-                    {conv.last_message_at ? formatDistanceToNow(new Date(conv.last_message_at), { addSuffix: false }) : ''}
-                  </span>
+                <div className="flex items-start justify-between gap-1">
+                  <span className="font-medium text-sm text-foreground truncate">{conv.lead_name || conv.lead_phone || 'Unknown'}</span>
+                  {conv.last_message_at && (() => {
+                    const d = new Date(conv.last_message_at);
+                    return (
+                      <div className="text-right shrink-0">
+                        {!isToday(d) && (
+                          <p className="text-[10px] text-[#7a6b5c]">{isYesterday(d) ? 'Yesterday' : format(d, 'MMM d')}</p>
+                        )}
+                        <p className="text-[10px] text-[#7a6b5c]">{format(d, 'h:mm a')}</p>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="flex items-center gap-1">
                   {conv.channel === 'personal_wa'
