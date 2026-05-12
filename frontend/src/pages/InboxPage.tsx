@@ -6,7 +6,7 @@ import { getSocket } from '@/lib/socket';
 import {
   Search, Send, Paperclip, Check, CheckCheck, MessageCircle,
   ArrowLeft, StickyNote, Zap, ChevronDown, UserCheck, X, Smartphone, AlertCircle,
-  Loader2, Download,
+  Loader2, Download, Filter,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -110,6 +110,7 @@ export default function InboxPage() {
   const [hasMore, setHasMore]               = useState(false);
   const [loadingMore, setLoadingMore]       = useState(false);
   const [waAccountFilter, setWaAccountFilter] = useState<string | null>(null);
+  const [showChannelDropdown, setShowChannelDropdown] = useState(false);
 
   const messagesEndRef       = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -467,54 +468,81 @@ export default function InboxPage() {
               + New
             </button>
           </div>
-          <div className="flex gap-1 overflow-x-auto pb-0.5">
-            {tabs.map(({ key, label }) => {
-              const count = key === 'unread'     ? conversations.filter((c) => c.unread_count > 0).length
-                : key === 'unassigned' ? conversations.filter((c) => !c.assigned_to).length : 0;
-              return (
-                <button key={key} onClick={() => setFilterTab(key)}
-                  className={cn('px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors flex items-center gap-1',
-                    filterTab === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-[#f5ede3]')}>
-                  {label}
-                  {count > 0 && <span className={cn('text-[10px] rounded-full px-1', filterTab === key ? 'bg-white/20' : 'bg-primary/10 text-primary')}>{count}</span>}
-                </button>
-              );
-            })}
-          </div>
-          {/* Channel filter */}
-          <div className="flex gap-1 overflow-x-auto">
-            {([
-              { key: 'all' as ChannelFilter, label: 'All Channels' },
-              { key: 'waba' as ChannelFilter, label: 'WA Business', Icon: MessageCircle, color: 'text-emerald-600' },
-              { key: 'personal_wa' as ChannelFilter, label: 'WA Personal', Icon: Smartphone, color: 'text-teal-600' },
-            ]).map(({ key, label, Icon: Ic, color }) => (
-              <button key={key} onClick={() => { setChannelFilter(key); if (key !== 'personal_wa') setWaAccountFilter(null); }}
-                className={cn('px-2.5 py-1 text-[11px] font-medium rounded-lg whitespace-nowrap transition-colors flex items-center gap-1',
-                  channelFilter === key ? 'bg-black/10 text-foreground' : 'text-muted-foreground hover:bg-[#f5ede3]')}>
-                {Ic && <Ic className={cn('w-3 h-3', color)} />}
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* WA Personal account filter — shown only when multiple accounts exist */}
-          {waAccounts.length > 1 && (
-            <div className="flex gap-1 overflow-x-auto">
-              <button onClick={() => setWaAccountFilter(null)}
-                className={cn('px-2.5 py-1 text-[11px] font-medium rounded-lg whitespace-nowrap transition-colors flex items-center gap-1',
-                  !waAccountFilter ? 'bg-teal-100 text-teal-700' : 'text-muted-foreground hover:bg-[#f5ede3]')}>
-                <Smartphone className="w-3 h-3" /> All Numbers
-              </button>
-              {waAccounts.map((acc) => (
-                <button key={acc} onClick={() => setWaAccountFilter(acc)}
-                  className={cn('px-2.5 py-1 text-[11px] font-medium rounded-lg whitespace-nowrap transition-colors flex items-center gap-1',
-                    waAccountFilter === acc ? 'bg-teal-100 text-teal-700' : 'text-muted-foreground hover:bg-[#f5ede3]')}>
-                  <Smartphone className="w-3 h-3" />
-                  +{acc.slice(-10)}
-                </button>
-              ))}
+          <div className="flex items-center gap-1">
+            <div className="flex gap-1 overflow-x-auto flex-1 pb-0.5">
+              {tabs.map(({ key, label }) => {
+                const count = key === 'unread'     ? conversations.filter((c) => c.unread_count > 0).length
+                  : key === 'unassigned' ? conversations.filter((c) => !c.assigned_to).length : 0;
+                return (
+                  <button key={key} onClick={() => setFilterTab(key)}
+                    className={cn('px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors flex items-center gap-1',
+                      filterTab === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-[#f5ede3]')}>
+                    {label}
+                    {count > 0 && <span className={cn('text-[10px] rounded-full px-1', filterTab === key ? 'bg-white/20' : 'bg-primary/10 text-primary')}>{count}</span>}
+                  </button>
+                );
+              })}
             </div>
-          )}
+
+            {/* Channel + Account filter — compact dropdown */}
+            <div className="relative shrink-0">
+              <button
+                onClick={() => setShowChannelDropdown((v) => !v)}
+                className={cn('flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors border',
+                  channelFilter !== 'all' || waAccountFilter
+                    ? 'bg-primary/10 text-primary border-primary/20'
+                    : 'text-muted-foreground border-black/10 hover:bg-[#f5ede3]')}>
+                <Filter className="w-3 h-3" />
+                {channelFilter === 'waba' ? 'WABA' : channelFilter === 'personal_wa' && waAccountFilter ? `+${waAccountFilter.slice(-10)}` : channelFilter === 'personal_wa' ? 'Personal' : 'All'}
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {showChannelDropdown && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowChannelDropdown(false)} />
+                  <div className="absolute right-0 top-9 z-50 bg-card border border-black/10 rounded-xl shadow-xl w-44 py-1">
+                    <p className="px-3 pt-1.5 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Channel</p>
+                    {([
+                      { key: 'all' as ChannelFilter, label: 'All Channels' },
+                      { key: 'waba' as ChannelFilter, label: 'WA Business', Icon: MessageCircle, color: 'text-emerald-600' },
+                      { key: 'personal_wa' as ChannelFilter, label: 'WA Personal', Icon: Smartphone, color: 'text-teal-600' },
+                    ]).map(({ key, label, Icon: Ic, color }) => (
+                      <button key={key}
+                        onClick={() => { setChannelFilter(key); if (key !== 'personal_wa') setWaAccountFilter(null); setShowChannelDropdown(false); }}
+                        className={cn('w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[#f5ede3] transition-colors',
+                          channelFilter === key && !waAccountFilter ? 'text-primary font-medium' : 'text-foreground')}>
+                        {Ic ? <Ic className={cn('w-3.5 h-3.5', color)} /> : <div className="w-3.5" />}
+                        {label}
+                        {channelFilter === key && !waAccountFilter && <Check className="w-3 h-3 ml-auto text-primary" />}
+                      </button>
+                    ))}
+                    {waAccounts.length > 1 && (
+                      <>
+                        <div className="border-t border-black/5 mt-1 pt-1">
+                          <p className="px-3 pt-0.5 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Account</p>
+                          <button
+                            onClick={() => { setChannelFilter('personal_wa'); setWaAccountFilter(null); setShowChannelDropdown(false); }}
+                            className={cn('w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[#f5ede3] transition-colors',
+                              channelFilter === 'personal_wa' && !waAccountFilter ? 'text-primary font-medium' : 'text-foreground')}>
+                            <Smartphone className="w-3.5 h-3.5 text-teal-600" /> All Numbers
+                            {channelFilter === 'personal_wa' && !waAccountFilter && <Check className="w-3 h-3 ml-auto text-primary" />}
+                          </button>
+                          {waAccounts.map((acc) => (
+                            <button key={acc}
+                              onClick={() => { setChannelFilter('personal_wa'); setWaAccountFilter(acc); setShowChannelDropdown(false); }}
+                              className={cn('w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[#f5ede3] transition-colors',
+                                waAccountFilter === acc ? 'text-primary font-medium' : 'text-foreground')}>
+                              <Smartphone className="w-3.5 h-3.5 text-teal-600" /> +{acc.slice(-10)}
+                              {waAccountFilter === acc && <Check className="w-3 h-3 ml-auto text-primary" />}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto">
           {filtered.length === 0 && (
@@ -543,17 +571,6 @@ export default function InboxPage() {
                     ? <Smartphone className="w-3 h-3 text-teal-500 shrink-0" />
                     : <MessageCircle className="w-3 h-3 text-green-500 shrink-0" />}
                   <p className="text-[11px] text-[#7a6b5c] truncate">{conv.last_message}</p>
-                </div>
-                {conv.channel === 'personal_wa' && conv.wa_account && waAccounts.length > 1 && (
-                  <p className="text-[10px] text-teal-600 font-medium mt-0.5">via +{conv.wa_account.slice(-10)}</p>
-                )}
-                <div className="flex items-center gap-1 mt-0.5">
-                  <Badge variant="secondary" className={cn('text-[10px] px-1.5 py-0 border-0',
-                    conv.status === 'open'     && 'bg-green-100 text-green-700',
-                    conv.status === 'pending'  && 'bg-yellow-100 text-yellow-700',
-                    conv.status === 'resolved' && 'bg-muted text-muted-foreground')}>
-                    {conv.status}
-                  </Badge>
                 </div>
               </div>
               {conv.unread_count > 0 && (
