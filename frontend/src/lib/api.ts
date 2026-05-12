@@ -1,5 +1,9 @@
 export const BASE = import.meta.env.VITE_API_URL ?? '';
 
+export class SessionExpiredError extends Error {
+  constructor() { super('Session expired'); this.name = 'SessionExpiredError'; }
+}
+
 // In-memory token — never written to localStorage
 let _accessToken: string | null = null;
 export const setAccessToken = (t: string | null) => { _accessToken = t; };
@@ -52,7 +56,7 @@ async function request<T>(path: string, options: RequestInit = {}, _retry = true
         useAuthStore.getState().logout();
       });
     }
-    throw new Error('Session expired');
+    throw new SessionExpiredError();
   }
 
   const data = await res.json().catch(() => ({}));

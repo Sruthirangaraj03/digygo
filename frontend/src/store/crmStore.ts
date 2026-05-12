@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api } from '@/lib/api';
+import { api, SessionExpiredError } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import {
   Lead, Conversation, Workflow, Notification, CalendarEvent, StaffMember,
@@ -179,6 +179,15 @@ interface CrmState {
   // API sync
   initFromApi: () => Promise<void>;
 }
+
+// Prevents concurrent initFromApi() calls from racing each other
+let _initInProgress = false;
+
+// Catch helper: re-throw SessionExpiredError, swallow everything else
+const safeEmpty = (e: unknown): never | any[] => {
+  if (e instanceof SessionExpiredError) throw e;
+  return [] as any[];
+};
 
 export const useCrmStore = create<CrmState>((set) => ({
   wfRecords: [],
@@ -497,33 +506,50 @@ export const useCrmStore = create<CrmState>((set) => ({
   initFromApi: async () => {
     const { currentUser } = useAuthStore.getState();
     if (currentUser?.role === 'super_admin' && !currentUser?.tenantId) return;
+    if (_initInProgress) return;
+    _initInProgress = true;
 
     try {
       const [leadsRes, staffRes, pipelinesRes, calRes, tagsRes, questionsRes, convsRes, notifsRes, bookingLinksRes, followUpsRes, customFieldsRes, workflowsRes, systemFieldsRes] = await Promise.all([
-        api.get<any[]>('/api/leads?limit=5000').catch(() => [] as any[]),
-        api.get<any[]>('/api/settings/staff').catch(() => [] as any[]),
-        api.get<any[]>('/api/pipelines').catch(() => [] as any[]),
-        api.get<any[]>('/api/calendar').catch(() => [] as any[]),
-        api.get<any[]>('/api/tags').catch(() => [] as any[]),
-        api.get<any[]>('/api/fields/questions').catch((e) => { console.warn('[initFromApi] fields/questions failed:', e?.response?.status); return [] as any[]; }),
-        api.get<any[]>('/api/conversations').catch(() => [] as any[]),
-        api.get<any[]>('/api/notifications').catch(() => [] as any[]),
-        api.get<any[]>('/api/calendar/event-types').catch(() => [] as any[]),
-        api.get<any[]>('/api/leads/followups').catch(() => [] as any[]),
-        api.get<any[]>('/api/fields/custom').catch((e) => { console.warn('[initFromApi] fields/custom failed:', e?.response?.status); return [] as any[]; }),
-        api.get<any[]>('/api/workflows').catch(() => [] as any[]),
-        api.get<any[]>('/api/fields/system').catch((e) => { console.warn('[initFromApi] fields/system failed:', e?.response?.status); return [] as any[]; }),
+        api.get<any[]>('/api/leads?limit=5000').catch(safeEmpty),
+        api.get<any[]>('/api/settings/staff').catch(safeEmpty),
+        api.get<any[]>('/api/pipelines').catch(safeEmpty),
+        api.get<any[]>('/api/calendar').catch(safeEmpty),
+        api.get<any[]>('/api/tags').catch(safeEmpty),
+        api.get<any[]>('/api/fields/questions').catch(safeEmpty),
+        api.get<any[]>('/api/conversations').catch(safeEmpty),
+        api.get<any[]>('/api/notifications').catch(safeEmpty),
+        api.get<any[]>('/api/calendar/event-types').catch(safeEmpty),
+        api.get<any[]>('/api/leads/followups').catch(safeEmpty),
+        api.get<any[]>('/api/fields/custom').catch(safeEmpty),
+        api.get<any[]>('/api/workflows').catch(safeEmpty),
+        api.get<any[]>('/api/fields/system').catch(safeEmpty),
       ]);
+
+      // Guarantee arrays — HTTP 200 with non-JSON body parses to {} which would crash .map()
+      const safeLeads      = Array.isArray(leadsRes)        ? leadsRes        : [];
+      const safeStaff      = Array.isArray(staffRes)        ? staffRes        : [];
+      const safePipelines  = Array.isArray(pipelinesRes)    ? pipelinesRes    : [];
+      const safeCal        = Array.isArray(calRes)          ? calRes          : [];
+      const safeTags       = Array.isArray(tagsRes)         ? tagsRes         : [];
+      const safeQuestions  = Array.isArray(questionsRes)    ? questionsRes    : [];
+      const safeConvs      = Array.isArray(convsRes)        ? convsRes        : [];
+      const safeNotifs     = Array.isArray(notifsRes)       ? notifsRes       : [];
+      const safeBookings   = Array.isArray(bookingLinksRes) ? bookingLinksRes : [];
+      const safeFollowUps  = Array.isArray(followUpsRes)    ? followUpsRes    : [];
+      const safeCF         = Array.isArray(customFieldsRes) ? customFieldsRes : [];
+      const safeWorkflows  = Array.isArray(workflowsRes)    ? workflowsRes    : [];
+      const safeSystem     = Array.isArray(systemFieldsRes) ? systemFieldsRes : [];
 
       // Build stageId → stageName lookup
       const stageMap: Record<string, string> = {};
-      for (const p of pipelinesRes) {
+      for (const p of safePipelines) {
         for (const s of (p.stages ?? [])) {
           stageMap[s.id] = s.name;
         }
       }
 
-      const mappedPipelines: Pipeline[] = pipelinesRes.map((p) => ({
+      const mappedPipelines: Pipeline[] = safePipelines.map((p) => ({
         id: p.id,
         name: p.name,
         stages: (p.stages ?? []).map((s: any) => ({
@@ -534,7 +560,7 @@ export const useCrmStore = create<CrmState>((set) => ({
         })),
       }));
 
-      const mappedLeads: Lead[] = leadsRes.map((l) => {
+      const mappedLeads: Lead[] = safeLeads.map((l) => {
         const parts = (l.name ?? '').split(' ');
         const stageName = stageMap[l.stage_id] ?? l.stage_name ?? 'New Lead';
         return {
@@ -567,7 +593,7 @@ export const useCrmStore = create<CrmState>((set) => ({
         } as Lead;
       });
 
-      const mappedStaff: StaffMember[] = staffRes.map((s) => ({
+      const mappedStaff: StaffMember[] = safeStaff.map((s) => ({
         id: s.id,
         name: s.name,
         email: s.email,
@@ -578,7 +604,7 @@ export const useCrmStore = create<CrmState>((set) => ({
         avatar: (s.name ?? '').split(' ').map((n: string) => n[0] ?? '').join('').slice(0, 2).toUpperCase(),
       }));
 
-      const mappedEvents: CalendarEvent[] = calRes.map((e) => ({
+      const mappedEvents: CalendarEvent[] = safeCal.map((e) => ({
         id: e.id,
         title: e.title,
         type: (e.type ?? 'meeting') as CalendarEvent['type'],
@@ -595,14 +621,14 @@ export const useCrmStore = create<CrmState>((set) => ({
         notes: e.description ?? '',
       }));
 
-      const mappedTags = tagsRes.map((t) => ({
+      const mappedTags = safeTags.map((t) => ({
         id: t.id,
         name: t.name,
         color: t.color ?? '#94a3b8',
         count: t.lead_count ?? 0,
       }));
 
-      const mappedAdditionalFields: AdditionalField[] = (questionsRes ?? []).map((r: any) => ({
+      const mappedAdditionalFields: AdditionalField[] = safeQuestions.map((r: any) => ({
         id: r.id,
         pipelineId: r.pipeline_id ?? 'all',
         question: r.question,
@@ -612,7 +638,7 @@ export const useCrmStore = create<CrmState>((set) => ({
         required: r.required ?? false,
       }));
 
-      const mappedConversations = (convsRes ?? []).map((c: any) => ({
+      const mappedConversations = safeConvs.map((c: any) => ({
         id: c.id,
         leadId: c.lead_id ?? '',
         leadName: c.lead_name ?? 'Unknown',
@@ -626,13 +652,12 @@ export const useCrmStore = create<CrmState>((set) => ({
         messages: [],
       }));
 
-      // Fix 11: use actual backend type; Fix 4: merge with socket-only entries
-      const fetchedNotifs = (notifsRes ?? []).map((n: any) => mapNotifRecord(n));
+      const fetchedNotifs = safeNotifs.map((n: any) => mapNotifRecord(n));
       const fetchedIds = new Set(fetchedNotifs.map((n) => n.id));
       const socketOnly = get().notifications.filter((n) => !fetchedIds.has(n.id));
       const mappedNotifications = [...socketOnly, ...fetchedNotifs];
 
-      const mappedBookingLinks = (bookingLinksRes ?? []).map((b: any) => ({
+      const mappedBookingLinks = safeBookings.map((b: any) => ({
         id: b.id,
         title: b.name,
         name: b.name,
@@ -648,7 +673,7 @@ export const useCrmStore = create<CrmState>((set) => ({
         capacityPerSlot: b.capacity_per_slot ?? 1,
       }));
 
-      const mappedFollowUps = (followUpsRes ?? []).map((f: any) => ({
+      const mappedFollowUps = safeFollowUps.map((f: any) => ({
         id: f.id,
         leadId: f.lead_id,
         note: f.title + (f.description ? `\n${f.description}` : ''),
@@ -658,7 +683,7 @@ export const useCrmStore = create<CrmState>((set) => ({
         createdAt: f.created_at ?? new Date().toISOString(),
       }));
 
-      const mappedCustomFields = (customFieldsRes ?? []).map((cf: any) => ({
+      const mappedCustomFields = safeCF.map((cf: any) => ({
         id: cf.id,
         name: cf.name,
         slug: cf.slug,
@@ -669,7 +694,7 @@ export const useCrmStore = create<CrmState>((set) => ({
         orderIndex: cf.order_index ?? 0,
       }));
 
-      const mappedWorkflows = (workflowsRes ?? []).map((w: any) => ({
+      const mappedWorkflows = safeWorkflows.map((w: any) => ({
         id: w.id,
         name: w.name,
         status: (w.status ?? 'inactive') as 'active' | 'inactive',
@@ -692,12 +717,17 @@ export const useCrmStore = create<CrmState>((set) => ({
         workflows: mappedWorkflows,
         customFields: mappedCustomFields,
         additionalFields: mappedAdditionalFields,
-        systemFields: (systemFieldsRes ?? []).length > 0
-          ? (systemFieldsRes as any[]).map((f) => ({ id: f.id, name: f.name, slug: f.slug, group: f.group }))
+        systemFields: safeSystem.length > 0
+          ? safeSystem.map((f) => ({ id: f.id, name: f.name, slug: f.slug, group: f.group }))
           : SYSTEM_FIELDS_FALLBACK,
       });
-    } catch {
-      // Keep mock data if API fails (e.g. not logged in yet)
+    } catch (e) {
+      // SessionExpiredError: logout already triggered asynchronously — don't stomp the store
+      if (!(e instanceof SessionExpiredError)) {
+        console.error('[initFromApi] unexpected error:', e);
+      }
+    } finally {
+      _initInProgress = false;
     }
   },
 }));

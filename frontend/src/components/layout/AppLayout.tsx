@@ -68,6 +68,17 @@ export function AppLayout() {
     };
   }, []);
 
+  // Re-fetch when user returns to the tab after it was hidden (e.g. switching tabs, locking screen)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        initFromApi();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
+
   return (
     // pt-10 (40px) reserves space for the fixed ImpersonationBanner when active
     <div className={`h-[100dvh] flex w-full bg-[#faf8f6] overflow-hidden${isImpersonating ? ' pt-10' : ''}`}>
