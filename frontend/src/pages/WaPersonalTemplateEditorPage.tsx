@@ -112,8 +112,9 @@ export default function WaPersonalTemplateEditorPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch custom fields and value tokens for variable chips
+  // Re-fetch custom fields and value tokens every time the modal opens so new fields appear immediately
   useEffect(() => {
+    if (!pickerOpen) return;
     const tok = getAccessToken();
     const headers: Record<string, string> = tok ? { Authorization: `Bearer ${tok}` } : {};
     Promise.all([
@@ -123,7 +124,7 @@ export default function WaPersonalTemplateEditorPage() {
       if (Array.isArray(cf)) setCustomFields(cf.map((f: any) => ({ slug: f.slug, name: f.name })));
       if (Array.isArray(vt)) setValueTokens(vt.map((v: any) => ({ name: v.name, replace_with: v.replace_with })));
     });
-  }, []);
+  }, [pickerOpen]);
 
   useEffect(() => {
     if (!isEdit) return;
