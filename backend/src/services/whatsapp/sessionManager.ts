@@ -765,10 +765,9 @@ export async function sendText(tenantId: string, jid: string, text: string): Pro
     }).catch(() => null);
   }
 
-  // If the message contains a URL, request high-quality link preview (thumbnail + title + description).
-  // link-preview-js must be installed — Baileys uses it internally to fetch Open Graph metadata.
-  const hasUrl = /https?:\/\/[^\s]+/.test(text);
-  const result = await sock.sendMessage(jid, { text }, hasUrl ? { generateHighQualityLinkPreview: true } : undefined);
+  // Baileys auto-generates link previews (thumbnail + title + description) for any URL in the text
+  // as long as link-preview-js is installed — no extra option needed.
+  const result = await sock.sendMessage(jid, { text });
   const wamid  = result?.key?.id ?? null;
 
   await query(
