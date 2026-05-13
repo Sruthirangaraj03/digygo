@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, X, RefreshCw, Check, Mail, ExternalLink, Unplug, Eye, EyeOff, QrCode, Wifi, WifiOff } from 'lucide-react';
+import { ArrowLeft, X, RefreshCw, Check, Mail, ExternalLink, Unplug, Eye, EyeOff, QrCode, Wifi, WifiOff, BarChart2 } from 'lucide-react';
 import { getSocket } from '@/lib/socket';
 import { useCrmStore } from '@/store/crmStore';
 import { Button } from '@/components/ui/button';
@@ -741,6 +741,12 @@ export default function IntegrationsPage() {
                 <QrCode className="w-3.5 h-3.5" />Connect via QR
               </button>
             )}
+            <button
+              className="flex items-center justify-center gap-1.5 text-[12px] font-semibold text-[#7a6b5c] border border-black/10 rounded-lg px-3 py-1.5 hover:bg-[#f5ede3] hover:text-[#c2410c] transition-colors"
+              onClick={() => navigate('/settings/integrations/wa-personal')}
+            >
+              <BarChart2 className="w-3.5 h-3.5" />Analytics
+            </button>
           </div>
         </div>
 

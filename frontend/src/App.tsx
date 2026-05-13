@@ -19,6 +19,7 @@ import AutomationPage from "./pages/AutomationPage";
 import AutomationTemplatesPage from "./pages/AutomationTemplatesPage";
 import WorkflowEditorPage from "./pages/WorkflowEditorPage";
 import WaPersonalTemplateEditorPage from "./pages/WaPersonalTemplateEditorPage";
+import WaPersonalOverviewPage from "./pages/WaPersonalOverviewPage";
 import WorkflowAnalyticsPage from "./pages/WorkflowAnalyticsPage";
 import InboxPage from "./pages/InboxPage";
 import InboxOverviewPage from "./pages/InboxOverviewPage";
@@ -98,6 +99,7 @@ const App = () => (
             <Route path="/settings/notifications" element={<NotificationsPage />} />
             <Route path="/settings/assignment-rules" element={<AssignmentRulesPage />} />
             <Route path="/settings/integrations" element={<IntegrationsPage />} />
+            <Route path="/settings/integrations/wa-personal" element={<WaPersonalOverviewPage />} />
             <Route path="/automation/pincode-routing" element={<PincodeRoutingPage />} />
 
             {/* Super Admin */}

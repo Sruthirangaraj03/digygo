@@ -172,6 +172,198 @@ router.get('/stats', async (req: AuthRequest, res: Response) => {
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 
+// ── Analytics helpers ─────────────────────────────────────────────────────────
+
+function periodBounds(period: string): { start: string; prevStart: string; prevEnd: string } {
+  const MS_DAY = 86_400_000;
+  const now = new Date();
+  const todayMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  let startMs: number;
+  let durationMs: number;
+
+  switch (period) {
+    case 'today':
+      startMs = todayMs; durationMs = MS_DAY; break;
+    case 'yesterday':
+      startMs = todayMs - MS_DAY; durationMs = MS_DAY; break;
+    case 'month':
+      startMs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      durationMs = todayMs - startMs + MS_DAY; break;
+    case 'quarter': {
+      const q = Math.floor(now.getMonth() / 3);
+      startMs = new Date(now.getFullYear(), q * 3, 1).getTime();
+      durationMs = todayMs - startMs + MS_DAY; break;
+    }
+    default: // week
+      startMs = todayMs - 6 * MS_DAY; durationMs = 7 * MS_DAY;
+  }
+
+  const fmt = (ms: number) => new Date(ms).toISOString().split('T')[0];
+  return { start: fmt(startMs), prevStart: fmt(startMs - durationMs), prevEnd: fmt(startMs) };
+}
+
+// GET /api/whatsapp-personal/analytics?period=week
+router.get('/analytics', async (req: AuthRequest, res: Response) => {
+  const { period = 'week' } = req.query as { period?: string };
+  const tenantId = req.user!.tenantId!;
+  const { start, prevStart, prevEnd } = periodBounds(period);
+  const startTs    = start     + 'T00:00:00Z';
+  const prevStartTs = prevStart + 'T00:00:00Z';
+  const prevEndTs   = prevEnd   + 'T00:00:00Z';
+
+  try {
+    const [cur, prev, curContacts, prevContacts, reply] = await Promise.all([
+      query(
+        `SELECT COALESCE(SUM(messages_sent),0)::int AS sent,
+                COALESCE(SUM(messages_received),0)::int AS received
+         FROM wa_personal_stats WHERE tenant_id=$1::uuid AND date >= $2::date`,
+        [tenantId, start],
+      ),
+      query(
+        `SELECT COALESCE(SUM(messages_sent),0)::int AS sent,
+                COALESCE(SUM(messages_received),0)::int AS received
+         FROM wa_personal_stats WHERE tenant_id=$1::uuid AND date >= $2::date AND date < $3::date`,
+        [tenantId, prevStart, prevEnd],
+      ),
+      query(
+        `SELECT COUNT(DISTINCT COALESCE(m.remote_jid, m.lead_id::text))::int AS count
+         FROM messages m
+         JOIN conversations c ON c.id = m.conversation_id AND c.channel = 'personal_wa'
+         WHERE m.tenant_id=$1::uuid AND m.created_at >= $2::timestamptz`,
+        [tenantId, startTs],
+      ),
+      query(
+        `SELECT COUNT(DISTINCT COALESCE(m.remote_jid, m.lead_id::text))::int AS count
+         FROM messages m
+         JOIN conversations c ON c.id = m.conversation_id AND c.channel = 'personal_wa'
+         WHERE m.tenant_id=$1::uuid AND m.created_at >= $2::timestamptz AND m.created_at < $3::timestamptz`,
+        [tenantId, prevStartTs, prevEndTs],
+      ),
+      query(
+        `WITH conv_stats AS (
+           SELECT m.conversation_id,
+             COUNT(*) FILTER (WHERE m.sender='agent')    AS sent_cnt,
+             COUNT(*) FILTER (WHERE m.sender='customer') AS recv_cnt
+           FROM messages m
+           JOIN conversations c ON c.id = m.conversation_id AND c.channel = 'personal_wa'
+           WHERE m.tenant_id=$1::uuid AND m.created_at >= $2::timestamptz
+           GROUP BY m.conversation_id
+         )
+         SELECT COUNT(*) FILTER (WHERE recv_cnt > 0)::int AS total_inbound,
+                COUNT(*) FILTER (WHERE recv_cnt > 0 AND sent_cnt > 0)::int AS replied
+         FROM conv_stats`,
+        [tenantId, startTs],
+      ),
+    ]);
+
+    const totalInbound = reply.rows[0]?.total_inbound ?? 0;
+    const replied      = reply.rows[0]?.replied ?? 0;
+    const replyRate    = totalInbound > 0 ? Math.round((replied / totalInbound) * 100) : 0;
+
+    res.json({
+      sent:      { value: cur.rows[0]?.sent ?? 0,          prev: prev.rows[0]?.sent ?? 0 },
+      received:  { value: cur.rows[0]?.received ?? 0,      prev: prev.rows[0]?.received ?? 0 },
+      contacts:  { value: curContacts.rows[0]?.count ?? 0, prev: prevContacts.rows[0]?.count ?? 0 },
+      replyRate: { value: replyRate, totalInbound, replied },
+    });
+  } catch (err: any) { res.status(500).json({ error: err.message ?? 'Server error' }); }
+});
+
+// GET /api/whatsapp-personal/volume?period=week
+router.get('/volume', async (req: AuthRequest, res: Response) => {
+  const { period = 'week' } = req.query as { period?: string };
+  const tenantId = req.user!.tenantId!;
+  const { start } = periodBounds(period);
+  try {
+    const result = await query(
+      `SELECT date::text,
+              COALESCE(messages_sent,0)::int AS sent,
+              COALESCE(messages_received,0)::int AS received
+       FROM wa_personal_stats
+       WHERE tenant_id=$1::uuid AND date >= $2::date ORDER BY date ASC`,
+      [tenantId, start],
+    );
+    res.json(result.rows);
+  } catch (err: any) { res.status(500).json({ error: err.message ?? 'Server error' }); }
+});
+
+// GET /api/whatsapp-personal/top-contacts?period=week&limit=5
+router.get('/top-contacts', async (req: AuthRequest, res: Response) => {
+  const { period = 'week', limit = '5' } = req.query as { period?: string; limit?: string };
+  const tenantId = req.user!.tenantId!;
+  const { start } = periodBounds(period);
+  const startTs = start + 'T00:00:00Z';
+  try {
+    const result = await query(
+      `SELECT
+         COALESCE(l.name,  REGEXP_REPLACE(COALESCE(m.remote_jid,''), '@.*$', '')) AS contact_name,
+         COALESCE(l.phone, REGEXP_REPLACE(COALESCE(m.remote_jid,''), '@.*$', '')) AS phone,
+         COUNT(*)::int AS total,
+         COUNT(*) FILTER (WHERE m.sender='agent')::int    AS sent,
+         COUNT(*) FILTER (WHERE m.sender='customer')::int AS received
+       FROM messages m
+       JOIN  conversations c ON c.id = m.conversation_id AND c.channel = 'personal_wa'
+       LEFT JOIN leads l ON l.id = m.lead_id AND l.tenant_id = m.tenant_id AND l.is_deleted = FALSE
+       WHERE m.tenant_id=$1::uuid AND m.created_at >= $2::timestamptz
+       GROUP BY COALESCE(l.name,  REGEXP_REPLACE(COALESCE(m.remote_jid,''), '@.*$', '')),
+                COALESCE(l.phone, REGEXP_REPLACE(COALESCE(m.remote_jid,''), '@.*$', ''))
+       ORDER BY total DESC LIMIT $3`,
+      [tenantId, startTs, parseInt(limit) || 5],
+    );
+    res.json(result.rows);
+  } catch (err: any) { res.status(500).json({ error: err.message ?? 'Server error' }); }
+});
+
+// GET /api/whatsapp-personal/logs?period=week&direction=all&search=&limit=50&offset=0
+router.get('/logs', async (req: AuthRequest, res: Response) => {
+  const { period = 'week', direction = 'all', search = '', limit = '50', offset = '0' } =
+    req.query as Record<string, string>;
+  const tenantId = req.user!.tenantId!;
+  const { start } = periodBounds(period);
+  const startTs = start + 'T00:00:00Z';
+
+  const baseParams: any[] = [tenantId, startTs];
+  let where = `m.tenant_id=$1::uuid AND m.created_at >= $2::timestamptz AND c.channel='personal_wa'`;
+
+  if (direction === 'sent')     where += ` AND m.sender='agent'`;
+  else if (direction === 'received') where += ` AND m.sender='customer'`;
+
+  if (search.trim()) {
+    baseParams.push(`%${search.trim()}%`);
+    const n = baseParams.length;
+    where += ` AND (l.name ILIKE $${n} OR l.phone ILIKE $${n} OR m.remote_jid ILIKE $${n})`;
+  }
+
+  const dataParams = [...baseParams, parseInt(limit) || 50, parseInt(offset) || 0];
+  const lIdx = dataParams.length - 1;
+  const oIdx = dataParams.length;
+
+  try {
+    const [rows, countRes] = await Promise.all([
+      query(
+        `SELECT m.id, m.sender, m.body, m.created_at, m.wa_account, m.remote_jid, m.status, m.type,
+                COALESCE(l.name,  REGEXP_REPLACE(COALESCE(m.remote_jid,''), '@.*$', '')) AS contact_name,
+                COALESCE(l.phone, REGEXP_REPLACE(COALESCE(m.remote_jid,''), '@.*$', '')) AS contact_phone
+         FROM messages m
+         JOIN  conversations c ON c.id = m.conversation_id
+         LEFT JOIN leads l ON l.id = m.lead_id AND l.tenant_id = m.tenant_id AND l.is_deleted = FALSE
+         WHERE ${where}
+         ORDER BY m.created_at DESC LIMIT $${lIdx} OFFSET $${oIdx}`,
+        dataParams,
+      ),
+      query(
+        `SELECT COUNT(*)::int AS total
+         FROM messages m
+         JOIN  conversations c ON c.id = m.conversation_id
+         LEFT JOIN leads l ON l.id = m.lead_id AND l.tenant_id = m.tenant_id AND l.is_deleted = FALSE
+         WHERE ${where}`,
+        baseParams,
+      ),
+    ]);
+    res.json({ rows: rows.rows, total: countRes.rows[0]?.total ?? 0 });
+  } catch (err: any) { res.status(500).json({ error: err.message ?? 'Server error' }); }
+});
+
 // GET /api/whatsapp-personal/settings — tenant WA personal settings
 router.get('/settings', async (req: AuthRequest, res: Response) => {
   try {
