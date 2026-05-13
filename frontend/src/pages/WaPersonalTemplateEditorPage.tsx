@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, Upload, X, FileText, Film, Loader2, Check } from 'lucide-react';
+import { ArrowLeft, ChevronRight, ChevronDown, Search, Upload, X, FileText, Film, Loader2, Check } from 'lucide-react';
 import { Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -102,6 +102,8 @@ export default function WaPersonalTemplateEditorPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [customFields, setCustomFields] = useState<Array<{ slug: string; name: string }>>([]);
   const [valueTokens, setValueTokens] = useState<Array<{ name: string; replace_with: string }>>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [search, setSearch] = useState('');
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -177,13 +179,15 @@ export default function WaPersonalTemplateEditorPage() {
     }, 0);
   };
 
-  const insertVariable = (key: string) => {
+  const insertVariable = (slug: string) => {
     const el = textareaRef.current;
     if (!el) return;
     const pos = el.selectionStart;
-    const val = `{${key}}`;
+    const val = `{%${slug}%}`;
     const newMsg = message.slice(0, pos) + val + message.slice(pos);
     setMessage(newMsg);
+    setPickerOpen(false);
+    setSearch('');
     setTimeout(() => {
       el.focus();
       el.setSelectionRange(pos + val.length, pos + val.length);
@@ -237,6 +241,23 @@ export default function WaPersonalTemplateEditorPage() {
     ...Object.fromEntries(customFields.map((f) => [f.slug, `[${f.name}]`])),
     ...Object.fromEntries(valueTokens.map((v) => [v.name, v.replace_with])),
   };
+
+  // Build searchable field list for the variable picker
+  const allPickerFields = [
+    ...STANDARD_VARS.map((v) => ({ name: v.label, slug: v.key, category: 'Lead Info' as const, preview: BASE_SAMPLE[v.key] ?? '' })),
+    ...CALENDAR_VARS.map((v) => ({ name: v.label, slug: v.key, category: 'Calendar' as const, preview: BASE_SAMPLE[v.key] ?? '' })),
+    ...customFields.map((f) => ({ name: f.name, slug: f.slug, category: 'Additional Fields' as const, preview: '' })),
+    ...valueTokens.map((v) => ({ name: v.name, slug: v.name, category: 'Values' as const, preview: v.replace_with })),
+  ];
+  const q = search.trim().toLowerCase();
+  const filteredFields = q
+    ? allPickerFields.filter((f) => f.name.toLowerCase().includes(q) || f.slug.toLowerCase().includes(q))
+    : allPickerFields;
+  const CATEGORIES = ['Lead Info', 'Calendar', 'Additional Fields', 'Values'] as const;
+  const pickerGroups = CATEGORIES.map((cat) => ({
+    label: cat,
+    items: filteredFields.filter((f) => f.category === cat),
+  })).filter((g) => g.items.length > 0);
 
   const attachType: 'image' | 'video' | 'doc' | null = (() => {
     const t = file?.type ?? existingFile?.type ?? '';
@@ -364,93 +385,68 @@ export default function WaPersonalTemplateEditorPage() {
                     onChange={(e) => setMessage(e.target.value)}
                     maxLength={4096}
                     rows={9}
-                    placeholder={"Hi {first_name}! 👋\n\nThank you for reaching out to us.\n\nHere's what we'd love to share with you..."}
+                    placeholder={"Hi {%first_name%}! 👋\n\nThank you for reaching out to us.\n\nHere's what we'd love to share with you..."}
                     className="w-full text-[13px] text-[#1c1410] placeholder:text-[#7a6b5c]/40 bg-transparent outline-none resize-none leading-relaxed"
                   />
                 </div>
 
-                {/* Variable chips — organized by category */}
-                <div className="px-4 pb-4 pt-1 space-y-3">
-                  <p className="text-[11px] font-medium text-[#7a6b5c]">
-                    Click to insert at cursor:
-                  </p>
+                {/* Variable Picker */}
+                <div className="px-4 pb-4 pt-2 border-t border-orange-50">
+                  <button
+                    onClick={() => { setPickerOpen((o) => !o); setSearch(''); }}
+                    className="flex items-center gap-1.5 text-[12px] font-medium text-orange-700 hover:text-orange-900 transition-colors"
+                  >
+                    <span className="w-5 h-5 rounded-md bg-orange-100 flex items-center justify-center text-orange-600 font-bold text-[13px] leading-none">+</span>
+                    Insert Variable
+                    <ChevronDown className={cn('w-3.5 h-3.5 transition-transform duration-150', pickerOpen && 'rotate-180')} />
+                  </button>
 
-                  {/* Standard fields */}
-                  <div>
-                    <p className="text-[10px] font-bold text-[#92400e] uppercase tracking-widest mb-1.5">Lead Info</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {STANDARD_VARS.map((v) => (
-                        <button
-                          key={v.key}
-                          onClick={() => insertVariable(v.key)}
-                          title={v.label}
-                          className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 hover:border-orange-300 transition-colors"
-                        >
-                          {`{${v.key}}`}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Calendar fields */}
-                  <div>
-                    <p className="text-[10px] font-bold text-[#92400e] uppercase tracking-widest mb-1.5">Appointment / Calendar</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {CALENDAR_VARS.map((v) => (
-                        <button
-                          key={v.key}
-                          onClick={() => insertVariable(v.key)}
-                          title={v.label}
-                          className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 hover:border-blue-300 transition-colors"
-                        >
-                          {`{${v.key}}`}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Custom / Additional fields */}
-                  {customFields.length > 0 && (
-                    <div>
-                      <p className="text-[10px] font-bold text-[#92400e] uppercase tracking-widest mb-1.5">Additional Fields</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {customFields.map((f) => (
-                          <button
-                            key={f.slug}
-                            onClick={() => insertVariable(f.slug)}
-                            title={f.name}
-                            className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 hover:border-purple-300 transition-colors"
-                          >
-                            {`{${f.slug}}`}
+                  {pickerOpen && (
+                    <div className="mt-2 rounded-xl border border-orange-100 overflow-hidden shadow-sm">
+                      {/* Search bar */}
+                      <div className="flex items-center gap-2 px-3 py-2 bg-[#fffbf7] border-b border-orange-100">
+                        <Search className="w-3.5 h-3.5 text-[#7a6b5c] shrink-0" />
+                        <input
+                          autoFocus
+                          value={search}
+                          onChange={(e) => setSearch(e.target.value)}
+                          placeholder={`Search ${allPickerFields.length} fields…`}
+                          className="flex-1 text-[12px] bg-transparent outline-none text-[#1c1410] placeholder:text-[#7a6b5c]/50"
+                        />
+                        {search && (
+                          <button onClick={() => setSearch('')} className="text-[#7a6b5c] hover:text-[#1c1410]">
+                            <X className="w-3 h-3" />
                           </button>
-                        ))}
+                        )}
                       </div>
-                    </div>
-                  )}
 
-                  {/* Values tab tokens */}
-                  {valueTokens.length > 0 && (
-                    <div>
-                      <p className="text-[10px] font-bold text-[#92400e] uppercase tracking-widest mb-1.5">Values (static replacements)</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {valueTokens.map((v) => (
-                          <button
-                            key={v.name}
-                            onClick={() => {
-                              const el = textareaRef.current;
-                              if (!el) return;
-                              const pos = el.selectionStart;
-                              const val = `{%${v.name}%}`;
-                              const newMsg = message.slice(0, pos) + val + message.slice(pos);
-                              setMessage(newMsg);
-                              setTimeout(() => { el.focus(); el.setSelectionRange(pos + val.length, pos + val.length); }, 0);
-                            }}
-                            title={`Replaces with: ${v.replace_with}`}
-                            className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 hover:border-green-300 transition-colors"
-                          >
-                            {`{%${v.name}%}`}
-                          </button>
-                        ))}
+                      {/* Results */}
+                      <div className="max-h-[280px] overflow-y-auto bg-white">
+                        {pickerGroups.length === 0 ? (
+                          <div className="px-4 py-6 text-center text-[12px] text-[#7a6b5c]">
+                            No fields match &ldquo;{search}&rdquo;
+                          </div>
+                        ) : (
+                          pickerGroups.map((group) => (
+                            <div key={group.label}>
+                              <div className="px-3 py-1.5 bg-orange-50/70 sticky top-0">
+                                <span className="text-[10px] font-bold text-[#92400e] uppercase tracking-widest">{group.label}</span>
+                              </div>
+                              {group.items.map((item) => (
+                                <button
+                                  key={item.slug}
+                                  onClick={() => insertVariable(item.slug)}
+                                  className="w-full flex items-center justify-between px-3 py-2 hover:bg-orange-50 transition-colors border-b border-orange-50/60 last:border-0 text-left gap-3"
+                                >
+                                  <span className="text-[12px] text-[#1c1410] truncate">{item.name}</span>
+                                  <span className="text-[10px] font-mono text-[#7a6b5c] shrink-0 bg-orange-50 px-1.5 py-0.5 rounded">
+                                    {`{%${item.slug}%}`}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          ))
+                        )}
                       </div>
                     </div>
                   )}
@@ -622,34 +618,16 @@ export default function WaPersonalTemplateEditorPage() {
               </div>
             </div>
 
-            {/* Variable legend — all categories */}
+            {/* Variable legend — all categories, all use {%slug%} */}
             <div className="bg-white rounded-2xl border border-orange-100 p-4">
               <h3 className="text-[10px] font-bold text-[#92400e] uppercase tracking-widest mb-3">
                 Preview Sample Values
               </h3>
               <div className="space-y-1.5">
-                {STANDARD_VARS.map((v) => (
-                  <div key={v.key} className="flex items-center justify-between text-[11px] gap-2">
-                    <span className="text-orange-600 font-mono shrink-0">{`{${v.key}}`}</span>
-                    <span className="text-[#7a6b5c] text-right truncate">{BASE_SAMPLE[v.key]}</span>
-                  </div>
-                ))}
-                {CALENDAR_VARS.map((v) => (
-                  <div key={v.key} className="flex items-center justify-between text-[11px] gap-2">
-                    <span className="text-blue-600 font-mono shrink-0">{`{${v.key}}`}</span>
-                    <span className="text-[#7a6b5c] text-right truncate">{BASE_SAMPLE[v.key]}</span>
-                  </div>
-                ))}
-                {customFields.map((f) => (
+                {allPickerFields.map((f) => (
                   <div key={f.slug} className="flex items-center justify-between text-[11px] gap-2">
-                    <span className="text-purple-600 font-mono shrink-0">{`{${f.slug}}`}</span>
-                    <span className="text-[#7a6b5c] text-right truncate">[{f.name}]</span>
-                  </div>
-                ))}
-                {valueTokens.map((v) => (
-                  <div key={v.name} className="flex items-center justify-between text-[11px] gap-2">
-                    <span className="text-green-600 font-mono shrink-0">{`{%${v.name}%}`}</span>
-                    <span className="text-[#7a6b5c] text-right truncate">{v.replace_with}</span>
+                    <span className="font-mono shrink-0 text-orange-600">{`{%${f.slug}%}`}</span>
+                    <span className="text-[#7a6b5c] text-right truncate">{f.preview || `[${f.name}]`}</span>
                   </div>
                 ))}
               </div>
