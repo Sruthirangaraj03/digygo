@@ -18,6 +18,9 @@ interface WaPersonalTemplate {
   created_at: string;
 }
 
+// Matches the slugify() in FieldsPage — same formula the backend uses to resolve value_tokens
+const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40);
+
 // Static standard variables always available
 const STANDARD_VARS = [
   { key: 'first_name',     label: 'First Name' },
@@ -240,7 +243,7 @@ export default function WaPersonalTemplateEditorPage() {
   const sample = {
     ...BASE_SAMPLE,
     ...Object.fromEntries(customFields.map((f) => [f.slug, `[${f.name}]`])),
-    ...Object.fromEntries(valueTokens.map((v) => [v.name, v.replace_with])),
+    ...Object.fromEntries(valueTokens.map((v) => [slugify(v.name), v.replace_with])),
   };
 
   // Field categories for the modal
@@ -254,7 +257,7 @@ export default function WaPersonalTemplateEditorPage() {
       ...CALENDAR_VARS.map((v) => ({ name: v.label, slug: v.key, preview: BASE_SAMPLE[v.key] ?? '' })),
     ],
     Custom: customFields.map((f) => ({ name: f.name, slug: f.slug, preview: '' })),
-    Values: valueTokens.map((v) => ({ name: v.name, slug: v.name, preview: v.replace_with })),
+    Values: valueTokens.map((v) => ({ name: v.name, slug: slugify(v.name), preview: v.replace_with })),
   };
 
   // For the legend on the right panel — flat list of all fields

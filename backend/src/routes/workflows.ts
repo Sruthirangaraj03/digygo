@@ -258,6 +258,11 @@ export interface LeadContext {
   meeting_link?: string;
 }
 
+// Matches the slugify() on FieldsPage — converts a value_token name to its {%slug%} key.
+function slugifyToken(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/, '').slice(0, 40);
+}
+
 // Replaces {%slug%} and {variable} placeholders with actual lead values.
 // Supports all slugs from the Fields page (contact.*, company.*, calendar.*).
 // valueTokens: rows from value_tokens table — substituted last for {%key%} not found in lead data.
@@ -324,10 +329,10 @@ export function interpolate(
   let result = step2.replace(/\{([\w]+)\}/g, (match, key) =>
     key in vars ? vars[key] : match
   );
-  // Step 4: resolve remaining {%key%} via Values table (tenant-defined static replacements)
+  // Step 4: resolve remaining {%key%} via Values table — match by slugified name (same as Fields page)
   for (const token of valueTokens) {
-    const esc = token.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    result = result.replace(new RegExp(`\\{%${esc}%\\}`, 'g'), token.replace_with);
+    const slug = slugifyToken(token.name);
+    result = result.replace(new RegExp(`\\{%${slug}%\\}`, 'g'), token.replace_with);
   }
   return result;
 }
