@@ -487,9 +487,25 @@ router.post('/public/book', publicBookingLimiter, async (req: Request, res: Resp
                `Appointment booked via calendar link`,
                `${et.name} · ${date} at ${time}`]
             ).catch(() => null);
-            const calendarContext = { ...lead, event_type_id, calendar_name: et.name };
-            await triggerWorkflows('calendar_form_submitted', calendarContext, et.tenant_id, '', { triggerContext: { calendarId: event_type_id } }).catch(() => null);
-            await triggerWorkflows('appointment_booked', lead, et.tenant_id, '', { triggerContext: { calendarId: event_type_id } }).catch(() => null);
+            // Build rich context so {appointment_date}, {appointment_start_time},
+            // {appointment_end_time}, {meeting_link} resolve in WA/email templates.
+            const fmt12 = (iso: string) => {
+              const d = new Date(iso);
+              const h = d.getHours(), m = d.getMinutes();
+              return `${h === 0 ? 12 : h > 12 ? h - 12 : h}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+            };
+            const apptContext = {
+              ...lead,
+              event_type_id,
+              calendar_name:          et.name,
+              appointment_date:       new Date(event.start_time).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+              appointment_start_time: fmt12(event.start_time),
+              appointment_end_time:   fmt12(event.end_time),
+              appointment_timezone:   (et as any).timezone ?? '',
+              meeting_link:           et.meeting_link ?? '',
+            };
+            await triggerWorkflows('calendar_form_submitted', apptContext, et.tenant_id, '', { triggerContext: { calendarId: event_type_id } }).catch(() => null);
+            await triggerWorkflows('appointment_booked',      apptContext, et.tenant_id, '', { triggerContext: { calendarId: event_type_id } }).catch(() => null);
           }
         }
       } catch (err) {

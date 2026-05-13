@@ -251,61 +251,85 @@ export interface LeadContext {
   created_at?: string;
   event_type_id?: string;
   calendar_name?: string;
+  appointment_date?: string;
+  appointment_start_time?: string;
+  appointment_end_time?: string;
+  appointment_timezone?: string;
+  meeting_link?: string;
 }
 
 // Replaces {%slug%} and {variable} placeholders with actual lead values.
 // Supports all slugs from the Fields page (contact.*, company.*, calendar.*).
-export function interpolate(template: string, lead: LeadContext): string {
+// valueTokens: rows from value_tokens table — substituted last for {%key%} not found in lead data.
+export function interpolate(
+  template: string,
+  lead: LeadContext,
+  valueTokens: Array<{ name: string; replace_with: string }> = []
+): string {
   if (!template) return template;
   const nameParts = (lead.name ?? '').trim().split(/\s+/);
   const cf = (lead.custom_fields ?? {}) as Record<string, string>;
   const vars: Record<string, string> = {
     // short-form aliases (legacy {field} format)
-    first_name:            nameParts[0] ?? '',
-    last_name:             nameParts.length > 1 ? nameParts[nameParts.length - 1] : '',
-    full_name:             lead.name ?? '',
-    name:                  lead.name ?? '',
-    email:                 lead.email ?? '',
-    phone:                 lead.phone ?? '',
-    stage:                 lead.stage_name ?? '',
-    pipeline:              lead.pipeline_name ?? '',
-    assigned_staff:        lead.assigned_staff_name ?? '',
-    source:                lead.source ?? '',
-    status:                lead.status ?? '',
-    created_at:            lead.created_at ? new Date(lead.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '',
-    form_name:             lead.form_name ?? '',
-    today:                 new Date().toLocaleDateString(),
-    date:                  new Date().toLocaleDateString(),
-    time:                  new Date().toLocaleTimeString(),
+    first_name:             nameParts[0] ?? '',
+    last_name:              nameParts.length > 1 ? nameParts[nameParts.length - 1] : '',
+    full_name:              lead.name ?? '',
+    name:                   lead.name ?? '',
+    email:                  lead.email ?? '',
+    phone:                  lead.phone ?? '',
+    stage:                  lead.stage_name ?? '',
+    pipeline:               lead.pipeline_name ?? '',
+    assigned_staff:         lead.assigned_staff_name ?? '',
+    source:                 lead.source ?? '',
+    status:                 lead.status ?? '',
+    created_at:             lead.created_at ? new Date(lead.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '',
+    form_name:              lead.form_name ?? '',
+    today:                  new Date().toLocaleDateString(),
+    date:                   new Date().toLocaleDateString(),
+    time:                   new Date().toLocaleTimeString(),
     // contact.* slug aliases — matches Fields page exactly
-    contact_source:        lead.source ?? '',
-    assigned_to_staff:     lead.assigned_staff_name ?? '',
-    opportunity_name:      cf.opportunity_name ?? '',
-    lead_value:            cf.lead_value ?? '',
-    opportunity_source:    cf.opportunity_source ?? '',
-    contact_type:          cf.contact_type ?? '',
-    business_name:         cf.business_name ?? '',
-    gst_no:                cf.gst_no ?? '',
-    state:                 cf.state ?? '',
-    street_address:        cf.street_address ?? '',
-    date_of_birth:         cf.date_of_birth ?? '',
-    postal_code:           cf.postal_code ?? '',
-    profile_image:         cf.profile_image ?? '',
-    // calendar.* slug aliases
-    appointment_date:      cf.appointment_date ?? '',
-    appointment_start_time:cf.appointment_start_time ?? '',
-    appointment_end_time:  cf.appointment_end_time ?? '',
-    appointment_timezone:  cf.appointment_timezone ?? '',
-    // spread all custom fields so any user-created field works too
+    contact_source:         lead.source ?? '',
+    assigned_to_staff:      lead.assigned_staff_name ?? '',
+    opportunity_name:       cf.opportunity_name ?? '',
+    lead_value:             cf.lead_value ?? '',
+    opportunity_source:     cf.opportunity_source ?? '',
+    contact_type:           cf.contact_type ?? '',
+    business_name:          cf.business_name ?? '',
+    gst_no:                 cf.gst_no ?? '',
+    state:                  cf.state ?? '',
+    street_address:         cf.street_address ?? '',
+    date_of_birth:          cf.date_of_birth ?? '',
+    postal_code:            cf.postal_code ?? '',
+    profile_image:          cf.profile_image ?? '',
+    // calendar fields — from lead context (set at trigger time), fallback to custom_fields
+    appointment_date:       lead.appointment_date ?? cf.appointment_date ?? '',
+    appointment_start_time: lead.appointment_start_time ?? cf.appointment_start_time ?? '',
+    appointment_end_time:   lead.appointment_end_time ?? cf.appointment_end_time ?? '',
+    appointment_timezone:   lead.appointment_timezone ?? cf.appointment_timezone ?? '',
+    meeting_link:           lead.meeting_link ?? cf.meeting_link ?? '',
+    calendar_name:          lead.calendar_name ?? '',
+    // spread all custom fields so any user-created slug works
     ...cf,
   };
 
-  // Replace {%any.slug%} → extract the part after the dot
-  const step1 = template.replace(/\{%[\w]+\.([\w]+)%\}/g, (_, key) => vars[key] ?? '');
-  // Replace {%slug%} with no dot (e.g. {%first_name%})
-  const step2 = step1.replace(/\{%([\w]+)%\}/g, (_, key) => vars[key] ?? '');
-  // Replace legacy {field} format
-  return step2.replace(/\{([\w]+)\}/g, (_, key) => vars[key] ?? `{${key}}`);
+  // Step 1: {%ns.slug%} — use lead var; preserve token if key not found (value_tokens handles it)
+  const step1 = template.replace(/\{%([\w]+)\.([\w]+)%\}/g, (match, _ns, key) =>
+    key in vars ? vars[key] : match
+  );
+  // Step 2: {%slug%} — use lead var; preserve token if key not found
+  const step2 = step1.replace(/\{%([\w]+)%\}/g, (match, key) =>
+    key in vars ? vars[key] : match
+  );
+  // Step 3: {field} legacy format — preserve if not found
+  let result = step2.replace(/\{([\w]+)\}/g, (match, key) =>
+    key in vars ? vars[key] : match
+  );
+  // Step 4: resolve remaining {%key%} via Values table (tenant-defined static replacements)
+  for (const token of valueTokens) {
+    const esc = token.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    result = result.replace(new RegExp(`\\{%${esc}%\\}`, 'g'), token.replace_with);
+  }
+  return result;
 }
 
 
@@ -417,6 +441,14 @@ export async function executeNodes(
 ): Promise<ExecStats> {
   const safeUserId = uuidOrNull(userId);
   const stats: ExecStats = { skipped: 0, failed: 0 };
+
+  // Fetch value_tokens once per execution — used in all interpolate() calls below
+  const valueTokens = await query(
+    'SELECT name, replace_with FROM value_tokens WHERE tenant_id=$1',
+    [tenantId]
+  ).then((r) => r.rows as Array<{ name: string; replace_with: string }>)
+   .catch(() => [] as Array<{ name: string; replace_with: string }>);
+
   for (const node of nodes) {
     if (node.type === 'trigger') continue;
 
@@ -704,7 +736,7 @@ export async function executeNodes(
           const jsonbMerge: Record<string, string> = {};
 
           const processField = (fieldKey: string, rawValue: string) => {
-            const v = interpolate(rawValue, lead);
+            const v = interpolate(rawValue, lead, valueTokens);
             if (directCols.has(fieldKey)) {
               vals.push(v); sets.push(`${fieldKey}=$${vals.length}`);
             } else if (fieldKey === 'lead_quality') {
@@ -796,7 +828,7 @@ export async function executeNodes(
         // ── Add Note ───────────────────────────────────────────────────────────
         case 'create_note': {
           const rawContent = (node.config.noteContent ?? node.config.content ?? node.config.message) as string ?? 'Automated note';
-          const content = interpolate(rawContent, lead);
+          const content = interpolate(rawContent, lead, valueTokens);
           if (lead.id && !lead.id.startsWith('test-')) {
             const noteRes = await query(
               `INSERT INTO lead_notes (lead_id, tenant_id, title, content, created_by)
@@ -858,8 +890,8 @@ export async function executeNodes(
 
         // ── Internal Notification ──────────────────────────────────────────────
         case 'internal_notify': {
-          const msg = interpolate((node.config.message ?? 'Workflow notification') as string, lead);
-          const notifTitle = interpolate((node.config.actionName ?? 'Automation Notification') as string, lead);
+          const msg = interpolate((node.config.message ?? 'Workflow notification') as string, lead, valueTokens);
+          const notifTitle = interpolate((node.config.actionName ?? 'Automation Notification') as string, lead, valueTokens);
           const sendTo = (node.config.sendTo ?? 'assigned') as string;
 
           let recipientIds: string[] = [];
@@ -911,7 +943,7 @@ export async function executeNodes(
 
         // ── Webhook Call ───────────────────────────────────────────────────────
         case 'webhook_call': {
-          const url = interpolate((node.config.url ?? '') as string, lead);
+          const url = interpolate((node.config.url ?? '') as string, lead, valueTokens);
           if (!url) { status = 'skipped'; message = 'webhook_call: no URL configured'; break; }
 
           // ── Time-aware check ────────────────────────────────────────────────
@@ -944,11 +976,11 @@ export async function executeNodes(
           const headerFields = node.config.header_fields as { key: string; value: string }[] | undefined;
           if (Array.isArray(headerFields) && headerFields.length > 0) {
             for (const hf of headerFields) {
-              if (hf.key?.trim()) headers[hf.key.trim()] = interpolate(hf.value ?? '', lead);
+              if (hf.key?.trim()) headers[hf.key.trim()] = interpolate(hf.value ?? '', lead, valueTokens);
             }
           } else if (node.config.headers) {
             // Legacy: raw JSON string
-            try { headers = { ...headers, ...JSON.parse(interpolate(node.config.headers as string, lead)) }; }
+            try { headers = { ...headers, ...JSON.parse(interpolate(node.config.headers as string, lead, valueTokens)) }; }
             catch { /* ignore */ }
           }
 
@@ -960,7 +992,7 @@ export async function executeNodes(
               // New: visual field builder
               const obj: Record<string, string> = {};
               for (const bf of bodyFields) {
-                if (bf.key?.trim()) obj[bf.key.trim()] = interpolate(bf.value ?? '', lead);
+                if (bf.key?.trim()) obj[bf.key.trim()] = interpolate(bf.value ?? '', lead, valueTokens);
               }
               if (requestFormat === 'form') {
                 bodyStr = new URLSearchParams(obj).toString();
@@ -971,7 +1003,7 @@ export async function executeNodes(
               // Legacy: raw payload string, or default full-lead dump
               const rawPayload = (node.config.payload ?? node.config.body ?? '') as string;
               bodyStr = rawPayload
-                ? interpolate(rawPayload, lead)
+                ? interpolate(rawPayload, lead, valueTokens)
                 : JSON.stringify({ lead, triggeredAt: new Date().toISOString() });
             }
           }
@@ -1021,7 +1053,7 @@ export async function executeNodes(
           const { phone_number_id, access_token: encToken } = wabaRes.rows[0];
           const waToken = decrypt(encToken);
           const msgText = interpolate(
-            (node.config.message ?? node.config.template ?? '') as string, lead
+            (node.config.message ?? node.config.template ?? '') as string, lead, valueTokens
           );
           if (!msgText) {
             status = 'skipped'; message = 'send_whatsapp: no message body configured'; break;
@@ -1037,9 +1069,9 @@ export async function executeNodes(
 
         // ── Send Email ─────────────────────────────────────────────────────────
         case 'send_email': {
-          const toEmail = interpolate((node.config.to ?? lead.email ?? '') as string, lead);
-          const subject = interpolate((node.config.subject ?? 'Message from DigyGo') as string, lead);
-          const body    = interpolate((node.config.body ?? node.config.message ?? '') as string, lead);
+          const toEmail = interpolate((node.config.to ?? lead.email ?? '') as string, lead, valueTokens);
+          const subject = interpolate((node.config.subject ?? 'Message from DigyGo') as string, lead, valueTokens);
+          const body    = interpolate((node.config.body ?? node.config.message ?? '') as string, lead, valueTokens);
 
           if (!toEmail) {
             status = 'skipped'; message = 'send_email: no recipient email address';
@@ -1083,12 +1115,12 @@ export async function executeNodes(
             if (!tmplRes.rows[0]) {
               status = 'failed'; message = 'send_whatsapp_personal: template not found'; break;
             }
-            msgText  = interpolate(tmplRes.rows[0].message as string, lead);
+            msgText  = interpolate(tmplRes.rows[0].message as string, lead, valueTokens);
             filePath = tmplRes.rows[0].file_path ?? null;
             fileType = tmplRes.rows[0].file_type ?? null;
             fileName = tmplRes.rows[0].file_name ?? null;
           } else {
-            msgText = interpolate((node.config.message ?? '') as string, lead);
+            msgText = interpolate((node.config.message ?? '') as string, lead, valueTokens);
           }
 
           if (!msgText && !filePath) {
@@ -1485,14 +1517,14 @@ export async function executeNodes(
 
         // ── API Request (configurable HTTP method, headers, body) ─────────────
         case 'api_call': {
-          const url    = interpolate((node.config.url    ?? '') as string, lead);
+          const url    = interpolate((node.config.url    ?? '') as string, lead, valueTokens);
           const method = ((node.config.method ?? 'GET') as string).toUpperCase();
 
           if (!url) { status = 'skipped'; message = 'api_call: no URL configured'; break; }
 
           let headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (node.config.headers) {
-            try { headers = { ...headers, ...JSON.parse(interpolate(node.config.headers as string, lead)) }; }
+            try { headers = { ...headers, ...JSON.parse(interpolate(node.config.headers as string, lead, valueTokens)) }; }
             catch { /* ignore malformed headers JSON */ }
           }
 
@@ -1500,7 +1532,7 @@ export async function executeNodes(
           let bodyStr: string | undefined;
           if (hasBody) {
             const rawBody = (node.config.body ?? node.config.payload ?? '') as string;
-            bodyStr = rawBody ? interpolate(rawBody, lead) : JSON.stringify({ lead, triggeredAt: new Date().toISOString() });
+            bodyStr = rawBody ? interpolate(rawBody, lead, valueTokens) : JSON.stringify({ lead, triggeredAt: new Date().toISOString() });
           }
 
           const resp = await fetch(url, {

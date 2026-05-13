@@ -18,40 +18,66 @@ interface WaPersonalTemplate {
   created_at: string;
 }
 
-const VARIABLES = [
-  { key: 'first_name' },
-  { key: 'last_name' },
-  { key: 'full_name' },
-  { key: 'phone' },
-  { key: 'email' },
-  { key: 'stage' },
-  { key: 'assigned_staff' },
-  { key: 'source' },
-  { key: 'today' },
+// Static standard variables always available
+const STANDARD_VARS = [
+  { key: 'first_name',     label: 'First Name' },
+  { key: 'last_name',      label: 'Last Name' },
+  { key: 'full_name',      label: 'Full Name' },
+  { key: 'phone',          label: 'Phone' },
+  { key: 'email',          label: 'Email' },
+  { key: 'stage',          label: 'Stage' },
+  { key: 'pipeline',       label: 'Pipeline' },
+  { key: 'assigned_staff', label: 'Assigned Staff' },
+  { key: 'source',         label: 'Source' },
+  { key: 'today',          label: 'Today\'s Date' },
 ];
 
-const SAMPLE: Record<string, string> = {
-  first_name: 'Ravi',
-  last_name: 'Kumar',
-  full_name: 'Ravi Kumar',
-  phone: '+91 98765 43210',
-  email: 'ravi@example.com',
-  stage: 'Qualified',
-  assigned_staff: 'Roshan',
-  source: 'Meta Form',
-  today: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+const CALENDAR_VARS = [
+  { key: 'appointment_date',       label: 'Appointment Date' },
+  { key: 'appointment_start_time', label: 'Start Time' },
+  { key: 'appointment_end_time',   label: 'End Time' },
+  { key: 'appointment_timezone',   label: 'Timezone' },
+  { key: 'calendar_name',          label: 'Calendar Name' },
+  { key: 'meeting_link',           label: 'Meeting Link' },
+];
+
+const BASE_SAMPLE: Record<string, string> = {
+  first_name:             'Ravi',
+  last_name:              'Kumar',
+  full_name:              'Ravi Kumar',
+  phone:                  '+91 98765 43210',
+  email:                  'ravi@example.com',
+  stage:                  'Qualified',
+  pipeline:               'Sales',
+  assigned_staff:         'Roshan',
+  source:                 'Meta Form',
+  today:                  new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+  appointment_date:       '13 May 2026',
+  appointment_start_time: '10:30 AM',
+  appointment_end_time:   '11:00 AM',
+  appointment_timezone:   'Asia/Kolkata',
+  calendar_name:          'Discovery Call',
+  meeting_link:           'https://meet.google.com/abc-xyz',
 };
 
-function renderHtml(text: string): string {
+function renderHtml(text: string, sample: Record<string, string>): string {
   if (!text) return '';
   let t = text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
-  Object.entries(SAMPLE).forEach(([k, v]) => {
-    t = t.replace(new RegExp(`\\{${k}\\}`, 'g'), `<span style="color:#c2410c;font-weight:500">${v}</span>`);
-  });
-  t = t.replace(/\{(\w+)\}/g, '<span style="color:#f97316">{$1}</span>');
+  // Substitute {%key%} value tokens (Values tab)
+  t = t.replace(/\{%(\w+)%\}/g, (match, key) =>
+    key in sample
+      ? `<span style="color:#c2410c;font-weight:500">${sample[key]}</span>`
+      : `<span style="color:#f97316">${match}</span>`
+  );
+  // Substitute {key} lead variables
+  t = t.replace(/\{(\w+)\}/g, (match, key) =>
+    key in sample
+      ? `<span style="color:#c2410c;font-weight:500">${sample[key]}</span>`
+      : `<span style="color:#f97316">${match}</span>`
+  );
   t = t.replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>');
   t = t.replace(/_([^_\n]+)_/g, '<em>$1</em>');
   t = t.replace(/~([^~\n]+)~/g, '<del>$1</del>');
@@ -74,9 +100,24 @@ export default function WaPersonalTemplateEditorPage() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(isEdit);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [customFields, setCustomFields] = useState<Array<{ slug: string; name: string }>>([]);
+  const [valueTokens, setValueTokens] = useState<Array<{ name: string; replace_with: string }>>([]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch custom fields and value tokens for variable chips
+  useEffect(() => {
+    const tok = getAccessToken();
+    const headers: Record<string, string> = tok ? { Authorization: `Bearer ${tok}` } : {};
+    Promise.all([
+      fetch(`${BASE}/api/fields/custom`, { headers, credentials: 'include' }).then((r) => r.json()).catch(() => []),
+      fetch(`${BASE}/api/fields/values`, { headers, credentials: 'include' }).then((r) => r.json()).catch(() => []),
+    ]).then(([cf, vt]) => {
+      if (Array.isArray(cf)) setCustomFields(cf.map((f: any) => ({ slug: f.slug, name: f.name })));
+      if (Array.isArray(vt)) setValueTokens(vt.map((v: any) => ({ name: v.name, replace_with: v.replace_with })));
+    });
+  }, []);
 
   useEffect(() => {
     if (!isEdit) return;
@@ -188,6 +229,13 @@ export default function WaPersonalTemplateEditorPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  // Build the live sample map: base + custom field placeholders + value tokens
+  const sample = {
+    ...BASE_SAMPLE,
+    ...Object.fromEntries(customFields.map((f) => [f.slug, `[${f.name}]`])),
+    ...Object.fromEntries(valueTokens.map((v) => [v.name, v.replace_with])),
   };
 
   const attachType: 'image' | 'video' | 'doc' | null = (() => {
@@ -321,22 +369,91 @@ export default function WaPersonalTemplateEditorPage() {
                   />
                 </div>
 
-                {/* Variable chips */}
-                <div className="px-4 pb-4 pt-1">
-                  <p className="text-[11px] font-medium text-[#7a6b5c] mb-2">
-                    Insert variable — click to add at cursor position:
+                {/* Variable chips — organized by category */}
+                <div className="px-4 pb-4 pt-1 space-y-3">
+                  <p className="text-[11px] font-medium text-[#7a6b5c]">
+                    Click to insert at cursor:
                   </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {VARIABLES.map((v) => (
-                      <button
-                        key={v.key}
-                        onClick={() => insertVariable(v.key)}
-                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 hover:border-orange-300 transition-colors"
-                      >
-                        {`{${v.key}}`}
-                      </button>
-                    ))}
+
+                  {/* Standard fields */}
+                  <div>
+                    <p className="text-[10px] font-bold text-[#92400e] uppercase tracking-widest mb-1.5">Lead Info</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {STANDARD_VARS.map((v) => (
+                        <button
+                          key={v.key}
+                          onClick={() => insertVariable(v.key)}
+                          title={v.label}
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 hover:border-orange-300 transition-colors"
+                        >
+                          {`{${v.key}}`}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+
+                  {/* Calendar fields */}
+                  <div>
+                    <p className="text-[10px] font-bold text-[#92400e] uppercase tracking-widest mb-1.5">Appointment / Calendar</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {CALENDAR_VARS.map((v) => (
+                        <button
+                          key={v.key}
+                          onClick={() => insertVariable(v.key)}
+                          title={v.label}
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 hover:border-blue-300 transition-colors"
+                        >
+                          {`{${v.key}}`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Custom / Additional fields */}
+                  {customFields.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-bold text-[#92400e] uppercase tracking-widest mb-1.5">Additional Fields</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {customFields.map((f) => (
+                          <button
+                            key={f.slug}
+                            onClick={() => insertVariable(f.slug)}
+                            title={f.name}
+                            className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 hover:border-purple-300 transition-colors"
+                          >
+                            {`{${f.slug}}`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Values tab tokens */}
+                  {valueTokens.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-bold text-[#92400e] uppercase tracking-widest mb-1.5">Values (static replacements)</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {valueTokens.map((v) => (
+                          <button
+                            key={v.name}
+                            onClick={() => {
+                              const el = textareaRef.current;
+                              if (!el) return;
+                              const pos = el.selectionStart;
+                              const val = `{%${v.name}%}`;
+                              const newMsg = message.slice(0, pos) + val + message.slice(pos);
+                              setMessage(newMsg);
+                              setTimeout(() => { el.focus(); el.setSelectionRange(pos + val.length, pos + val.length); }, 0);
+                            }}
+                            title={`Replaces with: ${v.replace_with}`}
+                            className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 hover:border-green-300 transition-colors"
+                          >
+                            {`{%${v.name}%}`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </section>
@@ -482,7 +599,7 @@ export default function WaPersonalTemplateEditorPage() {
                       <div className="px-3 py-2">
                         <p
                           className="text-[12px] text-gray-800 leading-relaxed"
-                          dangerouslySetInnerHTML={{ __html: renderHtml(message) || '&nbsp;' }}
+                          dangerouslySetInnerHTML={{ __html: renderHtml(message, sample) || '&nbsp;' }}
                         />
                         <div className="flex items-center justify-end gap-1 mt-1.5">
                           <span className="text-[10px] text-gray-400">10:30 AM</span>
@@ -505,16 +622,34 @@ export default function WaPersonalTemplateEditorPage() {
               </div>
             </div>
 
-            {/* Variable legend */}
+            {/* Variable legend — all categories */}
             <div className="bg-white rounded-2xl border border-orange-100 p-4">
               <h3 className="text-[10px] font-bold text-[#92400e] uppercase tracking-widest mb-3">
-                Variable Sample Values
+                Preview Sample Values
               </h3>
               <div className="space-y-1.5">
-                {VARIABLES.map((v) => (
-                  <div key={v.key} className="flex items-center justify-between text-[11px]">
-                    <span className="text-orange-600 font-mono">{`{${v.key}}`}</span>
-                    <span className="text-[#7a6b5c]">→ {SAMPLE[v.key]}</span>
+                {STANDARD_VARS.map((v) => (
+                  <div key={v.key} className="flex items-center justify-between text-[11px] gap-2">
+                    <span className="text-orange-600 font-mono shrink-0">{`{${v.key}}`}</span>
+                    <span className="text-[#7a6b5c] text-right truncate">{BASE_SAMPLE[v.key]}</span>
+                  </div>
+                ))}
+                {CALENDAR_VARS.map((v) => (
+                  <div key={v.key} className="flex items-center justify-between text-[11px] gap-2">
+                    <span className="text-blue-600 font-mono shrink-0">{`{${v.key}}`}</span>
+                    <span className="text-[#7a6b5c] text-right truncate">{BASE_SAMPLE[v.key]}</span>
+                  </div>
+                ))}
+                {customFields.map((f) => (
+                  <div key={f.slug} className="flex items-center justify-between text-[11px] gap-2">
+                    <span className="text-purple-600 font-mono shrink-0">{`{${f.slug}}`}</span>
+                    <span className="text-[#7a6b5c] text-right truncate">[{f.name}]</span>
+                  </div>
+                ))}
+                {valueTokens.map((v) => (
+                  <div key={v.name} className="flex items-center justify-between text-[11px] gap-2">
+                    <span className="text-green-600 font-mono shrink-0">{`{%${v.name}%}`}</span>
+                    <span className="text-[#7a6b5c] text-right truncate">{v.replace_with}</span>
                   </div>
                 ))}
               </div>
