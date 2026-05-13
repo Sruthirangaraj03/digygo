@@ -1,5 +1,8 @@
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
+import crypto from 'crypto';
+import { execFileSync } from 'child_process';
 import makeWASocket, {
   useMultiFileAuthState,
   DisconnectReason,
@@ -787,6 +790,30 @@ export async function sendText(tenantId: string, jid: string, text: string): Pro
   return wamid;
 }
 
+function extractVideoThumbnail(buffer: Buffer): string | null {
+  const id = crypto.randomBytes(8).toString('hex');
+  const tmpIn  = path.join(os.tmpdir(), `wa_vid_${id}.mp4`);
+  const tmpOut = path.join(os.tmpdir(), `wa_thumb_${id}.jpg`);
+  try {
+    fs.writeFileSync(tmpIn, buffer);
+    execFileSync('ffmpeg', [
+      '-y', '-i', tmpIn,
+      '-vf', 'select=eq(n,0)',
+      '-vframes', '1',
+      '-s', '320x240',
+      '-f', 'image2',
+      tmpOut,
+    ], { timeout: 10000, stdio: 'pipe' });
+    if (!fs.existsSync(tmpOut)) return null;
+    return fs.readFileSync(tmpOut).toString('base64');
+  } catch {
+    return null;
+  } finally {
+    try { fs.unlinkSync(tmpIn); } catch {}
+    try { fs.unlinkSync(tmpOut); } catch {}
+  }
+}
+
 /**
  * Sends a media file via Personal WhatsApp.
  * Returns the WA message ID (wamid).
@@ -808,7 +835,8 @@ export async function sendMedia(
   if (mimetype.startsWith('image/')) {
     content = { image: buffer, mimetype, caption: caption ?? '' };
   } else if (mimetype.startsWith('video/')) {
-    content = { video: buffer, mimetype, caption: caption ?? '' };
+    const jpegThumbnail = extractVideoThumbnail(buffer);
+    content = { video: buffer, mimetype, caption: caption ?? '', ...(jpegThumbnail ? { jpegThumbnail } : {}) };
   } else if (mimetype.startsWith('audio/')) {
     content = { audio: buffer, mimetype, ptt: false };
   } else {
