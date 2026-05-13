@@ -199,7 +199,13 @@ export default function WaPersonalTemplateEditorPage() {
     }, 0);
   };
 
+  const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20 MB — matches nginx client_max_body_size
+
   const handleFile = (f: File) => {
+    if (f.size > MAX_FILE_BYTES) {
+      toast.error(`File too large — maximum is 20 MB (your file is ${(f.size / 1024 / 1024).toFixed(1)} MB)`);
+      return;
+    }
     const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
     const allowedExt = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'mp4'];
     if (!f.type.startsWith('image/') && !f.type.startsWith('video/') && !f.type.startsWith('application/') && !allowedExt.includes(ext)) {
@@ -229,8 +235,10 @@ export default function WaPersonalTemplateEditorPage() {
         credentials: 'include',
         body: fd,
       });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || 'Save failed');
+      if (resp.status === 413) throw new Error('File too large — maximum upload size is 20 MB');
+      const isJson = resp.headers.get('content-type')?.includes('application/json');
+      const data = isJson ? await resp.json() : null;
+      if (!resp.ok) throw new Error(data?.error || `Save failed (${resp.status} ${resp.statusText})`);
       toast.success(isEdit ? 'Template updated' : 'Template created');
       navigate('/automation/templates?tab=wa_personal');
     } catch (e: any) {
@@ -487,7 +495,7 @@ export default function WaPersonalTemplateEditorPage() {
                     Drop file here or <span className="text-orange-600 underline underline-offset-2">browse</span>
                   </p>
                   <p className="text-[11px] text-[#7a6b5c] mt-1">
-                    Images · PDF · Word · Excel · Video · Max 16 MB
+                    Images · PDF · Word · Excel · Video · Max 20 MB
                   </p>
                 </div>
                 <input
