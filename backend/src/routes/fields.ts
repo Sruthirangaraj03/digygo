@@ -7,22 +7,43 @@ const router = Router();
 router.use(requireAuth);
 
 // GET /api/fields/link-preview?url=... — only needs auth, no tenant required
-// Proxy to avoid CORS; returns OG metadata for the template editor live preview
+// Proxy to avoid CORS; returns OG metadata for the template editor live preview.
+// YouTube URLs use their oEmbed API (returns real title + thumbnail server-side).
+// All other URLs fall back to link-preview-js OG scraping.
 router.get('/link-preview', async (req: AuthRequest, res: Response) => {
   const url = req.query.url as string;
   if (!url || !/^https?:\/\//i.test(url)) {
     return res.status(400).json({ error: 'Invalid URL' });
   }
+
+  const isYouTube = /youtube\.com|youtu\.be/i.test(url);
+
   try {
+    if (isYouTube) {
+      // YouTube oEmbed: public, no auth, returns real title + thumbnail
+      const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
+      const r = await fetch(oembedUrl, { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) throw new Error('oEmbed failed');
+      const d = await r.json() as any;
+      return res.json({
+        title:       d.title           ?? null,
+        description: d.author_name ? `By ${d.author_name}` : null,
+        image:       d.thumbnail_url   ?? null,
+        siteName:    'YouTube',
+        url,
+      });
+    }
+
+    // Generic OG scrape for all other URLs
     const { getLinkPreview } = await import('link-preview-js');
     const data = await getLinkPreview(url, {
       timeout: 8000,
-      headers: { 'User-Agent': 'WhatsApp/2.23.0 A' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WhatsApp/2.24.6)' },
     }) as any;
     return res.json({
       title:       data.title       ?? null,
       description: data.description ?? null,
-      image:       Array.isArray(data.images) ? (data.images[0] ?? null) : null,
+      image:       Array.isArray(data.images) && data.images.length ? data.images[0] : null,
       siteName:    data.siteName    ?? null,
       url:         data.url         ?? url,
     });
