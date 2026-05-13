@@ -5,6 +5,32 @@ import { checkPermission } from '../middleware/permissions';
 
 const router = Router();
 router.use(requireAuth);
+
+// GET /api/fields/link-preview?url=... — only needs auth, no tenant required
+// Proxy to avoid CORS; returns OG metadata for the template editor live preview
+router.get('/link-preview', async (req: AuthRequest, res: Response) => {
+  const url = req.query.url as string;
+  if (!url || !/^https?:\/\//i.test(url)) {
+    return res.status(400).json({ error: 'Invalid URL' });
+  }
+  try {
+    const { getLinkPreview } = await import('link-preview-js');
+    const data = await getLinkPreview(url, {
+      timeout: 8000,
+      headers: { 'User-Agent': 'WhatsApp/2.23.0 A' },
+    }) as any;
+    return res.json({
+      title:       data.title       ?? null,
+      description: data.description ?? null,
+      image:       Array.isArray(data.images) ? (data.images[0] ?? null) : null,
+      siteName:    data.siteName    ?? null,
+      url:         data.url         ?? url,
+    });
+  } catch {
+    return res.status(422).json({ error: 'Could not fetch preview' });
+  }
+});
+
 router.use(requireTenant);
 
 // ── System Fields (single source of truth — same for every tenant) ────────────
@@ -223,30 +249,6 @@ router.delete('/values/:id', checkPermission('fields:manage'), async (req: AuthR
     await query('DELETE FROM value_tokens WHERE id=$1 AND tenant_id=$2', [req.params.id, req.user!.tenantId]);
     res.json({ success: true });
   } catch { res.status(500).json({ error: 'Server error' }); }
-});
-
-// GET /api/fields/link-preview?url=... — proxy to avoid CORS; returns OG metadata for template editor preview
-router.get('/link-preview', async (req: AuthRequest, res: Response) => {
-  const url = req.query.url as string;
-  if (!url || !/^https?:\/\//i.test(url)) {
-    return res.status(400).json({ error: 'Invalid URL' });
-  }
-  try {
-    const { getLinkPreview } = await import('link-preview-js');
-    const data = await getLinkPreview(url, {
-      timeout: 8000,
-      headers: { 'User-Agent': 'WhatsApp/2.23.0 A' },
-    }) as any;
-    return res.json({
-      title:       data.title       ?? null,
-      description: data.description ?? null,
-      image:       Array.isArray(data.images) ? (data.images[0] ?? null) : null,
-      siteName:    data.siteName    ?? null,
-      url:         data.url         ?? url,
-    });
-  } catch {
-    return res.status(422).json({ error: 'Could not fetch preview' });
-  }
 });
 
 export default router;
