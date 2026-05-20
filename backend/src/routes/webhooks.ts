@@ -306,8 +306,8 @@ async function processWhatsAppMessage(payload: any) {
           }
 
           const msgRes = await query(
-            `INSERT INTO messages (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, status, created_at)
-             VALUES ($1,$2,$3,'customer',$4,FALSE,$5,'delivered',NOW()) RETURNING *`,
+            `INSERT INTO messages (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, status, sent_by, created_at)
+             VALUES ($1,$2,$3,'customer',$4,FALSE,$5,'delivered','customer',NOW()) RETURNING *`,
             [convId, tenantId, leadId, content, wamid]
           );
 

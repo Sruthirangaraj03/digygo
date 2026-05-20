@@ -238,12 +238,12 @@ export async function handleInboundMessage(
 
   const msgRes = await query(
     `INSERT INTO messages
-       (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, remote_jid, status, created_at, wa_account)
-     VALUES ($1, $2::uuid, $3, $4, $5, FALSE, $6, $7, $8, $9, $10)
+       (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, remote_jid, status, sent_by, created_at, wa_account)
+     VALUES ($1, $2::uuid, $3, $4, $5, FALSE, $6, $7, $8, $9, $10, $11)
      ON CONFLICT (wamid) WHERE wamid IS NOT NULL
      DO UPDATE SET remote_jid = COALESCE(messages.remote_jid, EXCLUDED.remote_jid)
      RETURNING *`,
-    [convId, tenantId, leadId, sender, text, wamid, remoteJID || null, initStatus, msgTimestamp, waPhone ?? null],
+    [convId, tenantId, leadId, sender, text, wamid, remoteJID || null, initStatus, fromMe ? 'manual' : 'customer', msgTimestamp, waPhone ?? null],
   );
 
   if (!msgRes.rows[0]) return null; // Already processed (duplicate)

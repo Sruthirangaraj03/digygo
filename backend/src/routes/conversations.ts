@@ -149,8 +149,8 @@ router.post('/new', checkPermission('inbox:send'), async (req: AuthRequest, res:
 
     const msgStatus = deliveryFailed ? 'failed' : 'sent';
     const msgRes = await query(
-      `INSERT INTO messages (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, status, created_at)
-       VALUES ($1,$2,$3,'agent',$4,FALSE,$5,$6,NOW()) RETURNING *`,
+      `INSERT INTO messages (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, status, sent_by, created_at)
+       VALUES ($1,$2,$3,'agent',$4,FALSE,$5,$6,'manual',NOW()) RETURNING *`,
       [convId, tenantId, leadId, body.trim(), wamid, msgStatus],
     );
     await query(
@@ -326,8 +326,8 @@ router.post('/:id/messages', checkPermission('inbox:send'), async (req: AuthRequ
 
     const msgStatus = (is_note || !deliveryFailed) ? 'sent' : 'failed';
     const msgRes = await query(
-      `INSERT INTO messages (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, status, created_at)
-       VALUES ($1,$2,$3,'agent',$4,$5,$6,$7,NOW()) RETURNING *`,
+      `INSERT INTO messages (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, status, sent_by, created_at)
+       VALUES ($1,$2,$3,'agent',$4,$5,$6,$7,'manual',NOW()) RETURNING *`,
       [req.params.id, req.user!.tenantId, conv.lead_id ?? null, body.trim(), is_note ?? false, wamid, msgStatus],
     );
 
@@ -416,8 +416,8 @@ router.post('/:id/media', checkPermission('inbox:send'), upload.single('file'), 
 
     const msgStatus = deliveryFailed ? 'failed' : 'sent';
     const msgRes = await query(
-      `INSERT INTO messages (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, media_url, status, created_at)
-       VALUES ($1,$2,$3,'agent',$4,FALSE,$5,$6,$7,NOW()) RETURNING *`,
+      `INSERT INTO messages (conversation_id, tenant_id, lead_id, sender, body, is_note, wamid, media_url, status, sent_by, created_at)
+       VALUES ($1,$2,$3,'agent',$4,FALSE,$5,$6,$7,'manual',NOW()) RETURNING *`,
       [req.params.id, req.user!.tenantId, conv.lead_id ?? null, body, wamid, relPath, msgStatus],
     );
 

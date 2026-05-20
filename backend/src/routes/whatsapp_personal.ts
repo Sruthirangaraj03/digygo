@@ -99,8 +99,8 @@ router.post('/send', checkPermission('inbox:send'), async (req: AuthRequest, res
     }
 
     const msgRes = await query(
-      `INSERT INTO messages (conversation_id, tenant_id, lead_id, sender, body, is_note, status, created_at)
-       VALUES ($1, $2::uuid, $3, 'agent', $4, FALSE, 'sent', NOW()) RETURNING *`,
+      `INSERT INTO messages (conversation_id, tenant_id, lead_id, sender, body, is_note, status, sent_by, created_at)
+       VALUES ($1, $2::uuid, $3, 'agent', $4, FALSE, 'sent', 'manual', NOW()) RETURNING *`,
       [convId, tenantId, leadId, message.trim()],
     );
 
@@ -341,7 +341,7 @@ router.get('/logs', async (req: AuthRequest, res: Response) => {
   try {
     const [rows, countRes] = await Promise.all([
       query(
-        `SELECT m.id, m.sender, m.body, m.created_at, m.wa_account, m.remote_jid, m.status, m.type,
+        `SELECT m.id, m.sender, m.body, m.created_at, m.wa_account, m.remote_jid, m.status, m.type, m.sent_by,
                 COALESCE(l.name,  REGEXP_REPLACE(COALESCE(m.remote_jid,''), '@.*$', '')) AS contact_name,
                 COALESCE(l.phone, REGEXP_REPLACE(COALESCE(m.remote_jid,''), '@.*$', '')) AS contact_phone
          FROM messages m

@@ -24,7 +24,7 @@ interface TopContact  { contact_name: string; phone: string; total: number; sent
 interface LogRow {
   id: string; sender: string; body: string; created_at: string;
   wa_account: string; remote_jid: string; status: string; type: string;
-  contact_name: string; contact_phone: string;
+  contact_name: string; contact_phone: string; sent_by?: string;
 }
 
 // ── Periods ────────────────────────────────────────────────────────────────────
@@ -117,6 +117,23 @@ function DirBadge({ sender }: { sender: string }) {
     )}>
       {isSent ? <ArrowUpRight className="w-2.5 h-2.5" /> : <ArrowDownLeft className="w-2.5 h-2.5" />}
       {isSent ? 'Sent' : 'Received'}
+    </span>
+  );
+}
+
+// ── Sent By badge ─────────────────────────────────────────────────────────
+function SentByBadge({ sentBy }: { sentBy?: string }) {
+  if (!sentBy) return <span className="text-[#b09e8d]">—</span>;
+  const map: Record<string, { label: string; cls: string }> = {
+    automation: { label: 'Automation', cls: 'bg-purple-50 text-purple-600' },
+    manual:     { label: 'Manual',     cls: 'bg-[#f0ebe5] text-[#7a6b5c]'  },
+    customer:   { label: 'Customer',   cls: 'bg-blue-50 text-blue-600'      },
+    system:     { label: 'System',     cls: 'bg-gray-100 text-gray-500'     },
+  };
+  const cfg = map[sentBy] ?? { label: sentBy, cls: 'bg-gray-100 text-gray-500' };
+  return (
+    <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap', cfg.cls)}>
+      {cfg.label}
     </span>
   );
 }
@@ -396,6 +413,7 @@ export default function InboxOverviewPage() {
                   <th className="px-3 py-2.5 text-left">Direction</th>
                   <th className="px-3 py-2.5 text-left">Message</th>
                   <th className="px-3 py-2.5 text-left">Via</th>
+                  <th className="px-3 py-2.5 text-left">Sent By</th>
                   <th className="px-3 py-2.5 text-left">Time</th>
                   <th className="px-3 py-2.5 text-left">Status</th>
                 </tr>
@@ -438,6 +456,9 @@ export default function InboxOverviewPage() {
                           {row.wa_account.replace(/^91/, '+91 ').replace(/(\d{5})(\d{5})$/, '$1 $2')}
                         </span>
                       ) : '—'}
+                    </td>
+                    <td className="px-3 py-3">
+                      <SentByBadge sentBy={row.sent_by} />
                     </td>
                     <td className="px-3 py-3 text-[#7a6b5c] whitespace-nowrap">
                       {fmtDate(row.created_at)}
