@@ -139,6 +139,7 @@ const ACTION_LIST: { id: string; label: string; desc: string; category: ActionCa
   // ── Notes & Activities ──────────────────────────────────────────────────────
   { id: 'create_note',          label: 'Add Note',                    desc: 'Add a note to the lead record',                      category: 'Operation',     Icon: FileText,      color: 'bg-lime-100 text-lime-700' },
   // ── Contact Management ──────────────────────────────────────────────────────
+  { id: 'broadcast_group',      label: 'Broadcast to Group',          desc: 'Send to all members of a contact group with interval', category: 'Operation',   Icon: Radio,         color: 'bg-orange-100 text-orange-700' },
   { id: 'contact_group',        label: 'Contact Group',               desc: 'Add, move, or remove contact in a contact group',    category: 'Operation',     Icon: Users,         color: 'bg-sky-100 text-sky-600' },
   { id: 'remove_contact',       label: 'Remove from Group',           desc: 'Remove contact from a specific contact group',       category: 'Operation',     Icon: UserX,         color: 'bg-red-100 text-red-700' },
   { id: 'remove_from_crm',      label: 'Remove from CRM',             desc: 'Remove contact from CRM',                            category: 'Operation',     Icon: FolderX,       color: 'bg-rose-100 text-rose-700' },
@@ -217,6 +218,7 @@ const ACTION_ACCENT: Record<string, { bar: string; icon: string; badge: string }
   // Notes
   create_note:           { bar: 'bg-lime-600',    icon: 'bg-lime-50 text-lime-700',      badge: 'bg-lime-100 text-lime-800' },
   // Contact management
+  broadcast_group:       { bar: 'bg-orange-500',  icon: 'bg-orange-50 text-orange-700',  badge: 'bg-orange-100 text-orange-800' },
   contact_group:         { bar: 'bg-sky-500',     icon: 'bg-sky-50 text-sky-600',        badge: 'bg-sky-100 text-sky-700' },
   contact_group_access:  { bar: 'bg-sky-600',     icon: 'bg-sky-50 text-sky-700',        badge: 'bg-sky-100 text-sky-800' },
   remove_contact:        { bar: 'bg-red-600',     icon: 'bg-red-50 text-red-700',        badge: 'bg-red-100 text-red-800' },
@@ -1724,6 +1726,39 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
       )}
 
       {/* Contact Group */}
+      {node.actionType === 'broadcast_group' && (<>
+        <FieldRow label="Contact Group" required hint="All members will receive the actions after this node.">
+          <select className={selectCls} value={(cfg.group_id as string) ?? ''} onChange={sel('group_id')}>
+            <option value="">Select a group...</option>
+            {(contactGroups ?? []).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        </FieldRow>
+        {!(cfg.group_id) && (
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-800"><span className="font-semibold">No group selected.</span> This action will be skipped.</p>
+          </div>
+        )}
+        <FieldRow label="Interval between each message" required>
+          <div className="flex gap-2">
+            <input
+              type="number" min={1} max={3600}
+              className="w-20 border border-border rounded-lg px-3 py-2 text-sm bg-card outline-none focus:border-primary/50"
+              value={Number(cfg.interval_value ?? 2)}
+              onChange={(e) => onUpdate({ config: { ...cfg, interval_value: e.target.value } })}
+            />
+            <select className={selectCls} value={(cfg.interval_unit as string) ?? 'minutes'} onChange={sel('interval_unit')}>
+              <option value="seconds">Seconds</option>
+              <option value="minutes">Minutes</option>
+              <option value="hours">Hours</option>
+            </select>
+          </div>
+        </FieldRow>
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <p className="text-xs text-blue-800">Actions placed after this node will run for each group member with the interval set above. Pair with <strong>Specific Date</strong> trigger to schedule automatically.</p>
+        </div>
+      </>)}
+
       {node.actionType === 'contact_group' && (<>
         {(cfg.targetList && !(cfg.group_id as string)) && (
           <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 mb-1">

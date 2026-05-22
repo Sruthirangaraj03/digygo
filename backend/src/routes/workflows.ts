@@ -2117,6 +2117,83 @@ export async function triggerWorkflows(
 // ── Schedule trigger worker ────────────────────────────────────────────────────
 // Called every 60 seconds from index.ts. Checks workflows whose trigger is a
 // time-based schedule and fires them if the current time matches the config.
+async function runScheduledBroadcast(wf: any, nodes: WFNode[]): Promise<void> {
+  const broadcastIdx = nodes.findIndex((n: WFNode) => n.actionType === 'broadcast_group');
+  if (broadcastIdx === -1) return;
+
+  const broadcastNode = nodes[broadcastIdx];
+  const afterNodes    = nodes.slice(broadcastIdx + 1);
+
+  const groupId       = broadcastNode.config?.group_id as string;
+  if (!groupId) { console.log('[Scheduler] broadcast_group: no group configured'); return; }
+
+  const intervalValue = Number(broadcastNode.config?.interval_value ?? 2);
+  const intervalUnit  = (broadcastNode.config?.interval_unit as string) ?? 'minutes';
+  const intervalMs    =
+    intervalUnit === 'hours'   ? intervalValue * 3600000 :
+    intervalUnit === 'minutes' ? intervalValue * 60000   :
+                                 intervalValue * 1000;
+
+  const grpRes = await query(
+    `SELECT id, name FROM contact_groups WHERE id=$1::uuid AND tenant_id=$2::uuid`,
+    [groupId, wf.tenant_id]
+  );
+  if (!grpRes.rows[0]) { console.log('[Scheduler] broadcast_group: group not found'); return; }
+
+  const membersRes = await query(
+    `SELECT l.id, l.name FROM contact_group_members cgm
+     JOIN leads l ON l.id = cgm.lead_id AND l.is_deleted = FALSE
+     WHERE cgm.group_id = $1::uuid`,
+    [groupId]
+  );
+  const members = membersRes.rows;
+  console.log(`[Scheduler] broadcast_group "${wf.name}" → ${members.length} leads, interval=${intervalValue} ${intervalUnit}`);
+
+  members.forEach((m: any, i: number) => {
+    setTimeout(async () => {
+      try {
+        const leadRes = await query(
+          `SELECT l.*, ps.name AS stage_name, p.name AS pipeline_name, u.name AS assigned_staff_name
+           FROM leads l
+           LEFT JOIN pipeline_stages ps ON ps.id = l.stage_id
+           LEFT JOIN pipelines p ON p.id = l.pipeline_id
+           LEFT JOIN users u ON u.id = l.assigned_to
+           WHERE l.id=$1::uuid AND l.tenant_id=$2::uuid AND l.is_deleted=FALSE`,
+          [m.id, wf.tenant_id]
+        );
+        if (!leadRes.rows[0]) return;
+        const enrichedLead = await enrichLead(leadRes.rows[0] as LeadContext);
+
+        const execRes = await query(
+          `INSERT INTO workflow_executions
+             (workflow_id, tenant_id, lead_id, lead_name, trigger_type, status, enrolled_at)
+           VALUES ($1,$2,$3,$4,'broadcast_group','running',NOW()) RETURNING id`,
+          [wf.id, wf.tenant_id, m.id, enrichedLead.name]
+        );
+        if (!execRes.rows[0]) return;
+        const executionId = execRes.rows[0].id;
+
+        try {
+          const stats = afterNodes.length > 0
+            ? await executeNodes(afterNodes, enrichedLead, wf.tenant_id, 'scheduler', executionId, wf.id)
+            : { skipped: 0, failed: 0 };
+          const execStatus = stats.failed > 0 ? 'completed_with_errors' : 'completed';
+          await query(`UPDATE workflow_executions SET status=$1, completed_at=NOW() WHERE id=$2`, [execStatus, executionId]);
+          await query(
+            `UPDATE workflows SET total_contacts=total_contacts+1, completed=completed+$2, completed_with_errors=completed_with_errors+$3, skipped=skipped+$4, failed=failed+$5, updated_at=NOW() WHERE id=$1`,
+            [wf.id, stats.failed === 0 ? 1 : 0, stats.failed > 0 ? 1 : 0, stats.skipped, stats.failed]
+          ).catch(() => null);
+        } catch (err: any) {
+          await query(`UPDATE workflow_executions SET status='failed', completed_at=NOW(), error=$1 WHERE id=$2`, [err.message ?? 'Unknown', executionId]).catch(() => null);
+          await query(`UPDATE workflows SET total_contacts=total_contacts+1, failed=failed+1, updated_at=NOW() WHERE id=$1`, [wf.id]).catch(() => null);
+        }
+      } catch (e: any) {
+        console.error('[Scheduler] broadcast_group lead', m.id, e.message);
+      }
+    }, i * intervalMs);
+  });
+}
+
 export async function processScheduledTriggers(): Promise<void> {
   try {
     const now   = new Date();
@@ -2150,17 +2227,23 @@ export async function processScheduledTriggers(): Promise<void> {
       }
       if (!shouldFire) continue;
 
-      // Fire for all active leads of this tenant (up to 500 at a time)
-      const leadsRes = await query(
-        `SELECT id, name, email, phone, pipeline_id, stage_id, assigned_to, tags, source
-         FROM leads WHERE tenant_id=$1 AND is_deleted=FALSE LIMIT 500`,
-        [wf.tenant_id]
-      ).catch(() => ({ rows: [] as any[] }));
+      // If workflow has a broadcast_group action, fan out to group members instead of all leads
+      const hasBroadcastAction = nodes.some((n: WFNode) => n.actionType === 'broadcast_group');
+      if (hasBroadcastAction) {
+        console.log(`[Scheduler] "${wf.name}" has broadcast_group action — running scheduled broadcast`);
+        await runScheduledBroadcast(wf, nodes).catch((e) => console.error('[Scheduler] broadcast error:', e.message));
+      } else {
+        // Fire for all active leads of this tenant (up to 500 at a time)
+        const leadsRes = await query(
+          `SELECT id, name, email, phone, pipeline_id, stage_id, assigned_to, tags, source
+           FROM leads WHERE tenant_id=$1 AND is_deleted=FALSE LIMIT 500`,
+          [wf.tenant_id]
+        ).catch(() => ({ rows: [] as any[] }));
 
-      console.log(`[Scheduler] "${wf.name}" firing for ${leadsRes.rows.length} leads`);
-      for (const lead of leadsRes.rows) {
-        // forceReEntry=true: scheduled workflows fire every cycle, superseding prior runs
-        await triggerWorkflows(wf.trigger_key, lead, wf.tenant_id, 'scheduler', { forceReEntry: true }).catch(() => null);
+        console.log(`[Scheduler] "${wf.name}" firing for ${leadsRes.rows.length} leads`);
+        for (const lead of leadsRes.rows) {
+          await triggerWorkflows(wf.trigger_key, lead, wf.tenant_id, 'scheduler', { forceReEntry: true }).catch(() => null);
+        }
       }
 
       // Auto-deactivate one-shot date workflows after they fire
