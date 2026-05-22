@@ -71,6 +71,7 @@ const MIGRATIONS = [
   'migration_069_wa_personal_templates.sql',
   'migration_070_templates_file_attachment.sql',
   'migration_071_messages_sent_by.sql',
+  'migration_072_broadcast_queue.sql',
 ];
 
 // Split SQL file into individual statements and execute each one separately.
