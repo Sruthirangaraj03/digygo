@@ -2250,6 +2250,20 @@ export async function processBroadcastQueue(): Promise<void> {
           await query(`UPDATE workflows SET total_contacts=total_contacts+1, failed=failed+1, updated_at=NOW() WHERE id=$1`, [row.workflow_id]).catch(() => null);
           await query(`UPDATE broadcast_queue SET status='failed', error=$1, processed_at=NOW() WHERE id=$2`, [err.message ?? 'Unknown', row.id]).catch(() => null);
         }
+
+        // Deactivate specific_date broadcast workflows only when the full queue is done
+        const remaining = await query(
+          `SELECT count(*) FROM broadcast_queue WHERE workflow_id=$1::uuid AND status IN ('pending','processing')`,
+          [row.workflow_id]
+        ).catch(() => ({ rows: [{ count: '1' }] }));
+        if (parseInt(remaining.rows[0]?.count ?? '1') === 0) {
+          await query(
+            `UPDATE workflows SET status='inactive', updated_at=NOW()
+             WHERE id=$1::uuid AND trigger_key='specific_date' AND status='active'`,
+            [row.workflow_id]
+          ).catch(() => null);
+          console.log(`[BroadcastQueue] workflow ${row.workflow_id} queue empty — deactivated`);
+        }
       } catch (e: any) {
         console.error('[BroadcastQueue] error processing row', row.id, e.message);
         await query(`UPDATE broadcast_queue SET status='failed', error=$1, processed_at=NOW() WHERE id=$2`, [e.message, row.id]).catch(() => null);
@@ -2327,6 +2341,15 @@ export async function processScheduledTriggers(): Promise<void> {
       // If workflow has a broadcast_group action, fan out to group members instead of all leads
       const hasBroadcastAction = nodes.some((n: WFNode) => n.actionType === 'broadcast_group');
       if (hasBroadcastAction) {
+        // Skip re-firing if a broadcast is already in progress for this workflow
+        const inProgress = await query(
+          `SELECT count(*) FROM broadcast_queue WHERE workflow_id=$1::uuid AND status IN ('pending','processing')`,
+          [wf.id]
+        ).catch(() => ({ rows: [{ count: '1' }] }));
+        if (parseInt(inProgress.rows[0]?.count ?? '1') > 0) {
+          console.log(`[Scheduler] "${wf.name}" broadcast already in progress — skipping re-fire`);
+          continue;
+        }
         console.log(`[Scheduler] "${wf.name}" has broadcast_group action — running scheduled broadcast`);
         await runScheduledBroadcast(wf, nodes).catch((e) => console.error('[Scheduler] broadcast error:', e.message));
       } else {
@@ -2343,8 +2366,9 @@ export async function processScheduledTriggers(): Promise<void> {
         }
       }
 
-      // Auto-deactivate one-shot date workflows after they fire
-      if (wf.trigger_key === 'specific_date') {
+      // Auto-deactivate one-shot date workflows after they fire,
+      // but NOT broadcast workflows — those deactivate when the queue empties
+      if (wf.trigger_key === 'specific_date' && !hasBroadcastAction) {
         await query(
           `UPDATE workflows SET status='inactive', updated_at=NOW() WHERE id=$1`,
           [wf.id]
