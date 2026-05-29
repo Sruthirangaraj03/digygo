@@ -2168,6 +2168,9 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
   const [leadNotes, setLeadNotes] = useState<any[]>([]);
   const [leadFollowUps, setLeadFollowUps] = useState<any[]>([]);
   const [leadActivities, setLeadActivities] = useState<any[]>([]);
+  const [leadCalls, setLeadCalls] = useState<any[]>([]);
+  const [playingCallId, setPlayingCallId] = useState<string | null>(null);
+  const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
 
   const { calendarEvents, updateLead, deleteLead, addActivity, pipelines, tags: storeTags, staff, bookingLinks, addCalendarEvent } = useCrmStore();
   const waPersonalStatus = useCrmStore((s) => s.waPersonalStatus);
@@ -2195,6 +2198,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
       const customFields = rows.map((r) => ({ label: r.field_name ?? r.slug, value: r.value, fieldId: r.field_id }));
       updateLead(lead.id, { customFields });
     }).catch(() => null);
+    api.get<any[]>(`/api/calls/lead/${lead.id}`).then(setLeadCalls).catch(() => null);
   }, [lead.id]);
 
   // Option B: re-fetch activities whenever this lead is updated (from any source/window)
@@ -2788,6 +2792,91 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
                           </span>
                         </div>
                       </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Calls ── */}
+        {!editMode && (
+          <div className="px-5 py-4 border-t border-black/5">
+            <h4 className="text-[13px] font-bold text-[#1c1410] mb-3 flex items-center gap-2">
+              <PhoneIncoming className="w-4 h-4 text-[#c2410c]" />
+              Calls {leadCalls.length > 0 && <span className="ml-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-orange-100 text-orange-700">{leadCalls.length}</span>}
+            </h4>
+            {leadCalls.length === 0 ? (
+              <p className="text-[12px] text-[#b09e8d] text-center py-4">No calls yet</p>
+            ) : (
+              <div className="space-y-3">
+                {leadCalls.map((c) => {
+                  const isAnswered = c.outcome === 'ANSWERED';
+                  const isMissed   = c.outcome === 'MISSED';
+                  const isOutbound = c.direction === 'OUTBOUND';
+                  const DirIcon    = isMissed ? PhoneMissed : isOutbound ? PhoneOutgoing : PhoneIncoming;
+                  const dirColor   = isMissed ? 'text-red-500' : isOutbound ? 'text-blue-500' : 'text-emerald-500';
+                  const durSec     = c.duration_seconds ?? 0;
+                  const durLabel   = durSec > 0 ? `${Math.floor(durSec / 60)}:${String(durSec % 60).padStart(2, '0')}` : '—';
+                  const hasRec     = !!(c.recording_path || c.recording_url);
+                  return (
+                    <div key={c.id} className="rounded-xl border border-black/[0.07] bg-white p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <DirIcon className={`w-4 h-4 shrink-0 ${dirColor}`} />
+                          <span className="text-[12px] font-semibold text-[#1c1410]">
+                            {isOutbound ? 'Outbound' : 'Inbound'}
+                          </span>
+                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                            isAnswered ? 'bg-emerald-50 text-emerald-700' :
+                            isMissed   ? 'bg-red-50 text-red-600' :
+                                         'bg-amber-50 text-amber-700'
+                          }`}>{c.outcome}</span>
+                        </div>
+                        <span className="text-[11px] text-[#b09e8d]">{durLabel}</span>
+                      </div>
+                      {c.staff_name && (
+                        <p className="text-[11px] text-[#7a6b5c]">Agent: {c.staff_name}</p>
+                      )}
+                      {c.started_at && (
+                        <p className="text-[11px] text-[#b09e8d]">
+                          {new Date(c.started_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                        </p>
+                      )}
+                      {hasRec && (
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            onClick={async () => {
+                              if (playingCallId === c.id) { setPlayingCallId(null); return; }
+                              if (audioUrls[c.id]) { setPlayingCallId(c.id); return; }
+                              try {
+                                const blob = await fetchBlob(`/api/calls/${c.id}/recording`);
+                                const url = URL.createObjectURL(blob);
+                                setAudioUrls((prev) => ({ ...prev, [c.id]: url }));
+                                setPlayingCallId(c.id);
+                              } catch { /* no-op */ }
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-700 text-[11px] font-semibold transition-colors"
+                          >
+                            {playingCallId === c.id ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                            {playingCallId === c.id ? 'Stop' : 'Play'}
+                          </button>
+                          <button
+                            onClick={() => downloadBlob(`/api/calls/${c.id}/download`, `call-${c.cdr_id}.mp3`)}
+                            className="text-[11px] text-[#7a6b5c] hover:text-primary transition-colors"
+                          >Download</button>
+                        </div>
+                      )}
+                      {playingCallId === c.id && audioUrls[c.id] && (
+                        <audio
+                          src={audioUrls[c.id]}
+                          autoPlay
+                          controls
+                          className="w-full h-8 mt-1"
+                          onEnded={() => setPlayingCallId(null)}
+                        />
+                      )}
                     </div>
                   );
                 })}
