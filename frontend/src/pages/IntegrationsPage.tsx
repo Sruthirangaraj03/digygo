@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, X, RefreshCw, Check, Mail, ExternalLink, Unplug, Eye, EyeOff, QrCode, Wifi, WifiOff, BarChart2 } from 'lucide-react';
 import { getSocket } from '@/lib/socket';
 import { useCrmStore } from '@/store/crmStore';
+import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
@@ -515,7 +516,108 @@ function WaPersonalModal({ onClose, onConnected }: { onClose: () => void; onConn
 
 // ── Integration card ───────────────────────────────────────────────────────────
 
-type ModalType = 'waba' | 'smtp' | 'razorpay' | 'n8n' | 'wa_personal';
+// ── Superfone icon ────────────────────────────────────────────────────────────
+
+function SuperfoneIcon() {
+  return (
+    <div className="w-12 h-12 rounded-2xl bg-[#1a1a2e] flex items-center justify-center shrink-0">
+      <span className="text-white font-extrabold text-[11px] tracking-tight">SF</span>
+    </div>
+  );
+}
+
+// ── Superfone modal ───────────────────────────────────────────────────────────
+
+function SuperfoneModal({ onClose, onSaved, tenantId }: { onClose: () => void; onSaved: () => void; tenantId: string }) {
+  const [form, setForm] = useState({ api_key: '', superfone_endpoint_url: '', superfone_number: '' });
+  const [saving, setSaving] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  const webhookUrl = `${window.location.origin}/api/webhooks/superfone/${tenantId}`;
+
+  const handleSave = async () => {
+    if (!form.superfone_number.trim()) {
+      toast.error('Business phone number is required');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.post('/api/integrations/superfone/connect', {
+        api_key: form.api_key.trim() || undefined,
+        superfone_endpoint_url: form.superfone_endpoint_url.trim() || undefined,
+        superfone_number: form.superfone_number.trim(),
+      });
+      toast.success('Superfone connected!');
+      onSaved();
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to connect Superfone');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Connect Superfone" onClose={onClose} footer={
+      <>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />Connecting…</> : <><Check className="w-3.5 h-3.5 mr-1.5" />Connect</>}
+        </Button>
+      </>
+    }>
+      <p className="text-[12px] text-[#7a6b5c]">Connect your Superfone account to log calls, play recordings, and trigger automations.</p>
+
+      {/* Webhook URL to copy */}
+      <div className="bg-[#f5f0eb] rounded-xl p-3 space-y-1">
+        <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#5c5245]">Your CRM Webhook URL</p>
+        <p className="text-[11px] text-[#7a6b5c] leading-relaxed">Copy this URL into your Superfone dashboard under Webhook settings:</p>
+        <div className="flex items-center gap-2 mt-1">
+          <code className="text-[10.5px] text-[#c2410c] bg-white rounded-lg px-2.5 py-1.5 flex-1 break-all border border-black/5">{webhookUrl}</code>
+          <button
+            onClick={() => { navigator.clipboard.writeText(webhookUrl); toast.success('Copied!'); }}
+            className="shrink-0 text-[11px] font-semibold text-white bg-[#c2410c] rounded-lg px-2.5 py-1.5 hover:bg-[#a83808] transition-colors"
+          >
+            Copy
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <label className={labelCls}>Superfone Business Number *</label>
+        <Input value={form.superfone_number} onChange={(e) => set('superfone_number', e.target.value)} placeholder="+919429694726" />
+        <p className="text-[10px] text-[#b09e8d] mt-1">Your Superfone virtual number — used to match incoming call webhooks</p>
+      </div>
+
+      <div>
+        <label className={labelCls}>API Key (optional — needed to push leads to Superfone)</label>
+        <div className="relative">
+          <Input
+            value={form.api_key}
+            onChange={(e) => set('api_key', e.target.value)}
+            type={showKey ? 'text' : 'password'}
+            placeholder="sk_••••••••••••"
+            className="pr-9"
+          />
+          <button type="button" onClick={() => setShowKey((s) => !s)}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9e8e7e] hover:text-[#1c1410]">
+            {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+        </div>
+        <p className="text-[10px] text-[#b09e8d] mt-1">Required only if you purchased the Superfone API Key add-on</p>
+      </div>
+
+      <div>
+        <label className={labelCls}>Superfone Endpoint URL (optional)</label>
+        <Input value={form.superfone_endpoint_url} onChange={(e) => set('superfone_endpoint_url', e.target.value)}
+          placeholder="https://prod-api.superfone.co.in/superfone/webhook/integration/..." type="url" />
+        <p className="text-[10px] text-[#b09e8d] mt-1">Superfone's webhook URL — required to push new leads from CRM to Superfone</p>
+      </div>
+    </Modal>
+  );
+}
+
+type ModalType = 'waba' | 'smtp' | 'razorpay' | 'n8n' | 'wa_personal' | 'superfone';
 
 interface IntegCardProps {
   icon: React.ReactNode;
@@ -580,29 +682,33 @@ export default function IntegrationsPage() {
   const navigate = useNavigate();
   const [modal, setModal] = useState<ModalType | null>(null);
   const { waPersonalStatus, waPersonalPhone, setWaPersonalStatus } = useCrmStore();
+  const { currentUser } = useAuthStore();
   const [status, setStatus] = useState({
     meta: false,
     waba: false,
     smtp: false,
     razorpay: false,
     n8n: false,
+    superfone: false,
   });
 
   const loadStatus = async () => {
-    const [meta, waba, smtp, configs, waPersStatus] = await Promise.allSettled([
+    const [meta, waba, smtp, configs, waPersStatus, superfone] = await Promise.allSettled([
       api.get<{ connected: boolean }>('/api/integrations/meta/status'),
       api.get<{ connected: boolean }>('/api/integrations/waba/status'),
       api.get<{ connected: boolean }>('/api/integrations/smtp/status'),
       api.get<Record<string, { is_active: boolean }>>('/api/integrations/configs'),
       api.get<{ status: string; phone: string | null }>('/api/whatsapp-personal/status'),
+      api.get<{ connected: boolean }>('/api/integrations/superfone/status'),
     ]);
 
     setStatus({
-      meta:     meta.status     === 'fulfilled' && !!meta.value?.connected,
-      waba:     waba.status     === 'fulfilled' && !!waba.value?.connected,
-      smtp:     smtp.status     === 'fulfilled' && !!smtp.value?.connected,
-      razorpay: configs.status  === 'fulfilled' && !!configs.value?.razorpay?.is_active,
-      n8n:      configs.status  === 'fulfilled' && !!configs.value?.n8n?.is_active,
+      meta:      meta.status      === 'fulfilled' && !!meta.value?.connected,
+      waba:      waba.status      === 'fulfilled' && !!waba.value?.connected,
+      smtp:      smtp.status      === 'fulfilled' && !!smtp.value?.connected,
+      razorpay:  configs.status   === 'fulfilled' && !!configs.value?.razorpay?.is_active,
+      n8n:       configs.status   === 'fulfilled' && !!configs.value?.n8n?.is_active,
+      superfone: superfone.status === 'fulfilled' && !!superfone.value?.connected,
     });
 
     if (waPersStatus.status === 'fulfilled') {
@@ -780,6 +886,16 @@ export default function IntegrationsPage() {
           onDisconnect={() => disconnect('n8n', '/api/integrations/configs/n8n')}
         />
 
+        <IntegCard
+          icon={<SuperfoneIcon />}
+          name="Superfone"
+          tagline="Log inbound and outbound calls, play recordings, and trigger automations on missed or answered calls."
+          connected={status.superfone}
+          onConnect={() => setModal('superfone')}
+          onConfigure={() => setModal('superfone')}
+          onDisconnect={() => disconnect('superfone', '/api/integrations/superfone/disconnect')}
+        />
+
       </div>
 
       {/* Modals */}
@@ -788,6 +904,7 @@ export default function IntegrationsPage() {
       {modal === 'razorpay'    && <RazorpayModal   onClose={() => setModal(null)} onSaved={() => onSaved('razorpay')} />}
       {modal === 'n8n'         && <N8nModal        onClose={() => setModal(null)} onSaved={() => onSaved('n8n')}      />}
       {modal === 'wa_personal' && <WaPersonalModal onClose={() => setModal(null)} onConnected={() => { setWaPersonalStatus('connected'); loadStatus(); }} />}
+      {modal === 'superfone'   && <SuperfoneModal  onClose={() => setModal(null)} onSaved={() => onSaved('superfone')} tenantId={currentUser?.tenantId ?? ''} />}
 
     </div>
   );

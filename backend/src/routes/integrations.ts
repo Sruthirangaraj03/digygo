@@ -1977,4 +1977,67 @@ export async function pollMetaLeads(): Promise<void> {
   } catch (err) { console.error('[Meta poll error]', err); }
 }
 
+// ── Superfone Integration ─────────────────────────────────────────────────────
+
+// POST /api/integrations/superfone/connect
+router.post('/superfone/connect', checkPermission('integrations:manage'), async (req: AuthRequest, res: Response) => {
+  const { api_key, superfone_endpoint_url, superfone_number } = req.body as {
+    api_key?: string; superfone_endpoint_url?: string; superfone_number?: string;
+  };
+  if (!superfone_number?.trim()) {
+    res.status(400).json({ error: 'Business phone number is required' });
+    return;
+  }
+  try {
+    const encKey = api_key?.trim() ? encrypt(api_key.trim()) : null;
+    await query(
+      `INSERT INTO superfone_settings (tenant_id, api_key_enc, superfone_endpoint_url, superfone_number, is_connected, connected_at, updated_at)
+       VALUES ($1::uuid, $2, $3, $4, TRUE, NOW(), NOW())
+       ON CONFLICT (tenant_id) DO UPDATE
+         SET api_key_enc = COALESCE($2, superfone_settings.api_key_enc),
+             superfone_endpoint_url = COALESCE($3, superfone_settings.superfone_endpoint_url),
+             superfone_number = $4,
+             is_connected = TRUE,
+             connected_at = NOW(),
+             updated_at = NOW()`,
+      [req.user!.tenantId, encKey, superfone_endpoint_url?.trim() || null, superfone_number.trim()]
+    );
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('[superfone connect]', err);
+    res.status(500).json({ error: 'Failed to save Superfone settings' });
+  }
+});
+
+// GET /api/integrations/superfone/status
+router.get('/superfone/status', checkPermission('integrations:view'), async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await query(
+      'SELECT is_connected, superfone_number, connected_at FROM superfone_settings WHERE tenant_id=$1::uuid',
+      [req.user!.tenantId]
+    );
+    if (!result.rows[0] || !result.rows[0].is_connected) {
+      res.json({ connected: false });
+      return;
+    }
+    const row = result.rows[0];
+    res.json({
+      connected: true,
+      superfone_number: row.superfone_number,
+      connected_at: row.connected_at,
+    });
+  } catch { res.status(500).json({ error: 'Server error' }); }
+});
+
+// DELETE /api/integrations/superfone/disconnect
+router.delete('/superfone/disconnect', checkPermission('integrations:manage'), async (req: AuthRequest, res: Response) => {
+  try {
+    await query(
+      `UPDATE superfone_settings SET is_connected=FALSE, updated_at=NOW() WHERE tenant_id=$1::uuid`,
+      [req.user!.tenantId]
+    );
+    res.json({ success: true });
+  } catch { res.status(500).json({ error: 'Server error' }); }
+});
+
 export default router;

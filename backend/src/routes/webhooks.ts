@@ -341,4 +341,114 @@ async function processWhatsAppMessage(payload: any) {
   }
 }
 
+// ── Superfone Webhook ─────────────────────────────────────────────────────────
+// POST /api/webhooks/superfone/:tenantId
+// No auth required — Superfone POSTs directly, tenant identified by URL param.
+
+router.post('/superfone/:tenantId', async (req: Request, res: Response) => {
+  const { tenantId } = req.params;
+  const payload = req.body as Record<string, any>;
+
+  // Respond immediately so Superfone doesn't retry
+  res.status(200).json({ received: true });
+
+  try {
+    // Verify this tenant has Superfone connected and the number matches
+    const settingsResult = await query(
+      `SELECT superfone_number FROM superfone_settings
+       WHERE tenant_id=$1::uuid AND is_connected=TRUE`,
+      [tenantId]
+    );
+    if (!settingsResult.rows[0]) return;
+
+    const {
+      cdr_id, cdr_phone, cdr_call_type, cdr_disposition,
+      cdr_duration, cdr_start, cdr_end, superfone_number,
+      staff_first_name, staff_last_name, staff_phone,
+      ivr_inputs, recording_url,
+    } = payload;
+
+    if (!cdr_id) return;
+
+    // Build staff name from payload
+    const staffName = [staff_first_name, staff_last_name].filter(Boolean).join(' ') || null;
+
+    // Match staff phone to a CRM user
+    let staffUserId: string | null = null;
+    if (staff_phone) {
+      const staffMatch = await query(
+        `SELECT id FROM users WHERE tenant_id=$1::uuid AND phone=$2 AND is_active=TRUE LIMIT 1`,
+        [tenantId, staff_phone]
+      );
+      if (staffMatch.rows[0]) staffUserId = staffMatch.rows[0].id;
+    }
+
+    // Match caller phone to a lead
+    let leadId: string | null = null;
+    let isUnknown = false;
+    if (cdr_phone) {
+      const leadMatch = await query(
+        `SELECT id FROM leads WHERE tenant_id=$1::uuid AND phone=$2 AND is_deleted=FALSE
+         ORDER BY created_at DESC LIMIT 1`,
+        [tenantId, cdr_phone]
+      );
+      if (leadMatch.rows[0]) {
+        leadId = leadMatch.rows[0].id;
+      } else {
+        isUnknown = true;
+      }
+    }
+
+    // Insert call log (deduplicated by tenant + cdr_id)
+    const insertResult = await query(
+      `INSERT INTO call_logs
+         (tenant_id, lead_id, cdr_id, direction, outcome, caller_phone, superfone_number,
+          duration_seconds, started_at, ended_at, staff_phone, staff_name, staff_user_id,
+          ivr_inputs, recording_url, is_unknown)
+       VALUES ($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16)
+       ON CONFLICT (tenant_id, cdr_id) DO NOTHING
+       RETURNING id`,
+      [
+        tenantId,
+        leadId,
+        cdr_id,
+        (cdr_call_type ?? 'INBOUND').toUpperCase(),
+        (cdr_disposition ?? 'UNKNOWN').toUpperCase(),
+        cdr_phone ?? null,
+        superfone_number ?? null,
+        cdr_duration ?? null,
+        cdr_start ?? null,
+        cdr_end ?? null,
+        staff_phone ?? null,
+        staffName,
+        staffUserId,
+        JSON.stringify(ivr_inputs ?? []),
+        recording_url ?? null,
+        isUnknown,
+      ]
+    );
+
+    // If duplicate (ON CONFLICT DO NOTHING), insertResult.rows is empty — skip
+    if (!insertResult.rows[0]) return;
+
+    const callLogId = insertResult.rows[0].id;
+
+    // Emit real-time event to tenant
+    emitToTenant(tenantId, 'call:logged', {
+      id: callLogId,
+      leadId,
+      isUnknown,
+      direction: (cdr_call_type ?? 'INBOUND').toUpperCase(),
+      outcome: (cdr_disposition ?? 'UNKNOWN').toUpperCase(),
+      callerPhone: cdr_phone,
+      duration: cdr_duration,
+      staffName,
+      startedAt: cdr_start,
+    });
+
+  } catch (err: any) {
+    console.error('[superfone webhook]', err.message);
+  }
+});
+
 export default router;
