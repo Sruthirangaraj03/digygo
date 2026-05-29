@@ -222,6 +222,7 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
       staffAccountabilityData,
       staleLeadsList,
       untouchedLeadsList,
+      callsStats,
     ] = await Promise.all([
       // Total leads — all time
       query(`SELECT COUNT(*)::int AS n FROM leads l WHERE l.tenant_id=$1 AND l.is_deleted=FALSE ${leadFilter}`, [tenantId]),
@@ -349,6 +350,18 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
         ORDER BY l.created_at ASC
         LIMIT 10
       `, [tenantId]),
+
+      // Calls stats — total, answered, missed in range
+      query(`
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(CASE WHEN outcome='ANSWERED' THEN 1 END)::int AS answered,
+          COUNT(CASE WHEN outcome='MISSED' THEN 1 END)::int AS missed
+        FROM call_logs
+        WHERE tenant_id=$1::uuid
+          AND COALESCE(started_at, created_at) >= $2
+          AND COALESCE(started_at, created_at) <= $3
+      `, [tenantId, rangeStart, rangeEnd]),
     ]);
 
     const total     = totalLeads.rows[0].n;
@@ -420,6 +433,9 @@ router.get('/analytics', async (req: AuthRequest, res: Response) => {
       staff_accountability: staffAccountability,
       stale_leads_list:     staleLeadsList.rows,
       untouched_leads:      untouchedLeadsList.rows,
+      calls_total:          callsStats.rows[0]?.total   ?? 0,
+      calls_answered:       callsStats.rows[0]?.answered ?? 0,
+      calls_missed:         callsStats.rows[0]?.missed   ?? 0,
       role:                 isPrivileged ? role : (isManager ? 'manager' : 'staff'),
     });
   } catch (err) {

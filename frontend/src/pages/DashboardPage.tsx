@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Users, AlertTriangle, Clock, Target, CheckCircle, Star, PhoneOff,
+  Users, AlertTriangle, Clock, Target, CheckCircle, Star, PhoneOff, Phone,
 } from 'lucide-react';
 import { useCrmStore } from '@/store/crmStore';
 import { useUserLevel } from '@/hooks/useUserLevel';
@@ -38,6 +38,9 @@ interface Analytics {
   today_followups:      Array<{ id: string; lead_name: string; due_at: string; title: string; description: string; lead_id: string }>;
   stale_leads_list:     Array<{ id: string; name: string; source: string; stage: string; assigned_name: string; updated_at: string; days_stale: number }>;
   untouched_leads:      Array<{ id: string; name: string; source: string; stage: string; assigned_name: string; created_at: string; hours_waiting: number }>;
+  calls_total:          number;
+  calls_answered:       number;
+  calls_missed:         number;
   role:                 string;
 }
 
@@ -254,7 +257,7 @@ function ManagementDashboard({ analytics, lineData }: {
     <div className="space-y-5">
 
       {/* ── 1. Business Health KPIs — all aggregate, zero individual lead names ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <StatCard
           label="New Leads" value={analytics.range_leads ?? 0}
           sub={`${analytics.range_label} · ${analytics.total_leads} total all-time`}
@@ -277,6 +280,12 @@ function ManagementDashboard({ analytics, lineData }: {
           value={bestConvSrc ? sourceLabel(bestConvSrc.source) : analytics.best_source ? sourceLabel(analytics.best_source.source) : 'N/A'}
           sub={bestConvSrc ? `${bestConvSrc.conv_pct}% conv · ${bestConvSrc.total} leads` : analytics.best_source ? `${analytics.best_source.count} leads` : 'No data yet'}
           icon={Star}
+        />
+        <StatCard
+          label="Calls"
+          value={analytics.calls_total ?? 0}
+          sub={`${analytics.calls_answered ?? 0} answered · ${analytics.calls_missed ?? 0} missed`}
+          icon={Phone}
         />
       </div>
 
@@ -432,7 +441,7 @@ function ManagerDashboard({ analytics, lineData }: { analytics: Analytics; lineD
   return (
     <div className="space-y-4">
       {/* ── 1. Operational KPIs ───────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <StatCard
           label="Overdue Follow-ups" value={analytics.overdue_followups}
           sub={analytics.overdue_followups > 0 ? 'Team needs to act now' : 'All caught up ✓'}
@@ -455,6 +464,13 @@ function ManagerDashboard({ analytics, lineData }: { analytics: Analytics; lineD
           sub={`${rangeLabel} · ${analytics.conversion_rate}% conv rate`}
           icon={Users} accent
           onClick={() => navigate('/leads')}
+        />
+        <StatCard
+          label="Calls"
+          value={analytics.calls_total ?? 0}
+          sub={`${analytics.calls_answered ?? 0} answered · ${analytics.calls_missed ?? 0} missed`}
+          icon={Phone}
+          onClick={() => navigate('/calls')}
         />
       </div>
 
@@ -621,7 +637,7 @@ function StaffDashboard({ analytics }: { analytics: Analytics }) {
   return (
     <div className="space-y-4">
       {/* ── Personal KPIs ─────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <StatCard
           label="Follow-ups Today" value={todayDue.length}
           sub={todayDue.length === 0 ? 'All clear for today' : `${analytics.overdue_followups} overdue`}
@@ -645,6 +661,13 @@ function StaffDashboard({ analytics }: { analytics: Analytics }) {
           sub={`${analytics.conversion_rate}% conversion rate`}
           icon={Target}
           onClick={() => navigate('/leads?filter=converted')}
+        />
+        <StatCard
+          label="Calls"
+          value={analytics.calls_total ?? 0}
+          sub={`${analytics.calls_answered ?? 0} answered · ${analytics.calls_missed ?? 0} missed`}
+          icon={Phone}
+          onClick={() => navigate('/calls')}
         />
       </div>
 
