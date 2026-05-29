@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, MessageSquare, Zap, Inbox, Settings,
-  UserCog, SlidersHorizontal, ChevronDown, ChevronRight, X, Database, ShieldCheck, CalendarDays, BarChart2,
+  UserCog, SlidersHorizontal, ChevronDown, ChevronRight, X, Database, ShieldCheck, CalendarDays, BarChart2, Phone,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/authStore';
@@ -34,6 +34,7 @@ const navItems: NavItem[] = [
   { label: 'Automation',      icon: Zap,               path: '/automation',      permKey: 'automation:view' },
   { label: 'Calendar',        icon: CalendarDays,       path: '/calendar' },
   { label: 'Inbox',           icon: Inbox,              path: '/inbox',           permKey: 'inbox:view_all' },
+  { label: 'Calls',           icon: Phone,              path: '/calls',           permKey: 'integrations:view' },
   { label: 'Fields',          icon: SlidersHorizontal,  path: '/fields',          permKey: 'fields:view' },
   { label: 'Staff',           icon: UserCog,            path: '/staff',           permKey: 'staff:view' },
   { label: 'Settings',        icon: Settings,           path: '/settings',        permKey: 'settings:manage' },

@@ -9,6 +9,98 @@ const router = Router();
 router.use(requireAuth);
 router.use(requireTenant);
 
+// GET /api/calls — all calls for tenant with filters + pagination
+router.get('/', async (req: AuthRequest, res: Response) => {
+  const { tenantId } = req.user!;
+  const { direction, outcome, staff_name, date_from, date_to, page = '1', limit = '50' } = req.query as Record<string, string>;
+
+  const params: any[] = [tenantId];
+  const conditions: string[] = ['cl.tenant_id=$1::uuid'];
+
+  if (direction)  { params.push(direction.toUpperCase());  conditions.push(`cl.direction=$${params.length}`); }
+  if (outcome)    { params.push(outcome.toUpperCase());    conditions.push(`cl.outcome=$${params.length}`); }
+  if (staff_name) { params.push(`%${staff_name}%`);        conditions.push(`cl.staff_name ILIKE $${params.length}`); }
+  if (date_from)  { params.push(date_from);                conditions.push(`COALESCE(cl.started_at, cl.created_at) >= $${params.length}::timestamptz`); }
+  if (date_to)    { params.push(date_to);                  conditions.push(`COALESCE(cl.started_at, cl.created_at) <= $${params.length}::timestamptz`); }
+
+  const offset = (Math.max(1, parseInt(page)) - 1) * parseInt(limit);
+  const where  = conditions.join(' AND ');
+
+  try {
+    const [rows, countRow] = await Promise.all([
+      query(
+        `SELECT cl.id, cl.cdr_id, cl.direction, cl.outcome, cl.caller_phone, cl.superfone_number,
+                cl.duration_seconds, cl.started_at, cl.ended_at, cl.staff_name,
+                cl.recording_url, cl.recording_path, cl.recording_downloaded,
+                cl.is_unknown, cl.created_at,
+                l.id AS lead_id, COALESCE(l.name, cl.caller_phone) AS lead_name
+         FROM call_logs cl
+         LEFT JOIN leads l ON l.id = cl.lead_id
+         WHERE ${where}
+         ORDER BY COALESCE(cl.started_at, cl.created_at) DESC
+         LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, parseInt(limit), offset],
+      ),
+      query(`SELECT COUNT(*) FROM call_logs cl WHERE ${where}`, params),
+    ]);
+    res.json({ calls: rows.rows, total: parseInt(countRow.rows[0].count) });
+  } catch (e) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// GET /api/calls/export — Excel export
+router.get('/export', async (req: AuthRequest, res: Response) => {
+  const { tenantId } = req.user!;
+  const { direction, outcome, staff_name, date_from, date_to } = req.query as Record<string, string>;
+
+  const params: any[] = [tenantId];
+  const conditions: string[] = ['cl.tenant_id=$1::uuid'];
+
+  if (direction)  { params.push(direction.toUpperCase());  conditions.push(`cl.direction=$${params.length}`); }
+  if (outcome)    { params.push(outcome.toUpperCase());    conditions.push(`cl.outcome=$${params.length}`); }
+  if (staff_name) { params.push(`%${staff_name}%`);        conditions.push(`cl.staff_name ILIKE $${params.length}`); }
+  if (date_from)  { params.push(date_from);                conditions.push(`COALESCE(cl.started_at, cl.created_at) >= $${params.length}::timestamptz`); }
+  if (date_to)    { params.push(date_to);                  conditions.push(`COALESCE(cl.started_at, cl.created_at) <= $${params.length}::timestamptz`); }
+
+  const where = conditions.join(' AND ');
+  try {
+    const result = await query(
+      `SELECT cl.cdr_id, cl.direction, cl.outcome, cl.caller_phone, cl.superfone_number,
+              cl.duration_seconds, cl.started_at, cl.ended_at, cl.staff_name, cl.is_unknown,
+              COALESCE(l.name, cl.caller_phone) AS lead_name
+       FROM call_logs cl
+       LEFT JOIN leads l ON l.id = cl.lead_id
+       WHERE ${where}
+       ORDER BY COALESCE(cl.started_at, cl.created_at) DESC
+       LIMIT 5000`,
+      params,
+    );
+
+    const ExcelJS = await import('exceljs');
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Call Logs');
+    ws.columns = [
+      { header: 'CDR ID',        key: 'cdr_id',           width: 14 },
+      { header: 'Lead Name',     key: 'lead_name',         width: 22 },
+      { header: 'Phone',         key: 'caller_phone',      width: 16 },
+      { header: 'Direction',     key: 'direction',         width: 12 },
+      { header: 'Outcome',       key: 'outcome',           width: 12 },
+      { header: 'Duration (s)',  key: 'duration_seconds',  width: 14 },
+      { header: 'Agent',         key: 'staff_name',        width: 20 },
+      { header: 'Superfone No.', key: 'superfone_number',  width: 16 },
+      { header: 'Started At',    key: 'started_at',        width: 22 },
+      { header: 'Ended At',      key: 'ended_at',          width: 22 },
+      { header: 'Unknown',       key: 'is_unknown',        width: 10 },
+    ];
+    ws.getRow(1).font = { bold: true };
+    result.rows.forEach((r) => ws.addRow(r));
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="call-logs.xlsx"');
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e) { res.status(500).json({ error: 'Server error' }); }
+});
+
 // GET /api/calls/lead/:leadId — all call logs for a lead
 router.get('/lead/:leadId', async (req: AuthRequest, res: Response) => {
   const { tenantId } = req.user!;

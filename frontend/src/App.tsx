@@ -43,6 +43,7 @@ import PublicBookingPage from "./pages/PublicBookingPage";
 import NotFound from "./pages/NotFound";
 import PincodeRoutingPage from "./pages/PincodeRoutingPage";
 import ReportsPage from "./pages/ReportsPage";
+import CallsPage from "./pages/CallsPage";
 
 const queryClient = new QueryClient();
 
@@ -88,6 +89,7 @@ const App = () => (
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/calendar/edit/:id" element={<CalendarEditPage />} />
 
+            <Route path="/calls" element={<CallsPage />} />
             <Route path="/inbox" element={<InboxPage />} />
             <Route path="/inbox/overview" element={<InboxOverviewPage />} />
             <Route path="/fields" element={<FieldsPage />} />
