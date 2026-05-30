@@ -1323,12 +1323,12 @@ function TagChipInput({ tags, onChange, placeholder }: {
 }
 
 // ── Assign Staff Panel (multi-select tags + split traffic + by-pipeline mode) ──
-function AssignStaffPanel({ cfg, staff, onUpdate }: {
+function AssignStaffPanel({ cfg, staff, pipelines, onUpdate }: {
   cfg: Record<string, unknown>;
   staff: StaffOpt[];
+  pipelines: PipelineOpt[];
   onUpdate: (updates: Partial<WFNode>) => void;
 }) {
-  const { pipelines } = useCrmStore();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -1807,7 +1807,7 @@ function ActionConfigPanel({ node, onUpdate, pipelines, staff, templates, workfl
 
       {/* Assign To Staff */}
       {node.actionType === 'assign_staff' && (
-        <AssignStaffPanel cfg={cfg} staff={staff} onUpdate={onUpdate} />
+        <AssignStaffPanel cfg={cfg} staff={staff} pipelines={pipelines} onUpdate={onUpdate} />
       )}
 
       {/* Change Appointment Status */}
