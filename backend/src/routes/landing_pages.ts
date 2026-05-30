@@ -25,8 +25,17 @@ router.get('/', checkPermission('landing_pages:read'), async (req: AuthRequest, 
 router.post('/', checkPermission('landing_pages:create'), async (req: AuthRequest, res: Response) => {
   const { title, slug, template, status, content } = req.body;
   if (!title?.trim()) { res.status(400).json({ error: 'title required' }); return; }
-  const finalSlug = (slug ?? title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''));
+  // Generate globally unique slug (slugs are shared URL namespace across all tenants)
+  let baseSlug = (slug ?? title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''));
+  let finalSlug = baseSlug;
+  let n = 1;
   try {
+    while (true) {
+      const chk = await query('SELECT id FROM landing_pages WHERE slug=$1', [finalSlug]);
+      if (!chk.rows.length) break;
+      n++;
+      finalSlug = `${baseSlug}-${n}`;
+    }
     const result = await query(
       `INSERT INTO landing_pages (tenant_id, title, slug, template, status, content)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,

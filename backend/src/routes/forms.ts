@@ -79,14 +79,14 @@ router.post('/', checkPermission('custom_forms:create'), checkUsage('forms'), as
   const tenantId = req.user!.tenantId;
 
   try {
-    // Auto-generate unique slug
+    // Auto-generate globally unique slug (across all tenants — slugs are shared URL namespace)
     let slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     let candidate = slug;
     let n = 1;
     while (true) {
       const chk = await query(
-        'SELECT id FROM custom_forms WHERE tenant_id=$1 AND slug=$2',
-        [tenantId, candidate]
+        'SELECT id FROM custom_forms WHERE slug=$1',
+        [candidate]
       );
       if (!chk.rows.length) { slug = candidate; break; }
       n++;

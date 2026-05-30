@@ -837,8 +837,17 @@ router.post('/event-types', checkPermission('calendar:manage'), async (req: Auth
     redirect_url, max_per_day, min_notice_value, min_notice_unit, capacity_per_slot,
   } = req.body;
   if (!name) { res.status(400).json({ error: 'name required' }); return; }
-  const slugVal = (slug || name).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const baseSlugVal = (slug || name).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  let slugVal = baseSlugVal;
   try {
+    // Ensure slug is globally unique across all tenants
+    let sn = 1;
+    while (true) {
+      const chk = await query('SELECT id FROM event_types WHERE slug=$1', [slugVal]);
+      if (!chk.rows.length) break;
+      sn++;
+      slugVal = `${baseSlugVal}-${sn}`;
+    }
     const result = await query(
       `INSERT INTO event_types
          (tenant_id, name, slug, duration, description, staff_type, assignment_mode,

@@ -73,6 +73,7 @@ const MIGRATIONS = [
   'migration_071_messages_sent_by.sql',
   'migration_072_broadcast_queue.sql',
   'migration_073_superfone.sql',
+  'migration_074_fix_duplicate_slugs.sql',
 ];
 
 // Split SQL file into individual statements and execute each one separately.

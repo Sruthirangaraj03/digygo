@@ -25,7 +25,7 @@ router.get('/forms/:slug', async (req: Request, res: Response) => {
       `SELECT id, name, fields, submit_label, redirect_url, thank_you_message,
               btn_color, btn_text_color, form_bg_color, form_text_color,
               declaration_enabled, declaration_title, declaration_link
-       FROM custom_forms WHERE slug=$1 AND is_active=TRUE`,
+       FROM custom_forms WHERE slug=$1 AND is_active=TRUE ORDER BY created_at ASC LIMIT 1`,
       [req.params.slug]
     );
     if (!result.rows[0]) { res.status(404).json({ error: 'Form not found' }); return; }
@@ -38,7 +38,7 @@ router.post('/forms/:slug/submit', async (req: Request, res: Response) => {
   const data: Record<string, string> = req.body?.data ?? req.body ?? {};
   try {
     const formRes = await query(
-      `SELECT * FROM custom_forms WHERE slug=$1 AND is_active=TRUE`,
+      `SELECT * FROM custom_forms WHERE slug=$1 AND is_active=TRUE ORDER BY created_at ASC LIMIT 1`,
       [req.params.slug]
     );
     const form = formRes.rows[0];
@@ -183,7 +183,7 @@ router.get('/book/:slug', bookingLimiter, async (req: Request, res: Response) =>
   try {
     const result = await query(
       `SELECT id, name, duration_mins, buffer_mins, max_per_day, location, description, availability
-       FROM booking_links WHERE slug=$1 AND is_active=TRUE`,
+       FROM booking_links WHERE slug=$1 AND is_active=TRUE ORDER BY created_at ASC LIMIT 1`,
       [req.params.slug]
     );
     if (!result.rows[0]) { res.status(404).json({ error: 'Booking link not found' }); return; }
