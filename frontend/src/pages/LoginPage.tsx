@@ -44,11 +44,11 @@ export default function LoginPage() {
       </div>
 
       {/* Content */}
-      <div className="w-full max-w-md px-5 flex flex-col items-center relative z-10 py-6">
+      <div className="w-full max-w-md px-5 flex flex-col items-center relative z-10 pt-4 pb-0 mt-[-6vh]">
 
         {/* Header */}
         <header className="flex flex-col items-center mb-4">
-          <img src="/digygo-logo.png" alt="DigyGo CRM" className="w-40 h-auto object-contain mb-2 drop-shadow-md" />
+          <img src="/digygo-logo.png" alt="DigyGo CRM" className="w-44 h-auto object-contain mb-2 drop-shadow-md" />
           <h1 className="font-headline text-2xl font-bold tracking-tight text-[#1c1410]">
             Welcome back
           </h1>
@@ -132,7 +132,7 @@ export default function LoginPage() {
         </main>
 
         {/* Footer */}
-        <footer className="mt-4 text-center">
+        <footer className="mt-3 text-center">
           <p className="text-[11px] text-[#b09e8d]">Powered by DigyGo CRM © 2026</p>
         </footer>
       </div>
