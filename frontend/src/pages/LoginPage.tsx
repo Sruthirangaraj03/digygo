@@ -48,7 +48,7 @@ export default function LoginPage() {
 
         {/* Header */}
         <header className="flex flex-col items-center mb-4">
-          <img src="/digygo-logo.png" alt="DigyGo CRM" className="w-40 h-auto object-contain mb-1 drop-shadow-md" style={{ marginBottom: '-4px' }} />
+          <img src="/digygo-logo.png" alt="DigyGo CRM" className="w-40 h-auto object-contain mb-2 drop-shadow-md" />
           <h1 className="font-headline text-2xl font-bold tracking-tight text-[#1c1410]">
             Welcome back
           </h1>
