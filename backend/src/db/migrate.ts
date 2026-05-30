@@ -77,6 +77,7 @@ const MIGRATIONS = [
   'migration_075_google_sheets_integration.sql',
   'migration_076_google_sheets_simplify.sql',
   'migration_077_meta_forms_activated_at.sql',
+  'migration_078_lead_custom_form_id.sql',
 ];
 
 // Split SQL file into individual statements and execute each one separately.

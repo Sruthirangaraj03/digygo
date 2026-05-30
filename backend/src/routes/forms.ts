@@ -297,9 +297,9 @@ router.post('/:id/submit', async (req: AuthRequest, res: Response) => {
       } else {
         // Insert new lead — pipeline_id may be null if form has no pipeline configured
         const insRes = await query(
-          `INSERT INTO leads (tenant_id, name, email, phone, source, pipeline_id, stage_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-          [form.tenant_id, name, email ?? null, phone ?? null, `form:${form.name}`, form.pipeline_id ?? null, form.stage_id ?? null]
+          `INSERT INTO leads (tenant_id, name, email, phone, source, custom_form_id, pipeline_id, stage_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+          [form.tenant_id, name, email ?? null, phone ?? null, `form:${form.name}`, form.id, form.pipeline_id ?? null, form.stage_id ?? null]
         );
         lead = insRes.rows[0];
         emitToTenant(form.tenant_id, 'lead:created', lead);

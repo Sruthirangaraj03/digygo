@@ -34,9 +34,9 @@ router.get('/overview', async (req: AuthRequest, res: Response) => {
           COALESCE(mf.meta_status, 'ACTIVE') AS status,
           mf.page_name,
           NULL::text          AS slug,
-          COUNT(l.id) FILTER (WHERE DATE(l.created_at) = CURRENT_DATE)::int   AS leads_today,
+          COUNT(l.id) FILTER (WHERE (l.created_at AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date)::int AS leads_today,
           COUNT(l.id) FILTER (WHERE l.created_at >= NOW() - INTERVAL '7 days')::int  AS leads_week,
-          COUNT(l.id) FILTER (WHERE l.created_at >= NOW() - INTERVAL '30 days')::int AS leads_month,
+          COUNT(l.id) FILTER (WHERE l.created_at >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata')::int AS leads_month,
           COUNT(l.id)::int    AS leads_total,
           MAX(l.created_at)   AS last_lead_at
         FROM meta_forms mf
@@ -48,7 +48,7 @@ router.get('/overview', async (req: AuthRequest, res: Response) => {
         GROUP BY mf.form_id, mf.form_name, mf.meta_status, mf.page_name
       `, [tenantId]),
 
-      // Custom forms — join leads via source = 'form:{name}'
+      // Custom forms — join via custom_form_id (new leads) OR source name (pre-migration leads)
       query(`
         SELECT
           cf.id::text         AS id,
@@ -57,14 +57,14 @@ router.get('/overview', async (req: AuthRequest, res: Response) => {
           CASE WHEN cf.is_active THEN 'active' ELSE 'inactive' END AS status,
           NULL::text          AS page_name,
           cf.slug,
-          COUNT(l.id) FILTER (WHERE DATE(l.created_at) = CURRENT_DATE)::int   AS leads_today,
+          COUNT(l.id) FILTER (WHERE (l.created_at AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date)::int AS leads_today,
           COUNT(l.id) FILTER (WHERE l.created_at >= NOW() - INTERVAL '7 days')::int  AS leads_week,
-          COUNT(l.id) FILTER (WHERE l.created_at >= NOW() - INTERVAL '30 days')::int AS leads_month,
+          COUNT(l.id) FILTER (WHERE l.created_at >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata')::int AS leads_month,
           COUNT(l.id)::int    AS leads_total,
           MAX(l.created_at)   AS last_lead_at
         FROM custom_forms cf
         LEFT JOIN leads l
-          ON l.source      = 'form:' || cf.name
+          ON (l.custom_form_id = cf.id OR l.source = 'form:' || cf.name)
          AND l.tenant_id   = cf.tenant_id
          AND l.is_deleted  = FALSE
         WHERE cf.tenant_id = $1 AND cf.is_active = TRUE
@@ -120,24 +120,25 @@ router.get('/sparkline', async (req: AuthRequest, res: Response) => {
   const { channel, id, name, period = '7d' } = req.query as Record<string, string>;
 
   // Build the WHERE clause fragment for this form
+  // Custom forms: match by custom_form_id (new) OR source name (pre-migration leads)
   const formFilter = channel === 'meta'
-    ? { clause: 'l.meta_form_id = $2', param: id }
-    : { clause: "l.source = 'form:' || $2", param: name };
+    ? { clause: 'l.meta_form_id = $2', params: [id] }
+    : { clause: "(l.custom_form_id = $2::uuid OR l.source = 'form:' || $3)", params: [id, name] };
 
   // Build the date filter and bucket strategy
   let dateClause: string;
   let bucketSql: string;
 
   if (period === 'month') {
-    dateClause = `l.created_at >= DATE_TRUNC('month', CURRENT_DATE)`;
-    bucketSql  = `DATE(l.created_at)`;
+    dateClause = `l.created_at >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'`;
+    bucketSql  = `(l.created_at AT TIME ZONE 'Asia/Kolkata')::date`;
   } else if (period === 'all') {
     dateClause = `l.created_at >= NOW() - INTERVAL '12 months'`;
-    bucketSql  = `DATE_TRUNC('month', l.created_at)`;
+    bucketSql  = `DATE_TRUNC('month', l.created_at AT TIME ZONE 'Asia/Kolkata')`;
   } else {
     // 7d default
-    dateClause = `l.created_at >= CURRENT_DATE - 6`;
-    bucketSql  = `DATE(l.created_at)`;
+    dateClause = `l.created_at >= NOW() - INTERVAL '6 days'`;
+    bucketSql  = `(l.created_at AT TIME ZONE 'Asia/Kolkata')::date`;
   }
 
   try {
@@ -149,13 +150,13 @@ router.get('/sparkline', async (req: AuthRequest, res: Response) => {
           AND ${dateClause}
         GROUP BY ${bucketSql}
         ORDER BY day ASC
-      `, [tenantId, formFilter.param]),
+      `, [tenantId, ...formFilter.params]),
       query(`
         SELECT l.id, l.name, l.phone, l.email, l.created_at
         FROM leads l
         WHERE l.tenant_id = $1 AND ${formFilter.clause} AND l.is_deleted = FALSE
         ORDER BY l.created_at DESC LIMIT 5
-      `, [tenantId, formFilter.param]),
+      `, [tenantId, ...formFilter.params]),
     ]);
 
     const countRows = cr.rows;

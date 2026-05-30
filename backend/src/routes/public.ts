@@ -125,9 +125,9 @@ router.post('/forms/:slug/submit', async (req: Request, res: Response) => {
     } else {
       // New lead
       const leadRes = await query(
-        `INSERT INTO leads (tenant_id, name, email, phone, source, pipeline_id, stage_id)
-         VALUES ($1,$2,$3,$4,'Custom Form',$5,$6) RETURNING *`,
-        [form.tenant_id, name || 'Unknown', email, phone, form.pipeline_id ?? null, form.stage_id ?? null]
+        `INSERT INTO leads (tenant_id, name, email, phone, source, custom_form_id, pipeline_id, stage_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        [form.tenant_id, name || 'Unknown', email, phone, `form:${form.name}`, form.id, form.pipeline_id ?? null, form.stage_id ?? null]
       );
       const lead = leadRes.rows[0];
       leadId = lead.id;
