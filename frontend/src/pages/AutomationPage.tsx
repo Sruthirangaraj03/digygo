@@ -559,11 +559,6 @@ function WorkflowRow({ wf, onOpen, onToggle, onDuplicate, onDelete, menuOpen, on
               Draft
             </span>
           )}
-          {wf.completedWithErrors > 0 && (
-            <span className="shrink-0 flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200 leading-none">
-              <AlertTriangle className="w-2.5 h-2.5" /> {wf.completedWithErrors} errors
-            </span>
-          )}
         </div>
         <p className="text-[11px] text-[#7a6b5c] mt-0.5 truncate">
           {wf.status === 'inactive'
