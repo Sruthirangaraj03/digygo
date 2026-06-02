@@ -34,6 +34,7 @@ export interface StaffMember {
   lastActive: string;
   avatar: string;
   phone?: string;
+  staff_id?: string;
 }
 
 export interface Conversation {

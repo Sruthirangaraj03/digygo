@@ -156,7 +156,7 @@ const buildDefaultPerms = (full_access: boolean): Record<string, boolean> => {
 interface StaffModalProps {
   initial?: StaffMember | null;
   onClose: () => void;
-  onSave: (data: { name: string; email: string; full_access: boolean; password?: string; phone?: string }) => void;
+  onSave: (data: { name: string; email: string; full_access: boolean; password?: string; phone?: string; staff_id?: string }) => void;
 }
 
 const COUNTRY_CODES = [
@@ -177,6 +177,7 @@ function StaffModal({ initial, onClose, onSave }: StaffModalProps) {
   const [password,   setPassword]   = useState('');
   const [countryCode, setCountryCode] = useState(COUNTRY_CODES[0]);
   const [showCountryDrop, setShowCountryDrop] = useState(false);
+  const [staffId,       setStaffId]      = useState(initial?.staff_id ?? '');
   const [avatarUrl,     setAvatarUrl]    = useState<string | null>(null);
   const [errors,        setErrors]       = useState<Record<string, string>>({});
   const [showPassword,  setShowPassword] = useState(false);
@@ -202,6 +203,7 @@ function StaffModal({ initial, onClose, onSave }: StaffModalProps) {
       full_access: fullAccess,
       ...(password.trim() ? { password: password.trim() } : {}),
       ...(fullPhone ? { phone: fullPhone } : {}),
+      ...(staffId.trim() ? { staff_id: staffId.trim() } : { staff_id: '' }),
     });
   };
 
@@ -286,6 +288,12 @@ function StaffModal({ initial, onClose, onSave }: StaffModalProps) {
                   className="flex-1 px-1.5 py-2 text-sm outline-none bg-transparent placeholder:text-[#b09e8d]" />
               </div>
             </div>
+          </div>
+
+          {/* Staff ID */}
+          <div>
+            <label className="text-xs font-semibold text-[#1c1410] mb-1 block">Staff ID <span className="text-[#b09e8d] font-normal">(optional — your company reference ID)</span></label>
+            <input value={staffId} onChange={(e) => setStaffId(e.target.value)} placeholder="e.g. EMP-001" className={iCls()} />
           </div>
 
           {/* Password + Profile Image */}
@@ -802,15 +810,16 @@ export default function StaffPage() {
     }
   };
 
-  const handleEdit = async (data: { name: string; email: string; full_access: boolean; password?: string; phone?: string }) => {
+  const handleEdit = async (data: { name: string; email: string; full_access: boolean; password?: string; phone?: string; staff_id?: string }) => {
     if (!editMember) return;
     const initials = data.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
-    const updates = { name: data.name, email: data.email, avatar: initials, phone: data.phone };
+    const updates = { name: data.name, email: data.email, avatar: initials, phone: data.phone, staff_id: data.staff_id };
     try {
       await api.patch(`/api/settings/staff/${editMember.id}`, {
         name: data.name, email: data.email,
         ...(data.password ? { password: data.password } : {}),
         phone: data.phone ?? '',
+        staff_id: data.staff_id ?? '',
       });
       setStaff((prev) => prev.map((m) => m.id === editMember.id ? { ...m, ...updates } : m));
       updateStaff(editMember.id, updates);

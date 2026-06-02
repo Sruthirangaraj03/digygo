@@ -246,6 +246,7 @@ export interface LeadContext {
   pipeline_name?: string;
   assigned_to?: string;
   assigned_staff_name?: string;
+  assigned_staff_id?: string;
   tags?: string[];
   source?: string;
   status?: string;
@@ -289,6 +290,7 @@ export function interpolate(
     stage:                  lead.stage_name ?? '',
     pipeline:               lead.pipeline_name ?? '',
     assigned_staff:         lead.assigned_staff_name ?? '',
+    assigned_staff_id:      lead.assigned_staff_id ?? '',
     source:                 lead.source ?? '',
     status:                 lead.status ?? '',
     created_at:             lead.created_at ? new Date(lead.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '',
@@ -622,6 +624,7 @@ export async function executeNodes(
               query('SELECT name FROM pipeline_stages WHERE id=$1', [pair.stage_id]).catch(() => ({ rows: [] })),
             ]);
             lead.assigned_staff_name = (rStaff as any).rows[0]?.name ?? '';
+            lead.assigned_staff_id   = (rStaff as any).rows[0]?.staff_id ?? '';
             lead.pipeline_name       = (rPipeline as any).rows[0]?.name ?? '';
             lead.stage_name          = (rStage as any).rows[0]?.name ?? '';
             message = `Round-robin pair ${pairIdx + 1}: ${lead.pipeline_name} → ${lead.assigned_staff_name}`;
@@ -702,13 +705,14 @@ export async function executeNodes(
               `UPDATE leads SET assigned_to=$1::uuid, updated_at=NOW() WHERE id=$2::uuid AND tenant_id=$3::uuid`,
               [staffId, lead.id, tenantId]
             );
-            const ur = await query('SELECT name FROM users WHERE id=$1', [staffId]);
+            const ur = await query('SELECT name, staff_id FROM users WHERE id=$1', [staffId]);
             const vStaff = await query('SELECT assigned_to FROM leads WHERE id=$1::uuid AND tenant_id=$2::uuid', [lead.id, tenantId]);
             if (vStaff.rows[0]?.assigned_to !== staffId) {
               status = 'failed'; message = `assign_staff: lead was not assigned to ${ur.rows[0]?.name ?? staffId}`;
             } else {
               lead.assigned_to = staffId;
               lead.assigned_staff_name = ur.rows[0]?.name ?? '';
+              lead.assigned_staff_id   = ur.rows[0]?.staff_id ?? '';
               message = `Assigned: ${ur.rows[0]?.name ?? staffId}`;
             }
           } else {
@@ -1116,9 +1120,33 @@ export async function executeNodes(
           // ── Build body ──────────────────────────────────────────────────────
           let bodyStr: string | undefined;
           if (hasBody) {
+            const bodyMode   = (node.config.body_mode as string) ?? 'fields';
             const bodyFields = node.config.body_fields as { key: string; value: string }[] | undefined;
-            if (Array.isArray(bodyFields) && bodyFields.length > 0) {
-              // New: visual field builder
+            const rawPayload = (node.config.payload ?? node.config.body ?? '') as string;
+
+            if (bodyMode === 'raw' && rawPayload) {
+              // Raw JSON mode — parse template, interpolate each string value safely,
+              // then re-serialize. This prevents special characters (quotes, backslashes)
+              // in lead data from producing malformed JSON.
+              try {
+                const template = JSON.parse(rawPayload);
+                const interp = (val: unknown): unknown => {
+                  if (typeof val === 'string') return interpolate(val, lead, valueTokens);
+                  if (Array.isArray(val)) return val.map(interp);
+                  if (val !== null && typeof val === 'object') {
+                    const out: Record<string, unknown> = {};
+                    for (const [k, v] of Object.entries(val)) out[k] = interp(v);
+                    return out;
+                  }
+                  return val;
+                };
+                bodyStr = JSON.stringify(interp(template));
+              } catch {
+                // Fallback: direct string interpolation if template is not valid JSON
+                bodyStr = interpolate(rawPayload, lead, valueTokens);
+              }
+            } else if (Array.isArray(bodyFields) && bodyFields.length > 0) {
+              // Field builder mode
               const obj: Record<string, string> = {};
               for (const bf of bodyFields) {
                 if (bf.key?.trim()) obj[bf.key.trim()] = interpolate(bf.value ?? '', lead, valueTokens);
@@ -1130,7 +1158,6 @@ export async function executeNodes(
               }
             } else {
               // Legacy: raw payload string, or default full-lead dump
-              const rawPayload = (node.config.payload ?? node.config.body ?? '') as string;
               bodyStr = rawPayload
                 ? interpolate(rawPayload, lead, valueTokens)
                 : JSON.stringify({ lead, triggeredAt: new Date().toISOString() });
@@ -1936,9 +1963,10 @@ export async function enrichLead(lead: LeadContext): Promise<LeadContext> {
     ).catch(() => ({ rows: [] }));
     enriched.form_name = r.rows[0]?.form_name ?? '';
   }
-  if (enriched.assigned_to && !enriched.assigned_staff_name) {
-    const r = await query('SELECT name FROM users WHERE id=$1', [enriched.assigned_to]);
+  if (enriched.assigned_to && (!enriched.assigned_staff_name || !enriched.assigned_staff_id)) {
+    const r = await query('SELECT name, staff_id FROM users WHERE id=$1', [enriched.assigned_to]);
     enriched.assigned_staff_name = r.rows[0]?.name ?? '';
+    enriched.assigned_staff_id   = r.rows[0]?.staff_id ?? '';
   }
   if (enriched.pipeline_id && !enriched.pipeline_name) {
     const r = await query('SELECT name FROM pipelines WHERE id=$1', [enriched.pipeline_id]);

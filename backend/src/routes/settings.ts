@@ -132,7 +132,7 @@ router.put('/', checkPermission('settings:manage'), async (req: AuthRequest, res
 router.get('/staff', async (req: AuthRequest, res: Response) => {
   try {
     const result = await query(
-      `SELECT id, name, email, role, avatar_url, is_active, phone, created_at
+      `SELECT id, name, email, role, avatar_url, is_active, phone, staff_id, created_at
        FROM users WHERE tenant_id=$1 AND is_owner IS NOT TRUE ORDER BY created_at ASC`,
       [req.user!.tenantId]
     );
@@ -211,7 +211,7 @@ router.post('/staff/:id/resend-invite', checkPermission('staff:manage'), async (
 // PATCH /api/settings/staff/:id
 router.patch('/staff/:id', checkPermission('staff:manage'), async (req: AuthRequest, res: Response) => {
   const bcrypt = await import('bcryptjs');
-  const { name, email, role, is_active, password, phone } = req.body;
+  const { name, email, role, is_active, password, phone, staff_id } = req.body;
 
   // Prevent staff from modifying the business owner account
   try {
@@ -232,6 +232,7 @@ router.patch('/staff/:id', checkPermission('staff:manage'), async (req: AuthRequ
   if (role !== undefined)      { params.push(role);                          updates.push(`role=$${params.length}`); }
   if (is_active !== undefined) { params.push(is_active);                     updates.push(`is_active=$${params.length}`); }
   if (phone !== undefined)     { params.push(phone || null);                 updates.push(`phone=$${params.length}`); }
+  if (staff_id !== undefined)  { params.push(staff_id?.trim() || null);      updates.push(`staff_id=$${params.length}`); }
   if (password)                {
     const hash = await bcrypt.hash(password, 10);
     params.push(hash);   updates.push(`password_hash=$${params.length}`);
