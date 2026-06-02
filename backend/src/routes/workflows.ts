@@ -619,7 +619,7 @@ export async function executeNodes(
             lead.stage_id    = pair.stage_id;
             lead.assigned_to = pair.staff_id;
             const [rStaff, rPipeline, rStage] = await Promise.all([
-              query('SELECT name FROM users           WHERE id=$1', [pair.staff_id]).catch(() => ({ rows: [] })),
+              query('SELECT name, staff_id FROM users WHERE id=$1', [pair.staff_id]).catch(() => ({ rows: [] })),
               query('SELECT name FROM pipelines       WHERE id=$1', [pair.pipeline_id]).catch(() => ({ rows: [] })),
               query('SELECT name FROM pipeline_stages WHERE id=$1', [pair.stage_id]).catch(() => ({ rows: [] })),
             ]);
