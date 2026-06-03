@@ -581,7 +581,11 @@ router.post('/tenants/:id/impersonate', requireAuth, requireSuperAdmin, async (r
   try {
     // Refuse to impersonate a suspended tenant (#43)
     const tenantRes = await query(
-      `SELECT is_active, plan FROM tenants WHERE id=$1`,
+      `SELECT t.is_active, t.plan, t.name, t.logo_url, t.favicon_url, t.banner_url,
+              t.brand_color, t.login_bg_color, t.tab_title, t.app_bg_color, t.accent_color,
+              cs.legal_name
+       FROM tenants t LEFT JOIN company_settings cs ON cs.tenant_id = t.id
+       WHERE t.id=$1`,
       [req.params.id]
     );
     if (!tenantRes.rows[0]) {
@@ -609,9 +613,21 @@ router.post('/tenants/:id/impersonate', requireAuth, requireSuperAdmin, async (r
       ip: req.ip,
     });
 
+    const tb = tenantRes.rows[0];
     res.json({
       token,
       user: { id: target.id, email: target.email, name: target.name, role: target.role, tenantId: target.tenant_id },
+      tenant: {
+        name:         tb.legal_name || tb.name || 'CRM',
+        logoUrl:      tb.logo_url || null,
+        faviconUrl:   tb.favicon_url || null,
+        bannerUrl:    tb.banner_url || null,
+        brandColor:   tb.brand_color || '#c2410c',
+        loginBgColor: tb.login_bg_color || null,
+        tabTitle:     tb.tab_title || null,
+        appBgColor:   tb.app_bg_color || null,
+        accentColor:  tb.accent_color || null,
+      },
     });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
