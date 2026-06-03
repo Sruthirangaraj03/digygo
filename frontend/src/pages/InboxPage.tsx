@@ -452,7 +452,7 @@ export default function InboxPage() {
   const assignedStaff = selected ? staff.find((s) => s.id === selected.assigned_to) : null;
 
   return (
-    <div className="animate-fade-in -m-4 md:-m-8 flex" style={{ height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
+    <div className="animate-fade-in -mx-3 -my-4 md:-mx-6 md:-my-5 flex min-w-0" style={{ height: 'calc(100dvh - 64px)', overflow: 'hidden' }}>
 
       {/* Conversation List */}
       <div className={cn('w-full sm:w-80 border-r border-black/5 flex flex-col bg-[#fdf9f7] shrink-0', !showList && 'hidden sm:flex')}>
