@@ -110,9 +110,12 @@ export default function LoginPage() {
 
               {/* Password */}
               <div className="space-y-1.5">
-                <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-[#5c5245] ml-1" htmlFor="password">
-                  Password
-                </label>
+                <div className="flex items-center justify-between ml-1">
+                  <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-[#5c5245]" htmlFor="password">
+                    Password
+                  </label>
+                  <a href="/forgot-password" className="text-[11px] font-semibold text-primary hover:underline">Forgot password?</a>
+                </div>
                 <div className="relative group">
                   <Input
                     id="password"

@@ -33,6 +33,8 @@ import AssignmentRulesPage from "./pages/AssignmentRulesPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import LoginPage from "./pages/LoginPage";
 import AcceptInvitePage from "./pages/AcceptInvitePage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import PublicFormPage from "./pages/PublicFormPage";
 import SuperAdminPage from "./pages/SuperAdminPage";
 import CreateBusinessPage from "./pages/CreateBusinessPage";
@@ -58,6 +60,8 @@ const App = () => (
           {/* Public routes */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/accept-invite" element={<AcceptInvitePage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/f/:slug" element={<PublicFormPage />} />
           <Route path="/book/:slug" element={<PublicBookingPage />} />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />

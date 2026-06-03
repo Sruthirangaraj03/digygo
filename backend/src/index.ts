@@ -170,9 +170,11 @@ app.post('/webhook-echo', (_req, res) => {
 });
 
 // ── Routes ────────────────────────────────────────────────────────────────────
-app.use('/api/auth/login',          authLimiter);    // brute-force protection on login
-app.use('/api/auth/refresh',        refreshLimiter); // higher limit — token itself is the secret
-app.use('/api/auth/setup-password', authLimiter);    // password setup rate limit
+app.use('/api/auth/login',           authLimiter);    // brute-force protection on login
+app.use('/api/auth/refresh',         refreshLimiter); // higher limit — token itself is the secret
+app.use('/api/auth/setup-password',  authLimiter);    // password setup rate limit
+app.use('/api/auth/forgot-password', authLimiter);    // anti-abuse on reset requests
+app.use('/api/auth/reset-password',  authLimiter);    // brute-force protection on reset
 app.use('/api/auth',          authRoutes);
 app.use('/api/dashboard',     dashboardRoutes);
 app.use('/api/leads',         leadsRoutes);

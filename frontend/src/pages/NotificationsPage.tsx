@@ -77,7 +77,6 @@ export default function NotificationsPage() {
           <span className="text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] text-center w-16">In-App</span>
           <span className="text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] text-center w-28">
             Email
-            <span className="ml-1 text-[9px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded px-1 py-0.5 normal-case tracking-normal">Soon</span>
           </span>
         </div>
         {settings.map((s) => (
@@ -92,9 +91,8 @@ export default function NotificationsPage() {
             <div className="flex justify-center w-16">
               <Switch checked={s.inApp} onCheckedChange={(v) => update(s.id, 'inApp', v)} />
             </div>
-            {/* Fix 10: email notifications not yet implemented — show disabled toggle with tooltip */}
-            <div className="flex justify-center w-28" title="Email notifications coming soon">
-              <Switch checked={s.email} disabled onCheckedChange={() => {}} className="opacity-40 cursor-not-allowed" />
+            <div className="flex justify-center w-28">
+              <Switch checked={s.email} onCheckedChange={(v) => update(s.id, 'email', v)} />
             </div>
           </div>
         ))}

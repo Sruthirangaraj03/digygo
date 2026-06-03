@@ -1,5 +1,6 @@
 import { query } from '../db';
 import { emitToUser } from '../socket';
+import { sendEmail, isSmtpConfigured, getTenantEmailIdentity } from '../services/email';
 
 // Fix 9: batch-fetch prefs for a set of user IDs
 async function batchGetPrefs(
@@ -24,6 +25,40 @@ function prefAllows(
   const p = prefs[type];
   if (!p) return true;
   return p.inApp !== false;
+}
+
+// Email a notification to recipients who explicitly enabled email for this type (prefs[type].email === true).
+// Opt-IN by default off — only sends when the user turned the email toggle on. Fire-and-forget.
+async function emailNotificationRecipients(
+  tenantId: string,
+  userIds: string[],
+  prefsMap: Map<string, Record<string, { inApp: boolean; email: boolean }>>,
+  type: string,
+  title: string,
+  message: string,
+): Promise<void> {
+  try {
+    const emailIds = userIds.filter((id) => prefsMap.get(id)?.[type]?.email === true);
+    if (emailIds.length === 0 || !isSmtpConfigured()) return;
+    const rows = (await query(
+      `SELECT email FROM users WHERE id = ANY($1::uuid[]) AND email IS NOT NULL AND email <> ''`,
+      [emailIds],
+    )).rows;
+    if (rows.length === 0) return;
+    const ident = await getTenantEmailIdentity(tenantId);
+    const brand = ident.fromName || 'DigyGo CRM';
+    const html = `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto">
+      <h2 style="color:#1c1410;font-size:18px;margin:0 0 8px">${title}</h2>
+      <p style="color:#5c5245;font-size:14px;margin:0 0 16px">${message}</p>
+      <p style="color:#9c8f84;font-size:12px">— ${brand}</p>
+    </div>`;
+    for (const r of rows) {
+      sendEmail({ to: r.email, subject: title, html, fromName: ident.fromName, replyTo: ident.replyTo })
+        .catch((e) => console.error('[notif email]', type, e?.message));
+    }
+  } catch (e) {
+    console.error('[emailNotificationRecipients]', e);
+  }
 }
 
 /**
@@ -108,6 +143,8 @@ export async function sendNewLeadNotification(
       });
     }
   }
+  // Email recipients who enabled email for new_lead (independent of in-app pref)
+  await emailNotificationRecipients(tenantId, allIds, prefsMap, 'new_lead', notifTitle, notifMessage);
 }
 
 /**
@@ -122,29 +159,31 @@ export async function sendLeadAssignedNotification(
 ): Promise<void> {
   if (!assignedToUserId || assignedToUserId === assignedByUserId) return;
 
-  // Fix 9: check preference
   const prefsMap = await batchGetPrefs([assignedToUserId]);
-  if (!prefAllows(prefsMap.get(assignedToUserId), 'assigned')) return;
-
   const notifTitle = `Lead Assigned: ${lead.name}`;
   const notifMessage = 'A lead has been assigned to you';
 
-  const nRes = await query(
-    `INSERT INTO notifications (tenant_id, user_id, title, message, type, lead_id)
-     VALUES ($1::uuid, $2::uuid, $3, $4, 'assigned', $5::uuid) RETURNING id, created_at`,
-    [tenantId, assignedToUserId, notifTitle, notifMessage, lead.id],
-  );
-  if (nRes.rows[0]) {
-    emitToUser(assignedToUserId, 'notification:new', {
-      id:         nRes.rows[0].id,
-      type:       'assigned',
-      title:      notifTitle,
-      message:    notifMessage,
-      lead_id:    lead.id,
-      is_read:    false,
-      created_at: nRes.rows[0].created_at,
-    });
+  // In-app (unless user turned it off)
+  if (prefAllows(prefsMap.get(assignedToUserId), 'assigned')) {
+    const nRes = await query(
+      `INSERT INTO notifications (tenant_id, user_id, title, message, type, lead_id)
+       VALUES ($1::uuid, $2::uuid, $3, $4, 'assigned', $5::uuid) RETURNING id, created_at`,
+      [tenantId, assignedToUserId, notifTitle, notifMessage, lead.id],
+    );
+    if (nRes.rows[0]) {
+      emitToUser(assignedToUserId, 'notification:new', {
+        id:         nRes.rows[0].id,
+        type:       'assigned',
+        title:      notifTitle,
+        message:    notifMessage,
+        lead_id:    lead.id,
+        is_read:    false,
+        created_at: nRes.rows[0].created_at,
+      });
+    }
   }
+  // Email (only if user enabled email for 'assigned')
+  await emailNotificationRecipients(tenantId, [assignedToUserId], prefsMap, 'assigned', notifTitle, notifMessage);
 }
 
 /**
@@ -203,6 +242,7 @@ export async function sendBulkImportNotification(
       });
     }
   }
+  await emailNotificationRecipients(tenantId, allIds, prefsMap, 'new_lead', notifTitle, notifMessage);
 }
 
 /**
@@ -299,6 +339,7 @@ export async function sendCallLoggedNotification(
       });
     }
   }
+  await emailNotificationRecipients(tenantId, allIds, prefsMap, type, title, message);
 }
 
 /**
@@ -333,28 +374,31 @@ export async function processFollowUpReminders(): Promise<void> {
     if (!fu.assigned_to) continue;
 
     const prefsMap = await batchGetPrefs([fu.assigned_to]);
-    if (!prefAllows(prefsMap.get(fu.assigned_to), 'follow_up_due')) continue;
-
     const dueDate = new Date(fu.due_at);
     const minutesLeft = Math.round((dueDate.getTime() - now.getTime()) / 60000);
     const notifTitle = `Follow-up due soon: ${fu.title}`;
     const notifMessage = `Lead: ${fu.lead_name} — due in ${minutesLeft} min`;
 
-    const nRes = await query(
-      `INSERT INTO notifications (tenant_id, user_id, title, message, type, lead_id)
-       VALUES ($1::uuid, $2::uuid, $3, $4, 'follow_up_due', $5::uuid) RETURNING id, created_at`,
-      [fu.tenant_id, fu.assigned_to, notifTitle, notifMessage, fu.lead_id],
-    );
-    if (nRes.rows[0]) {
-      emitToUser(fu.assigned_to, 'notification:new', {
-        id:         nRes.rows[0].id,
-        type:       'follow_up_due',
-        title:      notifTitle,
-        message:    notifMessage,
-        lead_id:    fu.lead_id,
-        is_read:    false,
-        created_at: nRes.rows[0].created_at,
-      });
+    // In-app (unless turned off)
+    if (prefAllows(prefsMap.get(fu.assigned_to), 'follow_up_due')) {
+      const nRes = await query(
+        `INSERT INTO notifications (tenant_id, user_id, title, message, type, lead_id)
+         VALUES ($1::uuid, $2::uuid, $3, $4, 'follow_up_due', $5::uuid) RETURNING id, created_at`,
+        [fu.tenant_id, fu.assigned_to, notifTitle, notifMessage, fu.lead_id],
+      );
+      if (nRes.rows[0]) {
+        emitToUser(fu.assigned_to, 'notification:new', {
+          id:         nRes.rows[0].id,
+          type:       'follow_up_due',
+          title:      notifTitle,
+          message:    notifMessage,
+          lead_id:    fu.lead_id,
+          is_read:    false,
+          created_at: nRes.rows[0].created_at,
+        });
+      }
     }
+    // Email (only if user enabled email for follow_up_due)
+    await emailNotificationRecipients(fu.tenant_id, [fu.assigned_to], prefsMap, 'follow_up_due', notifTitle, notifMessage);
   }
 }

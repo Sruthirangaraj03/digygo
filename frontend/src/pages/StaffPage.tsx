@@ -188,7 +188,7 @@ function StaffModal({ initial, onClose, onSave }: StaffModalProps) {
     if (!firstName.trim()) e.firstName = 'Required';
     if (!lastName.trim())  e.lastName  = 'Required';
     if (!email.trim() || !email.includes('@')) e.email = 'Valid email required';
-    if (!isEdit && !password.trim()) e.password = 'Password is required';
+    // Password is OPTIONAL on create — if left blank, the staff gets an invite email to set their own.
     return e;
   };
 
@@ -300,12 +300,12 @@ function StaffModal({ initial, onClose, onSave }: StaffModalProps) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-[#1c1410] mb-1 block">
-                {isEdit ? 'New Password' : 'Password'} {!isEdit && <span className="text-red-500">*</span>}
+                {isEdit ? 'New Password' : 'Password'} {!isEdit && <span className="text-[#b09e8d] font-normal">(optional)</span>}
               </label>
               <div className="relative">
                 <input value={password} onChange={(e) => setPassword(e.target.value)}
                   type={showPassword ? 'text' : 'password'}
-                  placeholder={isEdit ? 'Leave blank to keep current' : 'Min. 6 characters'}
+                  placeholder={isEdit ? 'Leave blank to keep current' : 'Leave blank to send invite'}
                   className={cn(iCls(errors.password), 'pr-9')} />
                 <button type="button" onClick={() => setShowPassword((v) => !v)}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#b09e8d] hover:text-[#7a6b5c] transition-colors">
@@ -314,7 +314,7 @@ function StaffModal({ initial, onClose, onSave }: StaffModalProps) {
               </div>
               {errors.password
                 ? <p className="text-[10px] text-red-500 mt-0.5">{errors.password}</p>
-                : <p className="text-[10px] text-[#7a6b5c] mt-0.5">{isEdit ? 'Only fill to change access' : 'Staff log in with this password'}</p>}
+                : <p className="text-[10px] text-[#7a6b5c] mt-0.5">{isEdit ? 'Only fill to change access' : 'Blank = email them an invite to set their own'}</p>}
             </div>
             {!isEdit && (
               <div>
@@ -803,7 +803,8 @@ export default function StaffPage() {
       setStaff((prev) => [...prev, newMember]);
       addStaff(newMember);
       setShowInviteModal(false);
-      toast.success(`${data.name} added${!data.full_access ? ' — customise their permissions below' : ''}`);
+      const inviteNote = data.password ? '' : ' — invite email sent';
+      toast.success(`${data.name} added${inviteNote}${!data.full_access ? ' — customise their permissions below' : ''}`);
       if (!data.full_access) navigate('/staff?tab=roles');
     } catch (err: any) {
       toast.error(err.message ?? 'Failed to add staff');

@@ -5,7 +5,7 @@ import { requireAuth, requireTenant, AuthRequest } from '../middleware/auth';
 import { checkPermission, hasPermission } from '../middleware/permissions';
 import { triggerWorkflows } from './workflows';
 import { sendNewLeadNotification } from '../utils/notifications';
-import { sendEmail, isSmtpConfigured } from '../services/email';
+import { sendEmail, isSmtpConfigured, getTenantEmailIdentity } from '../services/email';
 
 const router = Router();
 
@@ -404,9 +404,12 @@ router.post('/public/book', publicBookingLimiter, async (req: Request, res: Resp
             const [h, m] = t.split(':').map(Number);
             return `${h === 0 ? 12 : h > 12 ? h - 12 : h}:${String(m).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`;
           };
+          const bookingIdent = await getTenantEmailIdentity(et.tenant_id);
           sendEmail({
             to: guest_email,
             subject: `Booking Confirmed: ${et.name}`,
+            fromName: bookingIdent.fromName,
+            replyTo: bookingIdent.replyTo,
             html: `
 <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #ece5de">
   <div style="background:linear-gradient(135deg,#c2410c,#ea580c,#f97316);padding:32px 28px">

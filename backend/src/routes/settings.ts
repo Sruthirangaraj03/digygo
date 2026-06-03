@@ -5,6 +5,7 @@ import { requireAuth, requireTenant, AuthRequest } from '../middleware/auth';
 import { checkPermission, clearUserPermCache } from '../middleware/permissions';
 import { checkUsage, incrementUsage, decrementUsage } from '../middleware/plan';
 import { emitToUser } from '../socket';
+import { sendEmail, getTenantEmailIdentity } from '../services/email';
 
 // Helper: resolve the correct frontend URL for a tenant (custom domain > default)
 export async function getTenantFrontendUrl(tenantId: string): Promise<string> {
@@ -67,24 +68,18 @@ const CUSTOM_DEFAULT_PERMISSIONS: Record<string, boolean> = {
   'calls:view_all': false, 'calls:view_own': true,
 };
 
-async function sendInviteEmail(to: string, token: string, frontendUrl: string) {
+async function sendInviteEmail(to: string, token: string, tenantId: string) {
   try {
-    const nodemailer = await import('nodemailer');
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT ?? 587),
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
+    const frontendUrl = await getTenantFrontendUrl(tenantId);
+    const { fromName, replyTo } = await getTenantEmailIdentity(tenantId);
+    const brand = fromName || 'DigyGo CRM';
     const link = `${frontendUrl}/accept-invite?token=${token}`;
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM ?? 'noreply@digygocrm.com',
+    await sendEmail({
       to,
-      subject: 'You have been invited to DigyGo CRM',
-      html: `<p>You've been invited to join your team on DigyGo CRM.</p>
+      subject: `You've been invited to ${brand}`,
+      fromName,
+      replyTo,
+      html: `<p>You've been invited to join your team on <strong>${brand}</strong>.</p>
              <p><a href="${link}">Click here to set your password and get started</a></p>
              <p>This link expires in 48 hours.</p>`,
     });
@@ -210,24 +205,20 @@ router.get('/staff', async (req: AuthRequest, res: Response) => {
 router.post('/staff', checkPermission('staff:manage'), checkUsage('staff'), async (req: AuthRequest, res: Response) => {
   const bcrypt = await import('bcryptjs');
   // full_access=true → all permissions granted; false → read-only custom defaults
-  const { name, email, password, full_access = true, send_invite = false, phone } = req.body;
+  const { name, email, password, full_access = true, phone } = req.body;
   if (!name || !email) {
     res.status(400).json({ error: 'name and email required' }); return;
   }
-  if (!password && !send_invite) {
-    res.status(400).json({ error: 'password required when not sending invite' }); return;
-  }
   try {
+    // Always create an invite token when an email is present, so the new staff
+    // can set their own password via the invite link. A password is optional —
+    // if the admin provides one the account also works immediately.
     let hash = '$invite$';
-    let invite_token: string | null = null;
-    let invite_expires_at: Date | null = null;
-    const password_set = !send_invite;
+    const invite_token = crypto.randomBytes(32).toString('hex');
+    const invite_expires_at = new Date(Date.now() + 48 * 60 * 60 * 1000);
+    const password_set = !!password;
 
     if (password) hash = await bcrypt.hash(password, 10);
-    if (send_invite) {
-      invite_token = crypto.randomBytes(32).toString('hex');
-      invite_expires_at = new Date(Date.now() + 48 * 60 * 60 * 1000);
-    }
 
     const result = await query(
       `INSERT INTO users (tenant_id, name, email, password_hash, role, invite_token, invite_expires_at, password_set, phone)
@@ -245,13 +236,10 @@ router.post('/staff', checkPermission('staff:manage'), checkUsage('staff'), asyn
       [user.id, req.user!.tenantId, JSON.stringify(perms)]
     );
 
-    if (send_invite && invite_token) {
-      const tenantId = req.user!.tenantId!;
-      setImmediate(async () => {
-        const frontendUrl = await getTenantFrontendUrl(tenantId);
-        sendInviteEmail(email, invite_token!, frontendUrl);
-      });
-    }
+    // Auto-send the invitation email to the new staff member
+    const tenantId = req.user!.tenantId!;
+    setImmediate(() => sendInviteEmail(email.toLowerCase().trim(), invite_token, tenantId));
+
     res.status(201).json({ id: user.id, name: user.name, email: user.email, role: user.role });
     setImmediate(() => incrementUsage(req.user!.tenantId!, 'staff').catch(() => null));
   } catch (err: any) {
@@ -273,10 +261,7 @@ router.post('/staff/:id/resend-invite', checkPermission('staff:manage'), async (
     if (!result.rows[0]) { res.status(404).json({ error: 'User not found' }); return; }
     const tenantId = req.user!.tenantId!;
     const emailAddr = result.rows[0].email;
-    setImmediate(async () => {
-      const frontendUrl = await getTenantFrontendUrl(tenantId);
-      sendInviteEmail(emailAddr, invite_token, frontendUrl);
-    });
+    setImmediate(() => sendInviteEmail(emailAddr, invite_token, tenantId));
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });

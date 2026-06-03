@@ -5,7 +5,7 @@ import { query } from '../db';
 import { requireAuth, requireTenant, AuthRequest } from '../middleware/auth';
 import { checkPermission, hasPermission } from '../middleware/permissions';
 import { checkPlan, checkUsage, incrementUsage } from '../middleware/plan';
-import { sendEmail, isSmtpConfigured } from '../services/email';
+import { sendEmail, isSmtpConfigured, getTenantEmailIdentity } from '../services/email';
 import { decrypt } from '../utils/crypto';
 import { maskPhone } from '../utils/phone';
 import { emitToTenant, emitToUser } from '../socket';
@@ -1235,11 +1235,17 @@ export async function executeNodes(
           } else if (!isSmtpConfigured()) {
             status = 'skipped'; message = 'send_email: SMTP not configured (set SMTP_HOST, SMTP_USER, SMTP_PASS in .env)';
           } else {
+            // White-label: action's own replyTo/fromName win, else fall back to tenant identity
+            const tIdent = await getTenantEmailIdentity(tenantId);
+            const replyTo = (node.config.replyTo as string)?.trim() || tIdent.replyTo;
+            const fromName = (node.config.fromName as string)?.trim() || tIdent.fromName;
             const { messageId } = await sendEmail({
               to:      toEmail,
               subject,
               html:    body.replace(/\n/g, '<br>'),
               text:    body,
+              replyTo,
+              fromName,
             });
             message = `Email sent to ${toEmail} (${messageId})`;
           }

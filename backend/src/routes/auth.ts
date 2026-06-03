@@ -11,6 +11,7 @@ import { config } from '../config';
 import { requireAuth, requireSuperAdmin, AuthRequest, invalidateTenantCache } from '../middleware/auth';
 import { invalidateDomainCache, setCachedDomain } from '../utils/domainCache';
 import { addAllowedOrigin, removeAllowedOrigin } from '../utils/corsOrigins';
+import { sendEmail } from '../services/email';
 
 // OS-level resolver (same as `ping`/getaddrinfo) — used as a final fallback
 const dnsLookupAll = promisify(dns.lookup) as (host: string, opts: { all: true; family: 4 }) => Promise<Array<{ address: string }>>;
@@ -490,6 +491,96 @@ router.post('/setup-password', async (req: Request, res: Response) => {
     res.json({ token: accessToken, message: 'Password set successfully' });
   } catch (err) {
     console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/auth/forgot-password — request a password reset link
+router.post('/forgot-password', async (req: Request, res: Response) => {
+  const email = (req.body?.email ?? '').toString().trim().toLowerCase();
+  // Always respond success — never reveal whether an email exists (anti-enumeration)
+  const genericOk = () => res.json({ message: 'If that email exists, a reset link has been sent.' });
+  if (!email || !email.includes('@')) { genericOk(); return; }
+  try {
+    const r = await query(
+      `SELECT id, tenant_id FROM users WHERE LOWER(email)=$1 AND is_active=TRUE LIMIT 1`,
+      [email]
+    );
+    const user = r.rows[0];
+    if (!user) { genericOk(); return; }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    await query(
+      `UPDATE users SET invite_token=$1, invite_expires_at=$2 WHERE id=$3`,
+      [token, expires, user.id]
+    );
+
+    // Resolve tenant frontend URL + white-label identity
+    let frontendUrl = process.env.FRONTEND_URL ?? 'https://crm.digygo.in';
+    let brand = 'DigyGo CRM';
+    let replyTo: string | undefined;
+    if (user.tenant_id) {
+      const t = await query(
+        `SELECT name, custom_domain, domain_status, reply_to_email FROM tenants WHERE id=$1`,
+        [user.tenant_id]
+      );
+      const tt = t.rows[0];
+      if (tt) {
+        if (tt.domain_status === 'ssl_active' && tt.custom_domain) frontendUrl = `https://${tt.custom_domain}`;
+        brand = tt.name || brand;
+        replyTo = tt.reply_to_email || undefined;
+      }
+    }
+    const link = `${frontendUrl}/reset-password?token=${token}`;
+    setImmediate(() => sendEmail({
+      to: email,
+      subject: `Reset your ${brand} password`,
+      fromName: brand !== 'DigyGo CRM' ? brand : undefined,
+      replyTo,
+      html: `<p>We received a request to reset your <strong>${brand}</strong> password.</p>
+             <p><a href="${link}">Click here to set a new password</a></p>
+             <p>This link expires in 1 hour. If you didn't request this, you can ignore this email.</p>`,
+    }).catch((e) => console.error('[forgot-password email]', e)));
+
+    genericOk();
+  } catch (err) {
+    console.error('[forgot-password]', err);
+    genericOk(); // still generic — don't leak errors
+  }
+});
+
+// POST /api/auth/reset-password — set a new password using a reset token
+router.post('/reset-password', async (req: Request, res: Response) => {
+  const { token, password } = req.body;
+  if (!token || !password || password.length < 6) {
+    res.status(400).json({ error: 'Valid token and password (min 6 chars) required' }); return;
+  }
+  try {
+    const r = await query(
+      `SELECT id, tenant_id, role, invite_expires_at FROM users WHERE invite_token=$1 LIMIT 1`,
+      [token]
+    );
+    const user = r.rows[0];
+    if (!user) { res.status(404).json({ error: 'Invalid or expired reset link' }); return; }
+    if (user.invite_expires_at && new Date(user.invite_expires_at) < new Date()) {
+      res.status(410).json({ error: 'Reset link has expired' }); return;
+    }
+    const hash = await bcrypt.hash(password, 10);
+    // Atomic single-use: clear token, also wipe refresh tokens so other sessions are logged out
+    const updated = await query(
+      `UPDATE users
+         SET password_hash=$1, invite_token=NULL, invite_expires_at=NULL, password_set=TRUE,
+             refresh_token_hash=NULL, refresh_token_prefix=NULL, failed_login_attempts=0, locked_until=NULL
+       WHERE id=$2 AND invite_token=$3
+       RETURNING id`,
+      [hash, user.id, token]
+    );
+    if (!updated.rows[0]) { res.status(410).json({ error: 'Reset link already used' }); return; }
+    const accessToken = issueAccessToken(user.id, user.tenant_id, user.role);
+    res.json({ token: accessToken, message: 'Password reset successfully' });
+  } catch (err) {
+    console.error('[reset-password]', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
