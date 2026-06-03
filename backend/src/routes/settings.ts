@@ -149,7 +149,7 @@ router.put('/', checkPermission('settings:manage'), async (req: AuthRequest, res
 router.get('/branding', async (req: AuthRequest, res: Response) => {
   try {
     const r = await query(
-      `SELECT name, logo_url, favicon_url, banner_url, brand_color, login_bg_color, tab_title
+      `SELECT name, logo_url, favicon_url, banner_url, brand_color, login_bg_color, tab_title, app_bg_color, accent_color
        FROM tenants WHERE id=$1`,
       [req.user!.tenantId]
     );
@@ -162,13 +162,15 @@ router.get('/branding', async (req: AuthRequest, res: Response) => {
       brandColor:   t.brand_color ?? '#c2410c',
       loginBgColor: t.login_bg_color ?? null,
       tabTitle:     t.tab_title ?? null,
+      appBgColor:   t.app_bg_color ?? null,
+      accentColor:  t.accent_color ?? null,
     });
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 
 // PUT /api/settings/branding — update current tenant's branding
 router.put('/branding', checkPermission('settings:manage'), async (req: AuthRequest, res: Response) => {
-  const { name, logo_url, favicon_url, banner_url, brand_color, login_bg_color, tab_title } = req.body;
+  const { name, logo_url, favicon_url, banner_url, brand_color, login_bg_color, tab_title, app_bg_color, accent_color } = req.body;
   const updates: string[] = [];
   const params: any[] = [];
   if (name !== undefined)         { params.push(name || 'CRM');             updates.push(`name=$${params.length}`); }
@@ -178,6 +180,8 @@ router.put('/branding', checkPermission('settings:manage'), async (req: AuthRequ
   if (brand_color !== undefined)  { params.push(brand_color || '#c2410c');  updates.push(`brand_color=$${params.length}`); }
   if (login_bg_color !== undefined) { params.push(login_bg_color || null);  updates.push(`login_bg_color=$${params.length}`); }
   if (tab_title !== undefined)    { params.push(tab_title || null);         updates.push(`tab_title=$${params.length}`); }
+  if (app_bg_color !== undefined) { params.push(app_bg_color || null);      updates.push(`app_bg_color=$${params.length}`); }
+  if (accent_color !== undefined) { params.push(accent_color || null);      updates.push(`accent_color=$${params.length}`); }
   if (!updates.length) { res.status(400).json({ error: 'No fields to update' }); return; }
   params.push(req.user!.tenantId);
   try {

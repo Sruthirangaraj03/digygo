@@ -164,7 +164,7 @@ router.post('/login', async (req: Request, res: Response) => {
     if (user.tenant_id) {
       const brandRes = await query(
         `SELECT t.name, t.logo_url, t.favicon_url, t.banner_url, t.brand_color,
-                t.login_bg_color, t.tab_title, cs.legal_name
+                t.login_bg_color, t.tab_title, t.app_bg_color, t.accent_color, cs.legal_name
          FROM tenants t
          LEFT JOIN company_settings cs ON cs.tenant_id = t.id
          WHERE t.id = $1`,
@@ -181,6 +181,8 @@ router.post('/login', async (req: Request, res: Response) => {
           brandColor:   b.brand_color || '#c2410c',
           loginBgColor: b.login_bg_color || null,
           tabTitle:     b.tab_title || null,
+          appBgColor:   b.app_bg_color || null,
+          accentColor:  b.accent_color || null,
         };
       }
     }
@@ -313,6 +315,7 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       `SELECT u.id, u.tenant_id, u.email, u.name, u.role, u.avatar_url,
               t.name AS tenant_name, t.logo_url AS tenant_logo, t.plan AS tenant_plan,
               t.favicon_url, t.banner_url, t.brand_color, t.login_bg_color, t.tab_title,
+              t.app_bg_color, t.accent_color,
               cs.legal_name
        FROM users u
        LEFT JOIN tenants t ON t.id = u.tenant_id
@@ -340,6 +343,8 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
         brandColor:   isSuper ? '#c2410c' : (user.brand_color || '#c2410c'),
         loginBgColor: isSuper ? null : (user.login_bg_color || null),
         tabTitle:     isSuper ? null : (user.tab_title || null),
+        appBgColor:   isSuper ? null : (user.app_bg_color || null),
+        accentColor:  isSuper ? null : (user.accent_color || null),
       },
     });
   } catch (err) {

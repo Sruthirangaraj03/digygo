@@ -32,6 +32,46 @@ function applyBrandColor(hex: string): void {
   root.style.setProperty('--color-primary', hex);
 }
 
+const THEME_STYLE_ID = 'dg-tenant-theme';
+
+// Inject a stylesheet that remaps the app's hardcoded hex colors to the tenant's theme.
+// Safe + reversible: defaults are untouched, so existing tenants see no change until they pick colors.
+function injectThemeOverrides(opts: { brandColor?: string | null; appBgColor?: string | null; accentColor?: string | null }): void {
+  let el = document.getElementById(THEME_STYLE_ID) as HTMLStyleElement | null;
+  if (!el) { el = document.createElement('style'); el.id = THEME_STYLE_ID; document.head.appendChild(el); }
+
+  const rules: string[] = [];
+  const b = opts.brandColor;
+  const bg = opts.appBgColor;
+  const ac = opts.accentColor;
+
+  // Brand color → remap the hardcoded orange shades (#c2410c / #ea580c / #f97316)
+  if (b && b.toLowerCase() !== '#ea580c') {
+    rules.push(`.bg-\\[\\#c2410c\\],.bg-\\[\\#ea580c\\],.bg-\\[\\#f97316\\]{background-color:${b}!important}`);
+    rules.push(`.text-\\[\\#c2410c\\],.text-\\[\\#ea580c\\],.text-\\[\\#f97316\\]{color:${b}!important}`);
+    rules.push(`.border-\\[\\#c2410c\\],.border-\\[\\#ea580c\\],.border-\\[\\#f97316\\]{border-color:${b}!important}`);
+    // The orange gradient used on primary buttons (login, Add Lead etc.)
+    rules.push(`[style*="linear-gradient(135deg, #c2410c"]{background:${b}!important}`);
+  }
+
+  // App background → remap the cream #faf8f6 page/card backgrounds
+  if (bg && bg.toLowerCase() !== '#faf8f6') {
+    rules.push(`.bg-\\[\\#faf8f6\\]{background-color:${bg}!important}`);
+  }
+
+  // Accent → remap the warm selected/hover beige (#f5ede3) and light primary tint (#fde8d8 / #fff7ed)
+  if (ac) {
+    rules.push(`.bg-\\[\\#f5ede3\\],.hover\\:bg-\\[\\#f5ede3\\]:hover,.bg-\\[\\#fde8d8\\],.bg-\\[\\#fff7ed\\]{background-color:${ac}!important}`);
+  }
+
+  el.textContent = rules.join('\n');
+}
+
+function clearThemeOverrides(): void {
+  const el = document.getElementById(THEME_STYLE_ID);
+  if (el) el.textContent = '';
+}
+
 function applyFavicon(url: string | null): void {
   if (!url) return;
   let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement | null;
@@ -55,6 +95,8 @@ export interface BrandingData {
   brandColor?: string | null;
   loginBgColor?: string | null;
   tabTitle?: string | null;
+  appBgColor?: string | null;
+  accentColor?: string | null;
 }
 
 interface BrandingState {
@@ -67,6 +109,8 @@ interface BrandingState {
   brandColor: string;
   loginBgColor: string | null;
   tabTitle: string | null;
+  appBgColor: string | null;
+  accentColor: string | null;
   loaded: boolean;
   fetchBranding: () => Promise<void>;          // pre-login: by custom domain
   applyTenantBranding: (d: BrandingData) => void; // post-login: by authed tenant
@@ -85,6 +129,8 @@ export const useBrandingStore = create<BrandingState>((set) => ({
   brandColor: DEFAULT_COLOR,
   loginBgColor: null,
   tabTitle: null,
+  appBgColor: null,
+  accentColor: null,
   loaded: false,
 
   // Pre-login: fetch branding for the current custom domain (login page)
@@ -110,11 +156,14 @@ export const useBrandingStore = create<BrandingState>((set) => ({
         brandColor,
         loginBgColor: data.loginBgColor ?? null,
         tabTitle: data.tabTitle ?? null,
+        appBgColor: data.appBgColor ?? null,
+        accentColor: data.accentColor ?? null,
         loaded: true,
       });
       applyBrandColor(brandColor);
       applyFavicon(data.faviconUrl ?? null);
       applyTitle(data.tabTitle ?? null);
+      injectThemeOverrides({ brandColor, appBgColor: data.appBgColor, accentColor: data.accentColor });
     } catch {
       set({ isCustomDomain: false, loaded: true });
     }
@@ -123,7 +172,7 @@ export const useBrandingStore = create<BrandingState>((set) => ({
   // Post-login: apply the authenticated tenant's branding (any domain)
   applyTenantBranding: (d: BrandingData) => {
     const brandColor = d.brandColor ?? DEFAULT_COLOR;
-    const hasCustom = !!(d.logoUrl || d.tabTitle || (d.brandColor && d.brandColor !== DEFAULT_COLOR) || d.faviconUrl);
+    const hasCustom = !!(d.logoUrl || d.tabTitle || (d.brandColor && d.brandColor !== DEFAULT_COLOR) || d.faviconUrl || d.appBgColor || d.accentColor);
     set({
       branded: hasCustom,
       tenantName: d.name ?? null,
@@ -133,11 +182,14 @@ export const useBrandingStore = create<BrandingState>((set) => ({
       brandColor,
       loginBgColor: d.loginBgColor ?? null,
       tabTitle: d.tabTitle ?? null,
+      appBgColor: d.appBgColor ?? null,
+      accentColor: d.accentColor ?? null,
       loaded: true,
     });
     applyBrandColor(brandColor);
     applyFavicon(d.faviconUrl ?? null);
     applyTitle(d.tabTitle ?? null);
+    injectThemeOverrides({ brandColor, appBgColor: d.appBgColor, accentColor: d.accentColor });
   },
 
   resetBranding: () => {
@@ -145,10 +197,11 @@ export const useBrandingStore = create<BrandingState>((set) => ({
     root.style.removeProperty('--primary');
     root.style.removeProperty('--primary-dark');
     root.style.removeProperty('--color-primary');
+    clearThemeOverrides();
     set({
       isCustomDomain: false, branded: false, tenantName: null, logoUrl: null,
       faviconUrl: null, bannerUrl: null, brandColor: DEFAULT_COLOR,
-      loginBgColor: null, tabTitle: null,
+      loginBgColor: null, tabTitle: null, appBgColor: null, accentColor: null,
     });
   },
 }));

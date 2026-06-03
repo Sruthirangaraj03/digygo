@@ -32,7 +32,7 @@ router.get('/branding', async (req: Request, res: Response) => {
 
   try {
     const r = await query(
-      `SELECT id, name, logo_url, favicon_url, banner_url, brand_color, login_bg_color, tab_title, reply_to_email
+      `SELECT id, name, logo_url, favicon_url, banner_url, brand_color, login_bg_color, tab_title, app_bg_color, accent_color, reply_to_email
        FROM tenants WHERE custom_domain=$1 AND ${statusFilter} LIMIT 1`,
       [domain]
     );
@@ -47,6 +47,8 @@ router.get('/branding', async (req: Request, res: Response) => {
       brandColor:   t.brand_color ?? '#c2410c',
       loginBgColor: t.login_bg_color ?? null,
       tabTitle:     t.tab_title ?? null,
+      appBgColor:   t.app_bg_color ?? null,
+      accentColor:  t.accent_color ?? null,
       replyToEmail: t.reply_to_email ?? null,
     });
   } catch { res.status(500).json({ error: 'Server error' }); }

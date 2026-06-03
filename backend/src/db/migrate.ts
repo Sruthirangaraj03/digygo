@@ -82,6 +82,7 @@ const MIGRATIONS = [
   'migration_080_staff_id.sql',
   'migration_081_custom_domains.sql',
   'migration_082_tenant_branding.sql',
+  'migration_083_theme_colors.sql',
 ];
 
 // Split SQL file into individual statements and execute each one separately.

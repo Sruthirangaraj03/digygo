@@ -21,6 +21,8 @@ interface BrandingForm {
   brand_color: string;
   login_bg_color: string | null;
   tab_title: string | null;
+  app_bg_color: string | null;
+  accent_color: string | null;
 }
 
 export default function BrandingPage() {
@@ -33,6 +35,7 @@ export default function BrandingPage() {
   const [form, setForm] = useState<BrandingForm>({
     name: '', logo_url: null, favicon_url: null, banner_url: null,
     brand_color: '#c2410c', login_bg_color: null, tab_title: null,
+    app_bg_color: null, accent_color: null,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -51,6 +54,8 @@ export default function BrandingPage() {
         brand_color: d.brandColor ?? '#c2410c',
         login_bg_color: d.loginBgColor ?? null,
         tab_title: d.tabTitle ?? null,
+        app_bg_color: d.appBgColor ?? null,
+        accent_color: d.accentColor ?? null,
       }))
       .catch(() => toast.error('Failed to load branding'))
       .finally(() => setLoading(false));
@@ -79,11 +84,14 @@ export default function BrandingPage() {
         brand_color: form.brand_color,
         login_bg_color: form.login_bg_color,
         tab_title: form.tab_title,
+        app_bg_color: form.app_bg_color,
+        accent_color: form.accent_color,
       });
       applyTenantBranding({
         name: form.name, logoUrl: form.logo_url, faviconUrl: form.favicon_url,
         bannerUrl: form.banner_url, brandColor: form.brand_color,
         loginBgColor: form.login_bg_color, tabTitle: form.tab_title,
+        appBgColor: form.app_bg_color, accentColor: form.accent_color,
       });
       setCompanyName(form.name || 'CRM');
       setLogo(form.logo_url);
@@ -206,6 +214,35 @@ export default function BrandingPage() {
                   placeholder="#c2410c" className={`${inp} max-w-[130px] font-mono`} />
               </div>
 
+              <div className="pt-3 mt-3 border-t border-black/5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>App Background</label>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={form.app_bg_color ?? '#faf8f6'} onChange={(e) => upd('app_bg_color', e.target.value)}
+                      className="w-9 h-9 rounded-lg border border-[#e8ddd4] cursor-pointer p-0.5 shrink-0" />
+                    <input value={form.app_bg_color ?? ''} onChange={(e) => upd('app_bg_color', e.target.value || null)}
+                      placeholder="Default" className={`${inp} max-w-[120px] font-mono`} />
+                    {form.app_bg_color && (
+                      <button type="button" onClick={() => upd('app_bg_color', null)} className="text-[11px] text-red-500 hover:text-red-700">Reset</button>
+                    )}
+                  </div>
+                  <p className={hintCls}>Whole-app page background.</p>
+                </div>
+                <div>
+                  <label className={labelCls}>Accent</label>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={form.accent_color ?? '#f5ede3'} onChange={(e) => upd('accent_color', e.target.value)}
+                      className="w-9 h-9 rounded-lg border border-[#e8ddd4] cursor-pointer p-0.5 shrink-0" />
+                    <input value={form.accent_color ?? ''} onChange={(e) => upd('accent_color', e.target.value || null)}
+                      placeholder="Default" className={`${inp} max-w-[120px] font-mono`} />
+                    {form.accent_color && (
+                      <button type="button" onClick={() => upd('accent_color', null)} className="text-[11px] text-red-500 hover:text-red-700">Reset</button>
+                    )}
+                  </div>
+                  <p className={hintCls}>Hover & selected highlights.</p>
+                </div>
+              </div>
+
               <div className="pt-3 mt-3 border-t border-black/5">
                 <label className={labelCls}>Login Page Background</label>
                 <div className="flex items-center gap-2">
@@ -239,7 +276,7 @@ export default function BrandingPage() {
               {/* App mock: sidebar + content */}
               <div className="border border-[#ece6df] rounded-b-lg rounded-tr-lg overflow-hidden flex h-[260px]">
                 {/* mini sidebar */}
-                <div className="w-[88px] bg-[#faf8f6] border-r border-black/5 flex flex-col shrink-0">
+                <div className="w-[88px] border-r border-black/5 flex flex-col shrink-0" style={{ background: form.app_bg_color || '#faf8f6' }}>
                   <div className="h-12 flex items-center justify-center border-b border-black/5 px-1">
                     {form.logo_url
                       ? <img src={form.logo_url} alt="" className="max-h-8 max-w-full object-contain" />
@@ -249,7 +286,7 @@ export default function BrandingPage() {
                     <div className="flex items-center gap-1 px-1.5 py-1 rounded-md" style={{ background: form.brand_color }}>
                       <LayoutDashboard className="w-3 h-3 text-white" /><span className="text-[8px] text-white font-medium">Dashboard</span>
                     </div>
-                    <div className="flex items-center gap-1 px-1.5 py-1 rounded-md text-[#7a6b5c]">
+                    <div className="flex items-center gap-1 px-1.5 py-1 rounded-md text-[#7a6b5c]" style={{ background: form.accent_color || 'transparent' }}>
                       <Users className="w-3 h-3" /><span className="text-[8px]">Leads</span>
                     </div>
                     <div className="flex items-center gap-1 px-1.5 py-1 rounded-md text-[#7a6b5c]">
@@ -261,8 +298,8 @@ export default function BrandingPage() {
                 <div className="flex-1 bg-white p-3 flex flex-col gap-2">
                   <div className="h-2.5 w-20 rounded-full bg-[#ece6df]" />
                   <div className="flex gap-1.5">
-                    <div className="h-9 flex-1 rounded-md border border-black/5 bg-[#faf8f6]" />
-                    <div className="h-9 flex-1 rounded-md border border-black/5 bg-[#faf8f6]" />
+                    <div className="h-9 flex-1 rounded-md border border-black/5" style={{ background: form.app_bg_color || '#faf8f6' }} />
+                    <div className="h-9 flex-1 rounded-md border border-black/5" style={{ background: form.app_bg_color || '#faf8f6' }} />
                   </div>
                   <button className="text-[9px] text-white font-semibold rounded-md px-2 py-1.5 w-fit" style={{ background: form.brand_color }}>
                     + Add Lead
