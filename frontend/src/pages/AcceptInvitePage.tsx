@@ -38,11 +38,11 @@ export default function AcceptInvitePage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#faf8f6] p-4">
+    <div className="min-h-screen flex items-center justify-center bg-[var(--app-bg)] p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8 space-y-6">
         <div className="text-center">
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
-               style={{ background: 'linear-gradient(135deg, #c2410c, #ea580c)' }}>
+               style={{ background: 'linear-gradient(135deg, var(--brand-dark), var(--brand))' }}>
             <span className="text-white font-black text-xl">D</span>
           </div>
           <h1 className="text-2xl font-extrabold text-[#1c1410]">Set your password</h1>
@@ -83,7 +83,7 @@ export default function AcceptInvitePage() {
             type="submit"
             disabled={loading}
             className="w-full py-3 rounded-xl text-white font-bold text-[14px] transition-all hover:-translate-y-0.5 disabled:opacity-60"
-            style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}
+            style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}
           >
             {loading ? 'Setting password…' : 'Activate Account'}
           </button>

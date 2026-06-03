@@ -183,7 +183,7 @@ function FlowBuilderModal({ initial, onClose, onSave }: {
       <div className="bg-card rounded-2xl border border-black/5 w-full max-w-2xl shadow-2xl flex flex-col max-h-[92vh]">
         <div className="flex items-center justify-between px-5 py-4 border-b border-black/5 shrink-0">
           <h3 className="font-headline font-bold text-[#1c1410]">{initial ? 'Edit Flow' : 'Create WhatsApp Flow'}</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[#f5ede3]"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[var(--accent-tint)]"><X className="w-4 h-4" /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
 
@@ -207,7 +207,7 @@ function FlowBuilderModal({ initial, onClose, onSave }: {
                 <button
                   key={t.value}
                   onClick={() => setTrigger(t.value)}
-                  className={cn('flex flex-col items-start p-3 rounded-xl border text-left transition-all', trigger === t.value ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40 hover:bg-[#f5ede3]')}
+                  className={cn('flex flex-col items-start p-3 rounded-xl border text-left transition-all', trigger === t.value ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40 hover:bg-[var(--accent-tint)]')}
                 >
                   <p className={cn('text-sm font-medium', trigger === t.value ? 'text-primary' : 'text-foreground')}>{t.label}</p>
                   <p className="text-[11px] text-[#7a6b5c] mt-0.5">{t.desc}</p>
@@ -233,7 +233,7 @@ function FlowBuilderModal({ initial, onClose, onSave }: {
             <label className="text-sm font-medium text-foreground mb-2 block">Flow Steps</label>
             <div className="space-y-3">
               {nodes.map((node, idx) => (
-                <div key={node.id} className={cn('rounded-xl border p-4 space-y-3', node.type === 'send_message' ? 'border-green-200 bg-green-50/50' : node.type === 'condition' ? 'border-yellow-200 bg-yellow-50/50' : node.type === 'action' ? 'border-blue-200 bg-blue-50/50' : 'border-border bg-[#faf8f6]')}>
+                <div key={node.id} className={cn('rounded-xl border p-4 space-y-3', node.type === 'send_message' ? 'border-green-200 bg-green-50/50' : node.type === 'condition' ? 'border-yellow-200 bg-yellow-50/50' : node.type === 'action' ? 'border-blue-200 bg-blue-50/50' : 'border-border bg-[var(--app-bg)]')}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] bg-muted px-2 py-0.5 rounded-full">Step {idx + 1}</span>
@@ -515,7 +515,7 @@ export default function WhatsAppAutomationPage() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => navigate('/automation')}
-                className="p-1.5 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-[#1c1410] transition-colors shrink-0"
+                className="p-1.5 rounded-xl hover:bg-[var(--accent-tint)] text-[#7a6b5c] hover:text-[#1c1410] transition-colors shrink-0"
               >
                 <ArrowLeft className="w-4 h-4" />
               </button>
@@ -529,7 +529,7 @@ export default function WhatsAppAutomationPage() {
             <button
               key={flow.id}
               onClick={() => setSelectedFlow(flow)}
-              className={cn('w-full text-left px-4 py-3 border-b border-black/5 hover:bg-[#faf8f6] transition-colors', selectedFlow?.id === flow.id && 'bg-accent/30 border-l-2 border-l-primary')}
+              className={cn('w-full text-left px-4 py-3 border-b border-black/5 hover:bg-[var(--app-bg)] transition-colors', selectedFlow?.id === flow.id && 'bg-accent/30 border-l-2 border-l-primary')}
             >
               <div className="flex items-center justify-between mb-1">
                 <p className="text-sm font-medium text-foreground truncate flex-1">{flow.name}</p>
@@ -538,7 +538,7 @@ export default function WhatsAppAutomationPage() {
                   <div className="relative">
                     <button
                       onClick={(e) => { e.stopPropagation(); setOpenMenu(openMenu === flow.id ? null : flow.id); }}
-                      className="p-0.5 rounded hover:bg-[#f5ede3] text-muted-foreground"
+                      className="p-0.5 rounded hover:bg-[var(--accent-tint)] text-muted-foreground"
                     >
                       <MoreHorizontal className="w-3.5 h-3.5" />
                     </button>
@@ -546,8 +546,8 @@ export default function WhatsAppAutomationPage() {
                       <>
                         <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setOpenMenu(null); }} />
                         <div className="absolute right-0 top-6 bg-card border border-black/5 rounded-xl shadow-xl z-50 w-36 py-1">
-                          <button onClick={(e) => { e.stopPropagation(); setEditFlow(flow); setOpenMenu(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-[#f5ede3]">Edit Flow</button>
-                          <button onClick={(e) => { e.stopPropagation(); toggleFlow(flow.id); setOpenMenu(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-[#f5ede3]">{flow.isActive ? 'Pause' : 'Activate'}</button>
+                          <button onClick={(e) => { e.stopPropagation(); setEditFlow(flow); setOpenMenu(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-[var(--accent-tint)]">Edit Flow</button>
+                          <button onClick={(e) => { e.stopPropagation(); toggleFlow(flow.id); setOpenMenu(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-[var(--accent-tint)]">{flow.isActive ? 'Pause' : 'Activate'}</button>
                           <button onClick={(e) => { e.stopPropagation(); deleteFlow(flow.id); setOpenMenu(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-destructive">Delete</button>
                         </div>
                       </>
@@ -565,7 +565,7 @@ export default function WhatsAppAutomationPage() {
       </div>
 
       {/* Right: Flow Detail */}
-      <div className="flex-1 overflow-y-auto bg-[#faf8f6]">
+      <div className="flex-1 overflow-y-auto bg-[var(--app-bg)]">
         {selectedFlow ? (
           <div className="p-6 space-y-6 max-w-lg mx-auto">
             <div className="flex items-start justify-between">

@@ -168,7 +168,7 @@ function PipelineModal({ pipeline, onClose }: { pipeline?: Pipeline; onClose: ()
           <button
             onClick={handleSave}
             className="px-6 py-2 rounded-xl text-[13px] font-bold text-white transition-all hover:-translate-y-0.5"
-            style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}
+            style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}
           >
             Save
           </button>
@@ -233,7 +233,7 @@ function AllStagesModal({ pipeline, totalLeads, stageStats, onClose, onOpen }: {
           <button
             onClick={onOpen}
             className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white transition-all hover:-translate-y-0.5"
-            style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 12px rgba(234,88,12,0.25)' }}
+            style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 12px rgba(234,88,12,0.25)' }}
           >
             Open Pipeline
           </button>
@@ -429,7 +429,7 @@ export default function LeadManagementOverviewPage() {
           <button
             onClick={() => setShowCreate(true)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white transition-all hover:shadow-lg hover:-translate-y-0.5 shrink-0"
-            style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 12px rgba(234,88,12,0.3)' }}
+            style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 12px rgba(234,88,12,0.3)' }}
           >
             <Plus className="w-4 h-4" /> New Pipeline
           </button>
@@ -469,7 +469,7 @@ export default function LeadManagementOverviewPage() {
               <button
                 onClick={() => setShowCreate(true)}
                 className="mt-2 flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-bold text-white"
-                style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}
+                style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}
               >
                 <Plus className="w-4 h-4" /> Create Pipeline
               </button>

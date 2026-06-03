@@ -64,7 +64,7 @@ export default function NotificationsPage() {
       <div className="flex items-center gap-3">
         <button
           onClick={() => navigate('/settings')}
-          className="p-2 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-[#1c1410] transition-colors"
+          className="p-2 rounded-xl hover:bg-[var(--accent-tint)] text-[#7a6b5c] hover:text-[#1c1410] transition-colors"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
@@ -72,7 +72,7 @@ export default function NotificationsPage() {
 
       <div className="bg-white rounded-2xl border border-black/5 card-shadow overflow-hidden">
         {/* Table header */}
-        <div className="grid grid-cols-[1fr_auto_auto] gap-4 px-5 py-3 border-b border-black/5 bg-[#faf8f6]">
+        <div className="grid grid-cols-[1fr_auto_auto] gap-4 px-5 py-3 border-b border-black/5 bg-[var(--app-bg)]">
           <span className="text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c]">Notification</span>
           <span className="text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] text-center w-16">In-App</span>
           <span className="text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] text-center w-28">
@@ -83,7 +83,7 @@ export default function NotificationsPage() {
         {settings.map((s) => (
           <div
             key={s.id}
-            className="grid grid-cols-[1fr_auto_auto] gap-4 items-center px-5 py-4 border-b border-black/5 last:border-0 hover:bg-[#faf8f6] transition-colors"
+            className="grid grid-cols-[1fr_auto_auto] gap-4 items-center px-5 py-4 border-b border-black/5 last:border-0 hover:bg-[var(--app-bg)] transition-colors"
           >
             <div>
               <p className="text-[13px] font-semibold text-[#1c1410]">{s.label}</p>

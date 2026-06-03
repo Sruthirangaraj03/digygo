@@ -11,7 +11,7 @@ const NotFound = () => {
   }, [location.pathname]);
 
   return (
-    <div className="min-h-[100dvh] flex items-center justify-center bg-[#faf8f6]">
+    <div className="min-h-[100dvh] flex items-center justify-center bg-[var(--app-bg)]">
       <div className="text-center px-5">
         <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-6">
           <span className="font-headline text-3xl font-extrabold text-primary">404</span>
@@ -23,7 +23,7 @@ const NotFound = () => {
         <button
           onClick={() => navigate('/dashboard')}
           className="px-6 py-3 rounded-xl text-white text-sm font-semibold active:scale-[0.97] transition-all shadow-lg shadow-primary/20"
-          style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}
+          style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}
         >
           Back to Dashboard
         </button>

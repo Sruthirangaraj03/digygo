@@ -10,7 +10,7 @@ import { api } from '@/lib/api';
 import { useCrmStore } from '@/store/crmStore';
 import { format, parseISO } from 'date-fns';
 
-const gradStyle  = { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' };
+const gradStyle  = { background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' };
 const shadowStyle = { ...gradStyle, boxShadow: '0 4px 14px rgba(234,88,12,0.28)' };
 
 interface TimeSlot   { start: string; end: string; }
@@ -133,7 +133,7 @@ function CalendarFieldPickerModal({
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-[#7a6b5c]"><X className="w-4 h-4" /></button>
         </div>
         <div className="px-5 pt-4 pb-2">
-          <div className="flex items-center gap-2 bg-[#faf8f6] border border-black/8 rounded-xl px-3 py-2">
+          <div className="flex items-center gap-2 bg-[var(--app-bg)] border border-black/8 rounded-xl px-3 py-2">
             <Search className="w-3.5 h-3.5 text-[#b09e8d] shrink-0" />
             <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)}
               placeholder="Search fields…"
@@ -293,7 +293,7 @@ export default function CalendarEditPage() {
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/calendar')}
-            className="p-2 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-[#1c1410] transition-colors">
+            className="p-2 rounded-xl hover:bg-[var(--accent-tint)] text-[#7a6b5c] hover:text-[#1c1410] transition-colors">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <h2 className="font-headline text-[18px] font-bold text-[#1c1410]">
@@ -302,7 +302,7 @@ export default function CalendarEditPage() {
         </div>
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/calendar')}
-            className="px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 bg-white hover:bg-[#f5ede3] transition-colors">
+            className="px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 bg-white hover:bg-[var(--accent-tint)] transition-colors">
             Cancel
           </button>
           <button onClick={handleSave} disabled={saving}
@@ -339,7 +339,7 @@ export default function CalendarEditPage() {
                   {activeStaff.length === 0 ? (
                     <p className="px-4 py-3 text-[13px] text-[#b09e8d]">No active staff found. Add staff in the Staff section.</p>
                   ) : activeStaff.map((member) => (
-                    <label key={member.id} className="flex items-center gap-3 px-4 py-3 hover:bg-[#faf8f6] cursor-pointer">
+                    <label key={member.id} className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--app-bg)] cursor-pointer">
                       <input
                         type="checkbox"
                         checked={form.staffEmails.includes(member.email)}
@@ -417,7 +417,7 @@ export default function CalendarEditPage() {
                       }
                     </div>
                     <button onClick={() => openLocationModal(form.meetingType)}
-                      className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#b09e8d] hover:text-primary transition-colors" title="Edit link">
+                      className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#b09e8d] hover:text-primary transition-colors" title="Edit link">
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button onClick={() => { upd('meetingType', ''); upd('meetingLink', undefined); }}
@@ -588,7 +588,7 @@ export default function CalendarEditPage() {
                         </div>
                         {ds.enabled && (
                           <div className="flex items-center gap-1 shrink-0 pt-0.5">
-                            <button onClick={() => addSlot(day)} className="p-1.5 rounded hover:bg-[#f5ede3] text-[#b09e8d] hover:text-primary transition-colors" title="Add slot">
+                            <button onClick={() => addSlot(day)} className="p-1.5 rounded hover:bg-[var(--accent-tint)] text-[#b09e8d] hover:text-primary transition-colors" title="Add slot">
                               <Plus className="w-4 h-4" />
                             </button>
                             <button onClick={() => {
@@ -597,7 +597,7 @@ export default function CalendarEditPage() {
                                 setForm((p) => ({ ...p, schedule: { ...p.schedule, [d]: { ...p.schedule[d], slots: JSON.parse(JSON.stringify(src)) } } }));
                               });
                               toast.success(`Copied ${day} slots to all active days`);
-                            }} className="p-1.5 rounded hover:bg-[#f5ede3] text-[#b09e8d] hover:text-primary transition-colors" title="Copy to all days">
+                            }} className="p-1.5 rounded hover:bg-[var(--accent-tint)] text-[#b09e8d] hover:text-primary transition-colors" title="Copy to all days">
                               <Copy className="w-4 h-4" />
                             </button>
                           </div>
@@ -615,7 +615,7 @@ export default function CalendarEditPage() {
               {Object.keys(form.dateOverrides ?? {}).length > 0 && (
                 <div className="space-y-1.5 mb-3">
                   {Object.entries(form.dateOverrides ?? {}).sort().map(([date, ds]) => (
-                    <div key={date} className="flex items-center justify-between px-3 py-2 bg-[#faf8f6] rounded-xl border border-black/[0.04]">
+                    <div key={date} className="flex items-center justify-between px-3 py-2 bg-[var(--app-bg)] rounded-xl border border-black/[0.04]">
                       <span className="text-[12px] font-semibold text-[#1c1410]">{format(parseISO(date), 'MMM d, yyyy')}</span>
                       <span className="text-[11px] text-[#7a6b5c]">{ds.enabled ? `${ds.slots.length} slot(s)` : 'Off'}</span>
                       <button onClick={() => {
@@ -636,7 +636,7 @@ export default function CalendarEditPage() {
                   setOverrideDay({ enabled: true, slots: [{ start: '09:00', end: '17:00' }] });
                   setShowOverrideModal(true);
                 }}
-                className="w-full border border-gray-200 rounded-xl py-2.5 text-[13px] text-[#7a6b5c] hover:bg-[#faf8f6] transition-colors flex items-center justify-center gap-1.5"
+                className="w-full border border-gray-200 rounded-xl py-2.5 text-[13px] text-[#7a6b5c] hover:bg-[var(--app-bg)] transition-colors flex items-center justify-center gap-1.5"
               >
                 <Plus className="w-3.5 h-3.5" /> Add a date override
               </button>
@@ -670,7 +670,7 @@ export default function CalendarEditPage() {
             {form.formFields.map((f) => {
               const isDefault = ['ff1','ff2','ff3'].includes(f.id);
               return (
-                <div key={f.id} className="flex items-center gap-3 px-5 py-3.5 hover:bg-[#faf8f6] transition-colors group">
+                <div key={f.id} className="flex items-center gap-3 px-5 py-3.5 hover:bg-[var(--app-bg)] transition-colors group">
                   {/* Drag handle (visual only) */}
                   <GripVertical className="w-4 h-4 text-[#c4b09e] shrink-0 cursor-grab" />
 
@@ -754,7 +754,7 @@ export default function CalendarEditPage() {
                 <h3 className="font-headline font-semibold text-[16px] text-[#1c1410]">{pendingLocationType}</h3>
                 <p className="text-[12px] text-[#7a6b5c] mt-0.5">Paste your meeting link (optional)</p>
               </div>
-              <button onClick={() => setShowLocationModal(false)} className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c]">
+              <button onClick={() => setShowLocationModal(false)} className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c]">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -776,7 +776,7 @@ export default function CalendarEditPage() {
             </div>
             <div className="px-6 pb-5 flex gap-2">
               <button onClick={() => setShowLocationModal(false)}
-                className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-[#7a6b5c] border border-black/10 bg-white hover:bg-[#faf8f6]">
+                className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-[#7a6b5c] border border-black/10 bg-white hover:bg-[var(--app-bg)]">
                 Cancel
               </button>
               <button onClick={confirmLocation}
@@ -838,7 +838,7 @@ export default function CalendarEditPage() {
             </div>
             <div className="px-6 pb-5 flex gap-2">
               <button onClick={() => setShowOverrideModal(false)}
-                className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-[#7a6b5c] border border-black/10 bg-white hover:bg-[#faf8f6]">
+                className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-[#7a6b5c] border border-black/10 bg-white hover:bg-[var(--app-bg)]">
                 Cancel
               </button>
               <button

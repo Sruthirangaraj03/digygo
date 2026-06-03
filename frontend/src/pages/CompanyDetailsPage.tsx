@@ -159,7 +159,7 @@ export default function CompanyDetailsPage() {
         <div className="flex items-center gap-2.5">
           <button
             onClick={() => navigate('/settings')}
-            className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-[#1c1410] transition-colors"
+            className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] hover:text-[#1c1410] transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -182,7 +182,7 @@ export default function CompanyDetailsPage() {
           />
           <button
             onClick={() => logoInputRef.current?.click()}
-            className="relative w-20 h-20 rounded-2xl overflow-hidden group border-2 border-dashed border-black/10 hover:border-primary/40 transition-colors bg-[#faf8f6] flex items-center justify-center"
+            className="relative w-20 h-20 rounded-2xl overflow-hidden group border-2 border-dashed border-black/10 hover:border-primary/40 transition-colors bg-[var(--app-bg)] flex items-center justify-center"
             title="Upload company logo"
           >
             {logoPreview
@@ -305,7 +305,7 @@ export default function CompanyDetailsPage() {
       {isSuperAdmin && (
         <button
           onClick={() => navigate('/admin')}
-          className="w-full bg-white rounded-2xl border border-black/5 p-4 flex items-center gap-3 hover:bg-[#faf8f6] transition-colors text-left group"
+          className="w-full bg-white rounded-2xl border border-black/5 p-4 flex items-center gap-3 hover:bg-[var(--app-bg)] transition-colors text-left group"
         >
           <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
             <ShieldCheck className="w-4 h-4 text-primary" />

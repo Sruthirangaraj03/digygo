@@ -13,7 +13,7 @@ import { format } from 'date-fns';
 import { Lead } from '@/data/mockData';
 import { LeadDetailPanel } from './LeadsPage';
 
-const gradStyle   = { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' };
+const gradStyle   = { background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' };
 const shadowStyle = { ...gradStyle, boxShadow: '0 4px 14px rgba(234,88,12,0.28)' };
 
 const GROUP_COLORS = ['#ea580c', '#ef4444', '#8b5cf6', '#3b82f6', '#22c55e', '#f59e0b', '#ec4899', '#14b8a6', '#6366f1', '#d97706'];
@@ -437,7 +437,7 @@ export default function ContactGroupPage() {
                         </div>
                         <div className="flex gap-1.5">
                           <button onClick={() => saveEdit(g.id)} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white bg-primary hover:bg-primary/90"><Check className="w-3 h-3" /> Save</button>
-                          <button onClick={() => setEditingId(null)} className="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-[#7a6b5c] hover:bg-[#f5ede3]">Cancel</button>
+                          <button onClick={() => setEditingId(null)} className="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-[#7a6b5c] hover:bg-[var(--accent-tint)]">Cancel</button>
                         </div>
                       </div>
                     ) : (
@@ -488,12 +488,12 @@ export default function ContactGroupPage() {
                 {canManage && (
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button onClick={() => startEdit(selectedGroup)}
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-[#7a6b5c] hover:bg-[#f5ede3] hover:text-primary transition-colors">
+                      className="w-8 h-8 rounded-lg flex items-center justify-center text-[#7a6b5c] hover:bg-[var(--accent-tint)] hover:text-primary transition-colors">
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button onClick={handleExportCSV} disabled={members.length === 0}
                       title="Export CSV"
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-[#7a6b5c] hover:bg-[#f5ede3] hover:text-primary transition-colors disabled:opacity-40">
+                      className="w-8 h-8 rounded-lg flex items-center justify-center text-[#7a6b5c] hover:bg-[var(--accent-tint)] hover:text-primary transition-colors disabled:opacity-40">
                       <Download className="w-3.5 h-3.5" />
                     </button>
                     <button onClick={() => setShowBroadcast(true)} disabled={selectedGroup.member_count === 0}
@@ -521,7 +521,7 @@ export default function ContactGroupPage() {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#b09e8d]" />
                     <input value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)}
                       placeholder="Search members by name, email, phone..."
-                      className="w-full pl-9 pr-9 py-2 text-[13px] bg-[#faf8f6] border border-black/[0.06] rounded-xl outline-none focus:border-primary/30 placeholder:text-gray-400" />
+                      className="w-full pl-9 pr-9 py-2 text-[13px] bg-[var(--app-bg)] border border-black/[0.06] rounded-xl outline-none focus:border-primary/30 placeholder:text-gray-400" />
                     {memberSearch && (
                       <button onClick={() => setMemberSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#b09e8d] hover:text-[#7a6b5c]">
                         <X className="w-3.5 h-3.5" />
@@ -551,7 +551,7 @@ export default function ContactGroupPage() {
                 <div className="flex justify-center py-16"><Loader2 className="w-5 h-5 animate-spin text-primary/40" /></div>
               ) : members.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-center px-6">
-                  <div className="w-12 h-12 rounded-2xl bg-[#f5ede3] flex items-center justify-center mb-3">
+                  <div className="w-12 h-12 rounded-2xl bg-[var(--accent-tint)] flex items-center justify-center mb-3">
                     <UserPlus className="w-6 h-6 text-[#c4b09e]" />
                   </div>
                   <p className="text-[13px] font-semibold text-[#1c1410] mb-1">Empty group</p>
@@ -573,7 +573,7 @@ export default function ContactGroupPage() {
                 <div className="flex-1 overflow-y-auto">
                   {/* Select-all header row */}
                   {canManage && (
-                    <div className="flex items-center gap-3 px-6 py-2.5 border-b border-black/[0.04] bg-[#faf8f6]">
+                    <div className="flex items-center gap-3 px-6 py-2.5 border-b border-black/[0.04] bg-[var(--app-bg)]">
                       <input type="checkbox" checked={allFilteredSelected}
                         onChange={() => {
                           if (allFilteredSelected) {
@@ -601,7 +601,7 @@ export default function ContactGroupPage() {
                       const checked = selectedMembers.has(m.lead_id);
                       return (
                         <div key={m.id}
-                          className="flex items-center gap-3 px-6 py-3.5 hover:bg-[#faf8f6] transition-colors cursor-pointer"
+                          className="flex items-center gap-3 px-6 py-3.5 hover:bg-[var(--app-bg)] transition-colors cursor-pointer"
                           onClick={() => handleMemberClick(m)}>
                           {canManage && (
                             <input type="checkbox" checked={checked}
@@ -621,7 +621,7 @@ export default function ContactGroupPage() {
                             <p className="text-[11px] text-[#7a6b5c] truncate">{m.email || m.phone}</p>
                           </div>
                           <div className="hidden sm:flex flex-col items-end gap-0.5 shrink-0">
-                            {m.pipeline_name && <span className="text-[10px] text-[#7a6b5c] bg-[#faf8f6] px-2 py-0.5 rounded-full">{m.pipeline_name}</span>}
+                            {m.pipeline_name && <span className="text-[10px] text-[#7a6b5c] bg-[var(--app-bg)] px-2 py-0.5 rounded-full">{m.pipeline_name}</span>}
                             {m.stage_name    && <span className="text-[10px] text-primary/70 bg-primary/5 px-2 py-0.5 rounded-full">{m.stage_name}</span>}
                           </div>
                           <span className="text-[10px] text-[#9e8c7c] hidden md:block capitalize">{m.added_by}</span>
@@ -653,7 +653,7 @@ export default function ContactGroupPage() {
                 </h3>
                 <p className="text-[11px] text-[#7a6b5c] mt-0.5">Step {createStep} of 2 — {createStep === 1 ? 'Name & details' : 'Optional: add contacts now'}</p>
               </div>
-              <button onClick={resetCreate} className="p-2 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c]"><X className="w-4 h-4" /></button>
+              <button onClick={resetCreate} className="p-2 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c]"><X className="w-4 h-4" /></button>
             </div>
 
             {createStep === 1 ? (
@@ -679,7 +679,7 @@ export default function ContactGroupPage() {
                   </div>
                 </div>
                 <div className="flex gap-3 pt-2">
-                  <button onClick={resetCreate} className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#f5ede3]">Cancel</button>
+                  <button onClick={resetCreate} className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[var(--accent-tint)]">Cancel</button>
                   <button onClick={() => { if (!createName.trim()) { toast.error('Name is required'); return; } setCreateStep(2); }}
                     className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white transition-all hover:-translate-y-0.5" style={shadowStyle}>
                     Next
@@ -690,7 +690,7 @@ export default function ContactGroupPage() {
               <div className="flex flex-col" style={{ maxHeight: '75vh' }}>
                 {/* Group name chip */}
                 <div className="px-6 pt-4 pb-0 shrink-0">
-                  <div className="flex items-center gap-2 p-3 bg-[#faf8f6] rounded-xl border border-black/[0.04] mb-3">
+                  <div className="flex items-center gap-2 p-3 bg-[var(--app-bg)] rounded-xl border border-black/[0.04] mb-3">
                     <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: createColor + '18' }}>
                       <Layers className="w-3.5 h-3.5" style={{ color: createColor }} />
                     </div>
@@ -728,7 +728,7 @@ export default function ContactGroupPage() {
                     {filteredCreateLeads.map((l) => {
                       const checked = createSelected.includes(l.id);
                       return (
-                        <label key={l.id} className="flex items-center gap-3 px-4 py-3 hover:bg-[#faf8f6] cursor-pointer rounded-xl transition-colors">
+                        <label key={l.id} className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--app-bg)] cursor-pointer rounded-xl transition-colors">
                           <input type="checkbox" checked={checked}
                             onChange={() => setCreateSelected((p) => checked ? p.filter((x) => x !== l.id) : [...p, l.id])}
                             className="w-4 h-4 accent-primary" />
@@ -739,7 +739,7 @@ export default function ContactGroupPage() {
                             <p className="text-[13px] font-semibold text-[#1c1410] truncate">{l.firstName} {l.lastName}</p>
                             <p className="text-[11px] text-[#7a6b5c] truncate">{l.email || l.phone}</p>
                           </div>
-                          <span className="text-[10px] text-[#7a6b5c] bg-[#faf8f6] px-2 py-0.5 rounded-full">{l.source}</span>
+                          <span className="text-[10px] text-[#7a6b5c] bg-[var(--app-bg)] px-2 py-0.5 rounded-full">{l.source}</span>
                         </label>
                       );
                     })}
@@ -808,7 +808,7 @@ export default function ContactGroupPage() {
                       </div>
                     )}
                     <button onClick={handleCreateFilterPreview} disabled={cfPreviewing}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#f5ede3] disabled:opacity-60 transition-colors">
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[var(--accent-tint)] disabled:opacity-60 transition-colors">
                       {cfPreviewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Filter className="w-3.5 h-3.5" />}
                       Preview Count
                     </button>
@@ -817,7 +817,7 @@ export default function ContactGroupPage() {
 
                 {/* Footer */}
                 <div className="px-6 py-4 border-t border-black/5 flex gap-3 shrink-0">
-                  <button onClick={() => setCreateStep(1)} className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#f5ede3]">Back</button>
+                  <button onClick={() => setCreateStep(1)} className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[var(--accent-tint)]">Back</button>
                   <button onClick={handleCreate} disabled={creating}
                     className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-60" style={shadowStyle}>
                     {creating ? 'Creating...'
@@ -970,7 +970,7 @@ function AddMembersModal({ groupId, groupName, existingLeadIds, leads, pipelines
             <h3 className="font-headline font-bold text-[15px] text-[#1c1410]">Add to "{groupName}"</h3>
             {tab === 'search' && selected.length > 0 && <p className="text-[11px] text-primary font-semibold mt-0.5">{selected.length} selected</p>}
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c]"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c]"><X className="w-4 h-4" /></button>
         </div>
 
         {/* Tabs */}
@@ -998,7 +998,7 @@ function AddMembersModal({ groupId, groupName, existingLeadIds, leads, pipelines
             {filteredLeads.map((l) => {
               const checked = selected.includes(l.id);
               return (
-                <label key={l.id} className="flex items-center gap-3 px-4 py-3 hover:bg-[#faf8f6] cursor-pointer rounded-xl transition-colors">
+                <label key={l.id} className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--app-bg)] cursor-pointer rounded-xl transition-colors">
                   <input type="checkbox" checked={checked} onChange={() => toggle(l.id)} className="w-4 h-4 accent-primary" />
                   <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
                     {l.firstName[0]}{l.lastName[0]}
@@ -1007,14 +1007,14 @@ function AddMembersModal({ groupId, groupName, existingLeadIds, leads, pipelines
                     <p className="text-[13px] font-semibold text-[#1c1410] truncate">{l.firstName} {l.lastName}</p>
                     <p className="text-[11px] text-[#7a6b5c] truncate">{l.email || l.phone}</p>
                   </div>
-                  <span className="text-[10px] text-[#7a6b5c] bg-[#faf8f6] px-2 py-0.5 rounded-full">{l.source}</span>
+                  <span className="text-[10px] text-[#7a6b5c] bg-[var(--app-bg)] px-2 py-0.5 rounded-full">{l.source}</span>
                 </label>
               );
             })}
             {filteredLeads.length === 0 && <p className="text-center py-8 text-[13px] text-[#7a6b5c]">No contacts available to add.</p>}
           </div>
           <div className="px-6 py-4 border-t border-black/5 flex gap-3 shrink-0">
-            <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#f5ede3]">Cancel</button>
+            <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[var(--accent-tint)]">Cancel</button>
             <button onClick={handleAddManual} disabled={selected.length === 0 || saving}
               className={cn('flex-1 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white transition-all', selected.length > 0 && !saving ? 'hover:-translate-y-0.5' : 'opacity-50 cursor-not-allowed')}
               style={shadowStyle}>
@@ -1088,7 +1088,7 @@ function AddMembersModal({ groupId, groupName, existingLeadIds, leads, pipelines
 
             <div className="px-6 py-4 border-t border-black/5 flex gap-3 shrink-0">
               <button onClick={handlePreview} disabled={previewing}
-                className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#f5ede3] disabled:opacity-60 flex items-center justify-center gap-2">
+                className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[var(--accent-tint)] disabled:opacity-60 flex items-center justify-center gap-2">
                 {previewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Filter className="w-3.5 h-3.5" />}
                 Preview Count
               </button>
@@ -1164,7 +1164,7 @@ function BroadcastModal({ groupId, groupName, memberCount, onClose }: {
               <p className="text-[11px] text-[#7a6b5c] mt-0.5">{memberCount} member{memberCount !== 1 ? 's' : ''} in this group</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c]"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c]"><X className="w-4 h-4" /></button>
         </div>
 
         {/* Result screen */}
@@ -1203,7 +1203,7 @@ function BroadcastModal({ groupId, groupName, memberCount, onClose }: {
             )}
             <div className="flex gap-3 mt-auto">
               <button onClick={() => setResult(null)}
-                className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#f5ede3]">
+                className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[var(--accent-tint)]">
                 Send Again
               </button>
               <button onClick={onClose}
@@ -1288,7 +1288,7 @@ function BroadcastModal({ groupId, groupName, memberCount, onClose }: {
             {/* Footer */}
             <div className="px-6 py-4 border-t border-black/5 flex gap-3 shrink-0">
               <button onClick={onClose}
-                className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#f5ede3]">
+                className="flex-1 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[var(--accent-tint)]">
                 Cancel
               </button>
               <button onClick={handleSend} disabled={!canSend || sending}

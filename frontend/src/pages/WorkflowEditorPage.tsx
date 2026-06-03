@@ -991,7 +991,7 @@ function TriggerConfigPanel({ node, onUpdate, onChangeTrigger, pipelines, staff,
             <div>
               <p className="text-sm font-semibold text-foreground">Allow Re-entry</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                <span className="font-medium text-[#c2410c]">Checked:</span> every contact enters this workflow each time they trigger it, even if they've been through it before.<br />
+                <span className="font-medium text-[var(--brand-dark)]">Checked:</span> every contact enters this workflow each time they trigger it, even if they've been through it before.<br />
                 <span className="font-medium">Unchecked:</span> only contacts that have never entered this workflow will be enrolled (default).
               </p>
             </div>
@@ -1448,7 +1448,7 @@ function AssignStaffPanel({ cfg, staff, pipelines, onUpdate }: {
           {rrPairs.map((pair, i) => {
             const pairStages = pipelines.find((p) => p.id === pair.pipeline_id)?.stages ?? [];
             return (
-              <div key={i} className="border border-gray-200 rounded-lg p-2.5 space-y-2 bg-[#faf8f6]">
+              <div key={i} className="border border-gray-200 rounded-lg p-2.5 space-y-2 bg-[var(--app-bg)]">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold text-[#7a6b5c] uppercase tracking-wide">Pair {i + 1}</span>
                   <button type="button" onClick={() => removeRRPair(i)} className="p-1 rounded text-[#b09e8d] hover:text-red-500 hover:bg-red-50 transition-colors"><X className="w-3.5 h-3.5" /></button>
@@ -3228,7 +3228,7 @@ function TriggerPickerModal({ onClose, onSelect }: {
               <input
                 value={search} onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search triggers…"
-                className="pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-[13px] outline-none focus:border-primary/50 w-48 bg-[#faf8f6] focus:bg-white transition-colors"
+                className="pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-[13px] outline-none focus:border-primary/50 w-48 bg-[var(--app-bg)] focus:bg-white transition-colors"
               />
             </div>
             <button onClick={onClose} className="w-8 h-8 rounded-xl hover:bg-gray-100 flex items-center justify-center transition-colors">
@@ -3242,7 +3242,7 @@ function TriggerPickerModal({ onClose, onSelect }: {
 
           {/* Left category sidebar */}
           {!search && (
-            <div className="w-44 shrink-0 border-r border-gray-100 bg-[#faf8f6] py-2 overflow-y-auto">
+            <div className="w-44 shrink-0 border-r border-gray-100 bg-[var(--app-bg)] py-2 overflow-y-auto">
               {TRIGGER_CATEGORIES.map((cat) => {
                 const m = TRIGGER_CAT_META[cat.id] ?? { color: 'text-gray-600 bg-gray-50', dot: 'bg-gray-400' };
                 const isActive = activeCategory === cat.id;
@@ -3981,11 +3981,11 @@ function NodeConfigModal({
         </div>
 
         {/* Footer */}
-        <div className="flex gap-2 px-5 py-4 border-t border-black/[0.06] bg-[#faf8f6] shrink-0">
+        <div className="flex gap-2 px-5 py-4 border-t border-black/[0.06] bg-[var(--app-bg)] shrink-0">
           <button
             onClick={handleSaveClose}
             className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white transition-all"
-            style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)', boxShadow: '0 2px 8px rgba(234,88,12,0.25)' }}
+            style={{ background: 'linear-gradient(135deg,var(--brand-dark),var(--brand))', boxShadow: '0 2px 8px rgba(234,88,12,0.25)' }}
           >
             <Check className="w-3.5 h-3.5 inline mr-1" /> Save & Close
           </button>
@@ -4102,7 +4102,7 @@ function TestWorkflowModal({ workflowId, onClose, onTestStart, onTestDone }: {
                       onClick={() => { setSelected({ id: r.id, name: r.name, phone: r.phone, email: r.email }); setSearch(r.name); setResults([]); }}
                       className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[#faf0e8] transition-colors text-left"
                     >
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0" style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)' }}>
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0" style={{ background: 'linear-gradient(135deg,var(--brand-dark),var(--brand))' }}>
                         {(parts[0]?.[0] ?? '').toUpperCase()}{(parts[1]?.[0] ?? '').toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -4116,7 +4116,7 @@ function TestWorkflowModal({ workflowId, onClose, onTestStart, onTestDone }: {
             )}
             {selected && (
               <div className="mt-2 flex items-center gap-3 px-3 py-2.5 rounded-xl border border-primary/30 bg-primary/5">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0" style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)' }}>
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0" style={{ background: 'linear-gradient(135deg,var(--brand-dark),var(--brand))' }}>
                   {selected.name.split(' ').map((p) => p[0]).slice(0,2).join('').toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -4168,7 +4168,7 @@ function TestWorkflowModal({ workflowId, onClose, onTestStart, onTestDone }: {
             onClick={runTest}
             disabled={running || (!selected && !phoneInput.trim())}
             className="px-6 py-2 rounded-xl text-[13px] font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-            style={{ background: 'linear-gradient(135deg,#c2410c 0%,#ea580c 55%,#f97316 100%)' }}
+            style={{ background: 'linear-gradient(135deg,var(--brand-dark) 0%,var(--brand) 55%,var(--brand-light) 100%)' }}
           >
             {running ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Running…</> : <><Play className="w-3.5 h-3.5" /> Run Test</>}
           </button>
@@ -4653,7 +4653,7 @@ export default function WorkflowEditorPage() {
 
   const publishStyle = workflow.status === 'active'
     ? { background: '#1c1410' }
-    : { background: 'linear-gradient(135deg,#c2410c,#ea580c)', boxShadow: '0 2px 8px rgba(234,88,12,0.3)' };
+    : { background: 'linear-gradient(135deg,var(--brand-dark),var(--brand))', boxShadow: '0 2px 8px rgba(234,88,12,0.3)' };
 
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ background: '#f0ece7' }}>
@@ -4663,7 +4663,7 @@ export default function WorkflowEditorPage() {
 
         {/* Left: back + breadcrumb */}
         <div className="flex items-center gap-2.5">
-          <button onClick={() => navigate('/automation')} className="p-1.5 rounded-lg hover:bg-[#faf8f6] text-[#7a6b5c] transition-colors">
+          <button onClick={() => navigate('/automation')} className="p-1.5 rounded-lg hover:bg-[var(--app-bg)] text-[#7a6b5c] transition-colors">
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div className="flex items-center gap-1.5 text-[13px]">
@@ -4682,7 +4682,7 @@ export default function WorkflowEditorPage() {
 
         {/* Center: testing mode pill */}
         <div
-          className="flex items-center gap-2 bg-[#faf8f6] border border-black/[0.06] rounded-xl px-3.5 py-1.5"
+          className="flex items-center gap-2 bg-[var(--app-bg)] border border-black/[0.06] rounded-xl px-3.5 py-1.5"
           title={!canGoLive && workflow.status !== 'active' ? goLiveBlockReason ?? undefined : undefined}
         >
           <span className="text-[11px] font-semibold text-[#7a6b5c]">Testing mode</span>
@@ -4731,7 +4731,7 @@ export default function WorkflowEditorPage() {
             {workflow.status === 'active' ? <><PauseCircle className="w-3.5 h-3.5" /><span className="ml-1">Pause</span></> : <><Play className="w-3.5 h-3.5" /><span className="ml-1">Publish</span></>}
           </button>
           <div className="relative" ref={menuRef}>
-            <button onClick={() => setShowMenuDropdown((v) => !v)} className="w-8 h-8 rounded-lg border border-black/[0.08] hover:bg-[#faf8f6] flex items-center justify-center transition-colors">
+            <button onClick={() => setShowMenuDropdown((v) => !v)} className="w-8 h-8 rounded-lg border border-black/[0.08] hover:bg-[var(--app-bg)] flex items-center justify-center transition-colors">
               <Settings className="w-3.5 h-3.5 text-[#7a6b5c]" />
             </button>
             {showMenuDropdown && (
@@ -4835,7 +4835,7 @@ export default function WorkflowEditorPage() {
           {/* ── Preview floating card (bottom-left) ── */}
           {previewContent && (
             <div className="absolute bottom-20 left-5 w-64 bg-white rounded-2xl shadow-2xl border border-black/[0.06] z-20 overflow-hidden" style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-[#faf8f6]">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-[var(--app-bg)]">
                 <span className="text-[13px] font-bold text-[#1c1410]">Preview</span>
                 <button onClick={() => setPreviewContent(null)} className="w-5 h-5 rounded-md hover:bg-gray-200 flex items-center justify-center transition-colors">
                   <X className="w-3 h-3 text-gray-400" />
@@ -4940,7 +4940,7 @@ export default function WorkflowEditorPage() {
                 {panelTab === 'history' ? (
                   <div className="space-y-2">
                     {['Just now', '2 min ago', '10 min ago', 'Yesterday'].map((t, i) => (
-                      <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-[#faf8f6] border border-black/[0.04]">
+                      <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-[var(--app-bg)] border border-black/[0.04]">
                         <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                           <Clock className="w-3.5 h-3.5 text-primary" />
                         </div>
@@ -4954,7 +4954,7 @@ export default function WorkflowEditorPage() {
                 ) : panelTab === 'preview' ? (
                   <div className="space-y-4">
                     <p className="text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c]">Message Preview</p>
-                    <div className="rounded-xl border border-black/[0.06] bg-[#faf8f6] p-4 space-y-3">
+                    <div className="rounded-xl border border-black/[0.06] bg-[var(--app-bg)] p-4 space-y-3">
                       {selectedNode?.actionType === 'send_email' && (
                         <>
                           <div className="text-[11px] text-[#7a6b5c]"><span className="font-bold text-[#1c1410]">From:</span> {(selectedNode.config.fromName as string) || 'Your Team'}</div>
@@ -5049,8 +5049,8 @@ export default function WorkflowEditorPage() {
               </div>
 
               {/* Footer */}
-              <div className="flex gap-2 px-5 py-4 border-t border-black/[0.06] shrink-0 bg-[#faf8f6]">
-                <Button className="flex-1 text-[12px]" style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)', color: 'white' }} onClick={() => toast.success('Step saved')}>
+              <div className="flex gap-2 px-5 py-4 border-t border-black/[0.06] shrink-0 bg-[var(--app-bg)]">
+                <Button className="flex-1 text-[12px]" style={{ background: 'linear-gradient(135deg,var(--brand-dark),var(--brand))', color: 'white' }} onClick={() => toast.success('Step saved')}>
                   <Check className="w-3.5 h-3.5 mr-1" /> Save Step
                 </Button>
                 {selectedNodeIsTrigger && (
@@ -5146,7 +5146,7 @@ export default function WorkflowEditorPage() {
             <p className="text-[13px] text-[#7a6b5c] mb-6">A workflow must have a trigger before it can be published. Choose a trigger from the trigger node first.</p>
             <button
               onClick={() => setShowNoTriggerPopup(false)}
-              className="w-full py-2.5 rounded-xl bg-[#c2410c] hover:bg-[#ea580c] text-white text-[13px] font-bold transition-colors"
+              className="w-full py-2.5 rounded-xl bg-[var(--brand-dark)] hover:bg-[var(--brand)] text-white text-[13px] font-bold transition-colors"
             >
               Got it
             </button>

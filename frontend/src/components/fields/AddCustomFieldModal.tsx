@@ -279,7 +279,7 @@ export function AddCustomFieldModal({
               onClick={handleSave}
               disabled={saving}
               className="flex-1 py-2.5 rounded-lg text-[13px] font-bold text-white disabled:opacity-60 flex items-center justify-center gap-1.5"
-              style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}
+              style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}
             >
               {saving
                 ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Creating…</>

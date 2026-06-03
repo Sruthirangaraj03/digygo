@@ -93,10 +93,10 @@ function Modal({ title, onClose, children, footer }: {
       <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
         <div className="px-5 py-4 border-b border-black/5 flex items-center justify-between">
           <p className="text-[15px] font-bold text-[#1c1410]">{title}</p>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors"><X size={15} /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] transition-colors"><X size={15} /></button>
         </div>
         <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">{children}</div>
-        <div className="flex justify-end gap-2 px-5 py-4 border-t border-black/5 bg-[#faf8f6]">{footer}</div>
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-black/5 bg-[var(--app-bg)]">{footer}</div>
       </div>
     </div>
   );
@@ -451,7 +451,7 @@ function WaPersonalModal({ onClose, onConnected }: { onClose: () => void; onConn
       <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
         <div className="px-5 py-4 border-b border-black/5 flex items-center justify-between">
           <p className="text-[15px] font-bold text-[#1c1410]">Connect WhatsApp (Personal)</p>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c]"><X size={15} /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c]"><X size={15} /></button>
         </div>
 
         <div className="p-6 flex flex-col items-center gap-4">
@@ -504,7 +504,7 @@ function WaPersonalModal({ onClose, onConnected }: { onClose: () => void; onConn
           )}
         </div>
 
-        <div className="px-5 py-4 border-t border-black/5 bg-[#faf8f6]">
+        <div className="px-5 py-4 border-t border-black/5 bg-[var(--app-bg)]">
           <p className="text-[10.5px] text-[#b09e8d] text-center leading-relaxed">
             Sends messages from your linked number. Avoid mass messaging to prevent WhatsApp from banning the number.
           </p>
@@ -615,7 +615,7 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
         <div className="px-5 py-4 border-b border-black/5 flex items-center justify-between">
           <div className="flex items-center gap-2">
             {view === 'add' && configs.length > 0 && (
-              <button onClick={() => setView('list')} className="p-1 rounded hover:bg-[#f5ede3] text-[#7a6b5c]">
+              <button onClick={() => setView('list')} className="p-1 rounded hover:bg-[var(--accent-tint)] text-[#7a6b5c]">
                 <ChevronLeft size={16} />
               </button>
             )}
@@ -623,7 +623,7 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
               {view === 'list' ? 'Google Sheets' : 'Connect a Sheet'}
             </p>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c]"><X size={15} /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c]"><X size={15} /></button>
         </div>
 
         {/* Body */}
@@ -639,7 +639,7 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
               </div>
               <div className="space-y-2">
                 {configs.map((c) => (
-                  <div key={c.id} className="flex items-center gap-3 bg-[#faf8f6] rounded-xl border border-black/5 px-4 py-3">
+                  <div key={c.id} className="flex items-center gap-3 bg-[var(--app-bg)] rounded-xl border border-black/5 px-4 py-3">
                     <div className="flex-1 min-w-0">
                       <p className="text-[13px] font-semibold text-[#1c1410] truncate">{c.spreadsheet_name ?? c.spreadsheet_id}</p>
                       <p className="text-[11px] text-[#9e8e7e]">Synced up to row {c.last_row_synced}</p>
@@ -705,7 +705,7 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-2 px-5 py-4 border-t border-black/5 bg-[#faf8f6]">
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-black/5 bg-[var(--app-bg)]">
           <Button variant="outline" onClick={onClose}>Close</Button>
           {view === 'add' && headers.length > 0 && (
             <Button onClick={saveConfig} disabled={saving}>
@@ -775,10 +775,10 @@ function SuperfoneModal({ onClose, onSaved, tenantId }: { onClose: () => void; o
         <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#5c5245]">Your CRM Webhook URL</p>
         <p className="text-[11px] text-[#7a6b5c] leading-relaxed">Copy this URL into your Superfone dashboard under Webhook settings:</p>
         <div className="flex items-center gap-2 mt-1">
-          <code className="text-[10.5px] text-[#c2410c] bg-white rounded-lg px-2.5 py-1.5 flex-1 break-all border border-black/5">{webhookUrl}</code>
+          <code className="text-[10.5px] text-[var(--brand-dark)] bg-white rounded-lg px-2.5 py-1.5 flex-1 break-all border border-black/5">{webhookUrl}</code>
           <button
             onClick={() => { navigator.clipboard.writeText(webhookUrl); toast.success('Copied!'); }}
-            className="shrink-0 text-[11px] font-semibold text-white bg-[#c2410c] rounded-lg px-2.5 py-1.5 hover:bg-[#a83808] transition-colors"
+            className="shrink-0 text-[11px] font-semibold text-white bg-[var(--brand-dark)] rounded-lg px-2.5 py-1.5 hover:bg-[#a83808] transition-colors"
           >
             Copy
           </button>
@@ -951,7 +951,7 @@ export default function IntegrationsPage() {
       <div className="flex items-center gap-2.5">
         <button
           onClick={() => navigate('/settings')}
-          className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-[#1c1410] transition-colors"
+          className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] hover:text-[#1c1410] transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
@@ -1058,7 +1058,7 @@ export default function IntegrationsPage() {
               </button>
             )}
             <button
-              className="flex items-center justify-center gap-1.5 text-[12px] font-semibold text-[#7a6b5c] border border-black/10 rounded-lg px-3 py-1.5 hover:bg-[#f5ede3] hover:text-[#c2410c] transition-colors"
+              className="flex items-center justify-center gap-1.5 text-[12px] font-semibold text-[#7a6b5c] border border-black/10 rounded-lg px-3 py-1.5 hover:bg-[var(--accent-tint)] hover:text-[var(--brand-dark)] transition-colors"
               onClick={() => navigate('/settings/integrations/wa-personal')}
             >
               <BarChart2 className="w-3.5 h-3.5" />Analytics

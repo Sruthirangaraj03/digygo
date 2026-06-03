@@ -54,7 +54,7 @@ export default function AutomationOverviewPage() {
             <div
               key={s.label}
               className="rounded-2xl px-6 py-5 flex flex-col justify-between text-white hover:-translate-y-1 transition-all duration-300 cursor-pointer"
-              style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 8px 32px rgba(234,88,12,0.28)' }}
+              style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 8px 32px rgba(234,88,12,0.28)' }}
             >
               <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center mb-4">
                 <s.icon className="w-5 h-5 text-white" />

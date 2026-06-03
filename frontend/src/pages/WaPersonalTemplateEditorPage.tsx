@@ -72,14 +72,14 @@ function renderHtml(text: string, sample: Record<string, string>): string {
   // Substitute {%key%} value tokens (Values tab)
   t = t.replace(/\{%(\w+)%\}/g, (match, key) =>
     key in sample
-      ? `<span style="color:#c2410c;font-weight:500">${sample[key]}</span>`
-      : `<span style="color:#f97316">${match}</span>`
+      ? `<span style="color:var(--brand-dark);font-weight:500">${sample[key]}</span>`
+      : `<span style="color:var(--brand-light)">${match}</span>`
   );
   // Substitute {key} lead variables
   t = t.replace(/\{(\w+)\}/g, (match, key) =>
     key in sample
-      ? `<span style="color:#c2410c;font-weight:500">${sample[key]}</span>`
-      : `<span style="color:#f97316">${match}</span>`
+      ? `<span style="color:var(--brand-dark);font-weight:500">${sample[key]}</span>`
+      : `<span style="color:var(--brand-light)">${match}</span>`
   );
   t = t.replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>');
   t = t.replace(/_([^_\n]+)_/g, '<em>$1</em>');
@@ -348,7 +348,7 @@ export default function WaPersonalTemplateEditorPage() {
         <div className="flex items-center gap-1.5 min-w-0">
           <button
             onClick={() => navigate('/automation/templates?tab=wa_personal')}
-            className="flex items-center gap-1.5 text-[13px] text-[#7a6b5c] hover:text-[#c2410c] transition-colors group shrink-0"
+            className="flex items-center gap-1.5 text-[13px] text-[#7a6b5c] hover:text-[var(--brand-dark)] transition-colors group shrink-0"
           >
             <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
             <span>Templates</span>
@@ -377,7 +377,7 @@ export default function WaPersonalTemplateEditorPage() {
             size="sm"
             onClick={handleSave}
             disabled={saving}
-            className="h-8 text-[13px] bg-[#ea580c] hover:bg-[#c2410c] text-white border-0 shadow-sm px-4"
+            className="h-8 text-[13px] bg-[var(--brand)] hover:bg-[var(--brand-dark)] text-white border-0 shadow-sm px-4"
           >
             {saving
               ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Saving…</>
@@ -754,7 +754,7 @@ export default function WaPersonalTemplateEditorPage() {
                     className={cn(
                       'px-3 py-2.5 text-[12px] font-medium border-b-2 transition-colors whitespace-nowrap',
                       activeTab === tab
-                        ? 'border-[#ea580c] text-[#ea580c]'
+                        ? 'border-[var(--brand)] text-[var(--brand)]'
                         : 'border-transparent text-[#7a6b5c] hover:text-[#1c1410]'
                     )}
                   >

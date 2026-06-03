@@ -10,6 +10,7 @@ import { formatDistanceToNow, format } from 'date-fns';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
 } from 'recharts';
+import { brandHex } from '@/lib/brand';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface FormRow {
@@ -71,7 +72,7 @@ function KpiCard({ label, value, sub, icon: Icon, accent = false }: {
 }) {
   if (accent) return (
     <div className="rounded-xl px-4 py-3 flex items-center gap-3 text-white"
-      style={{ background: 'linear-gradient(135deg,#c2410c 0%,#ea580c 55%,#f97316 100%)', boxShadow: '0 4px 20px rgba(234,88,12,0.2)' }}>
+      style={{ background: 'linear-gradient(135deg,var(--brand-dark) 0%,var(--brand) 55%,var(--brand-light) 100%)', boxShadow: '0 4px 20px rgba(234,88,12,0.2)' }}>
       <div className="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center shrink-0">
         <Icon className="w-4 h-4 text-white" />
       </div>
@@ -152,7 +153,7 @@ function ExpandedRow({ form }: { form: FormRow }) {
   const hasData  = data && data.sparkline.some(d => d.count > 0);
 
   return (
-    <div className="px-4 py-4 bg-[#faf8f6] border-t border-black/[0.06]">
+    <div className="px-4 py-4 bg-[var(--app-bg)] border-t border-black/[0.06]">
       <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-4">
 
         {/* Sparkline */}
@@ -199,7 +200,7 @@ function ExpandedRow({ form }: { form: FormRow }) {
                 />
                 <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                   {data!.sparkline.map((entry, i) => (
-                    <Cell key={i} fill={entry.count > 0 ? '#ea580c' : '#f0ece8'} />
+                    <Cell key={i} fill={entry.count > 0 ? brandHex() : '#f0ece8'} />
                   ))}
                   <LabelList
                     dataKey="count"
@@ -228,10 +229,10 @@ function ExpandedRow({ form }: { form: FormRow }) {
                 <div
                   key={lead.id}
                   onClick={() => navigate('/leads')}
-                  className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-[#faf8f6] transition-colors cursor-pointer"
+                  className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-[var(--app-bg)] transition-colors cursor-pointer"
                 >
                   <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0"
-                    style={{ background: 'linear-gradient(135deg,#c2410c,#f97316)' }}>
+                    style={{ background: 'linear-gradient(135deg,var(--brand-dark),var(--brand-light))' }}>
                     {(lead.name ?? '?')[0].toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -370,7 +371,7 @@ export default function LeadGenerationPage() {
           <button
             onClick={() => navigate('/lead-generation/custom-forms')}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold text-white transition-colors shadow-sm"
-            style={{ background: 'linear-gradient(135deg,#c2410c,#f97316)' }}
+            style={{ background: 'linear-gradient(135deg,var(--brand-dark),var(--brand-light))' }}
           >
             <FileText className="w-3.5 h-3.5" /> New Form
           </button>
@@ -438,7 +439,7 @@ export default function LeadGenerationPage() {
         </div>
 
         {/* Column headers */}
-        <div className="grid grid-cols-[2fr_1fr_60px_60px_80px_110px_40px] gap-2 items-center px-4 py-2 border-b border-black/[0.04] bg-[#faf8f6]">
+        <div className="grid grid-cols-[2fr_1fr_60px_60px_80px_110px_40px] gap-2 items-center px-4 py-2 border-b border-black/[0.04] bg-[var(--app-bg)]">
           <SortBtn col="name"         current={sortBy} dir={sortDir} onSort={handleSort}>Form</SortBtn>
           <span className="text-[10px] font-bold uppercase tracking-wide text-[#b09e8d]">Status</span>
           <SortBtn col="leads_today"  current={sortBy} dir={sortDir} onSort={handleSort}>Today</SortBtn>
@@ -476,7 +477,7 @@ export default function LeadGenerationPage() {
                 <div key={form.id}>
                   <div
                     onClick={() => handleExpand(form)}
-                    className="grid grid-cols-[2fr_1fr_60px_60px_80px_110px_40px] gap-2 items-center px-4 py-3 hover:bg-[#faf8f6] cursor-pointer transition-colors"
+                    className="grid grid-cols-[2fr_1fr_60px_60px_80px_110px_40px] gap-2 items-center px-4 py-3 hover:bg-[var(--app-bg)] cursor-pointer transition-colors"
                   >
                     {/* Name + channel */}
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -528,7 +529,7 @@ export default function LeadGenerationPage() {
 
         {/* Footer count */}
         {!loading && filteredForms.length > 0 && (
-          <div className="px-4 py-2.5 border-t border-black/[0.04] bg-[#faf8f6]">
+          <div className="px-4 py-2.5 border-t border-black/[0.04] bg-[var(--app-bg)]">
             <p className="text-[11px] text-[#b09e8d]">
               {filteredForms.length} form{filteredForms.length !== 1 ? 's' : ''}
               {search ? ` matching "${search}"` : ''}

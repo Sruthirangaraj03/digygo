@@ -90,7 +90,7 @@ export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => vo
       )}
 
       <aside className={cn(
-        'fixed top-0 left-0 z-50 h-full w-[218px] bg-[#faf8f6] border-r border-black/5 flex flex-col transition-transform duration-300',
+        'fixed top-0 left-0 z-50 h-full w-[218px] bg-[var(--app-bg)] border-r border-black/5 flex flex-col transition-transform duration-300',
         'md:translate-x-0 md:static md:z-auto',
         open ? 'translate-x-0' : '-translate-x-full'
       )}>
@@ -113,7 +113,7 @@ export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => vo
           )}
           <button
             onClick={onClose}
-            className="absolute right-2 top-1/2 -translate-y-1/2 md:hidden p-1.5 rounded-lg text-[#7a6b5c] hover:bg-[#f5ede3] transition-colors"
+            className="absolute right-2 top-1/2 -translate-y-1/2 md:hidden p-1.5 rounded-lg text-[#7a6b5c] hover:bg-[var(--accent-tint)] transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -130,8 +130,8 @@ export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => vo
                     className={cn(
                       'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200',
                       isChildActive(item)
-                        ? 'bg-[#fde8d5] text-primary font-semibold'
-                        : 'text-[#6b4f30] hover:bg-[#f5ede3] hover:text-primary'
+                        ? 'bg-[var(--accent-tint)] text-primary font-semibold'
+                        : 'text-[#6b4f30] hover:bg-[var(--accent-tint)] hover:text-primary'
                     )}
                   >
                     <item.icon className="w-[18px] h-[18px] shrink-0" />
@@ -150,8 +150,8 @@ export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => vo
                           className={cn(
                             'block px-3 py-2 rounded-xl text-[13px] transition-all duration-200',
                             isActive(child.path)
-                              ? 'bg-[#fde8d5] text-primary font-semibold'
-                              : 'text-[#7a6b5c] hover:bg-[#f5ede3] hover:text-primary'
+                              ? 'bg-[var(--accent-tint)] text-primary font-semibold'
+                              : 'text-[#7a6b5c] hover:bg-[var(--accent-tint)] hover:text-primary'
                           )}
                         >
                           {child.label}
@@ -167,8 +167,8 @@ export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => vo
                   className={cn(
                     'flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200',
                     isActive(item.path)
-                      ? 'bg-[#fde8d5] text-primary font-semibold'
-                      : 'text-[#6b4f30] hover:bg-[#f5ede3] hover:text-primary'
+                      ? 'bg-[var(--accent-tint)] text-primary font-semibold'
+                      : 'text-[#6b4f30] hover:bg-[var(--accent-tint)] hover:text-primary'
                   )}
                 >
                   <item.icon className="w-[18px] h-[18px] shrink-0" />

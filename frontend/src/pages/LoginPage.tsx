@@ -40,14 +40,14 @@ export default function LoginPage() {
 
   return (
     <div
-      className="min-h-[100dvh] flex flex-col items-center justify-center bg-[#faf8f6] font-sans text-[#1c1410]"
+      className="min-h-[100dvh] flex flex-col items-center justify-center bg-[var(--app-bg)] font-sans text-[#1c1410]"
       style={{ WebkitTapHighlightColor: 'transparent', ...(isCustomDomain && loginBgColor ? { background: loginBgColor } : {}) }}
     >
       {/* Ambient background blobs — hidden when a custom login background is set */}
       {!(isCustomDomain && loginBgColor) && (
         <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-[5%] -left-[10%] w-[50%] h-[40%] rounded-full bg-[#c2410c]/5 blur-[80px]" />
-          <div className="absolute bottom-[10%] -right-[10%] w-[45%] h-[40%] rounded-full bg-[#fed7aa]/30 blur-[80px]" />
+          <div className="absolute -top-[5%] -left-[10%] w-[50%] h-[40%] rounded-full bg-primary/5 blur-[80px]" />
+          <div className="absolute bottom-[10%] -right-[10%] w-[45%] h-[40%] rounded-full bg-[var(--accent-tint)]/30 blur-[80px]" />
         </div>
       )}
 
@@ -147,7 +147,7 @@ export default function LoginPage() {
                 className="w-full h-[54px] rounded-xl text-white text-[16px] font-bold flex items-center justify-center gap-2 active:scale-[0.97] transition-all disabled:opacity-70 shadow-lg"
                 style={isCustomDomain && brandColor !== '#c2410c'
                   ? { background: brandColor }
-                  : { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }
+                  : { background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }
                 }
               >
                 <span>{loading ? 'Signing in…' : 'Sign In'}</span>

@@ -405,7 +405,7 @@ function StandardFieldModal({ field, onClose, onSave }: {
         {step === 'detail' && (
           <div className="flex gap-2 px-6 py-4 border-t border-black/5">
             <button onClick={onClose} className="flex-1 py-2.5 rounded-lg text-[13px] font-semibold text-[#7a6b5c] hover:bg-gray-100 transition-colors">Cancel</button>
-            <button onClick={handleSave} className="flex-1 py-2.5 rounded-lg text-[13px] font-bold text-white" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>
+            <button onClick={handleSave} className="flex-1 py-2.5 rounded-lg text-[13px] font-bold text-white" style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}>
               {field ? 'Save Changes' : 'Create Field'}
             </button>
           </div>
@@ -511,7 +511,7 @@ function AdditionalFieldModal({ pipelineId, field, onClose, onSave }: {
         {step === 'detail' && (
           <div className="flex gap-2 px-6 py-4 border-t border-black/5">
             <button onClick={onClose} className="flex-1 py-2.5 rounded-lg text-[13px] font-semibold text-[#7a6b5c] hover:bg-gray-100 transition-colors">Cancel</button>
-            <button onClick={handleSave} className="flex-1 py-2.5 rounded-lg text-[13px] font-bold text-white" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>
+            <button onClick={handleSave} className="flex-1 py-2.5 rounded-lg text-[13px] font-bold text-white" style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}>
               {field ? 'Save Changes' : 'Add Question'}
             </button>
           </div>
@@ -575,7 +575,7 @@ function ValueModal({ value, onClose, onSave }: {
 
         <div className="flex gap-2 px-6 py-4 border-t border-black/5">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-lg text-[13px] font-semibold text-[#7a6b5c] hover:bg-gray-100 transition-colors">Cancel</button>
-          <button onClick={handleSave} className="flex-1 py-2.5 rounded-lg text-[13px] font-bold text-white" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>
+          <button onClick={handleSave} className="flex-1 py-2.5 rounded-lg text-[13px] font-bold text-white" style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}>
             {value ? 'Save' : 'Create Value'}
           </button>
         </div>
@@ -705,7 +705,7 @@ export default function FieldsPage() {
     { key: 'values' as const,     label: 'Values',             count: values.length },
   ];
 
-  const shadowStyle = { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 12px rgba(234,88,12,0.25)' };
+  const shadowStyle = { background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 12px rgba(234,88,12,0.25)' };
 
   return (
     <div className="flex flex-col flex-1 animate-fade-in">
@@ -776,7 +776,7 @@ export default function FieldsPage() {
           {activeGroup !== 'Custom' && (
             <div className="bg-white rounded-2xl border border-black/[0.06] overflow-hidden">
               {/* Column headers */}
-              <div className="grid gap-3 px-4 py-2.5 border-b border-black/[0.06] bg-[#faf8f6] grid-cols-[1fr_1.3fr_80px]">
+              <div className="grid gap-3 px-4 py-2.5 border-b border-black/[0.06] bg-[var(--app-bg)] grid-cols-[1fr_1.3fr_80px]">
                 <span className="text-[10px] font-bold text-[#7a6b5c] uppercase tracking-wider">Name</span>
                 <span className="text-[10px] font-bold text-[#7a6b5c] uppercase tracking-wider">Custom Value</span>
                 <span className="text-[10px] font-bold text-[#7a6b5c] uppercase tracking-wider text-right">Copy</span>
@@ -785,14 +785,14 @@ export default function FieldsPage() {
               {filteredStandard.system.filter((f) => f.group === activeGroup).map((f) => {
                 const d = dataTypeInfo(f.type);
                 return (
-                  <div key={f.id} className="grid gap-3 px-4 py-2.5 border-b border-black/[0.04] last:border-b-0 items-center hover:bg-[#faf8f6] transition-colors grid-cols-[1fr_1.3fr_80px]">
+                  <div key={f.id} className="grid gap-3 px-4 py-2.5 border-b border-black/[0.04] last:border-b-0 items-center hover:bg-[var(--app-bg)] transition-colors grid-cols-[1fr_1.3fr_80px]">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-6 h-6 rounded-md bg-[#faf8f6] flex items-center justify-center text-[#7a6b5c] shrink-0">
+                      <div className="w-6 h-6 rounded-md bg-[var(--app-bg)] flex items-center justify-center text-[#7a6b5c] shrink-0">
                         <d.Icon className="w-3 h-3" />
                       </div>
                       <p className="text-[13px] text-[#1c1410] font-medium truncate">{f.name}</p>
                     </div>
-                    <code className="text-[11px] font-mono text-[#7a6b5c] bg-[#faf8f6] px-2 py-1 rounded truncate inline-block">{`{%${f.slug}%}`}</code>
+                    <code className="text-[11px] font-mono text-[#7a6b5c] bg-[var(--app-bg)] px-2 py-1 rounded truncate inline-block">{`{%${f.slug}%}`}</code>
                     <div className="flex items-center justify-end">
                       <button onClick={() => copyToken(f.slug)} title="Copy unique key" className="w-7 h-7 rounded-lg hover:bg-[#faf0e8] flex items-center justify-center text-[#7a6b5c] hover:text-primary transition-colors">
                         <Copy className="w-3.5 h-3.5" />
@@ -813,7 +813,7 @@ export default function FieldsPage() {
           {/* Custom group */}
           {activeGroup === 'Custom' && (
             <div className="bg-white rounded-2xl border border-black/[0.06] overflow-hidden">
-              <div className="grid grid-cols-[1fr_1.3fr_90px_130px] gap-3 px-4 py-2.5 border-b border-black/[0.06] bg-[#faf8f6]">
+              <div className="grid grid-cols-[1fr_1.3fr_90px_130px] gap-3 px-4 py-2.5 border-b border-black/[0.06] bg-[var(--app-bg)]">
                 <span className="text-[10px] font-bold text-[#7a6b5c] uppercase tracking-wider">Field Name</span>
                 <span className="text-[10px] font-bold text-[#7a6b5c] uppercase tracking-wider">Unique Key</span>
                 <span className="text-[10px] font-bold text-[#7a6b5c] uppercase tracking-wider">Status</span>
@@ -832,7 +832,7 @@ export default function FieldsPage() {
                 filteredStandard.custom.map((f) => {
                   const d = dataTypeInfo(f.type);
                   return (
-                    <div key={f.id} className="group grid grid-cols-[1fr_1.3fr_90px_130px] gap-3 px-4 py-2.5 border-b border-black/[0.04] last:border-b-0 items-center hover:bg-[#faf8f6] transition-colors">
+                    <div key={f.id} className="group grid grid-cols-[1fr_1.3fr_90px_130px] gap-3 px-4 py-2.5 border-b border-black/[0.04] last:border-b-0 items-center hover:bg-[var(--app-bg)] transition-colors">
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div className="w-6 h-6 rounded-md bg-primary/10 flex items-center justify-center text-primary shrink-0">
                           <d.Icon className="w-3 h-3" />
@@ -842,7 +842,7 @@ export default function FieldsPage() {
                           <p className="text-[10px] text-[#b09e8d]">{f.type}{f.options && f.options.length > 0 ? ` · ${f.options.length} options` : ''}</p>
                         </div>
                       </div>
-                      <code className="text-[11px] font-mono text-[#7a6b5c] bg-[#faf8f6] px-2 py-1 rounded truncate inline-block">{`{%${f.slug}%}`}</code>
+                      <code className="text-[11px] font-mono text-[#7a6b5c] bg-[var(--app-bg)] px-2 py-1 rounded truncate inline-block">{`{%${f.slug}%}`}</code>
                       <button
                         onClick={async () => {
                           const next = !(f.is_active !== false);
@@ -898,7 +898,7 @@ export default function FieldsPage() {
               {filteredPipelineQuestions.map((f, idx) => {
                 const d = dataTypeInfo(f.type);
                 return (
-                  <div key={f.id} className="group flex items-center gap-3 px-4 py-3.5 border-b border-black/[0.04] last:border-b-0 hover:bg-[#faf8f6] transition-colors">
+                  <div key={f.id} className="group flex items-center gap-3 px-4 py-3.5 border-b border-black/[0.04] last:border-b-0 hover:bg-[var(--app-bg)] transition-colors">
                     <GripVertical className="w-4 h-4 text-[#c4b09e] opacity-0 group-hover:opacity-100 transition-opacity shrink-0 cursor-grab" />
                     <span className="text-[11px] font-bold text-[#b09e8d] w-5 shrink-0">Q{idx + 1}</span>
                     <div className="flex-1 min-w-0">
@@ -909,7 +909,7 @@ export default function FieldsPage() {
                         )}
                       </p>
                       <div className="flex items-center gap-2 mt-1">
-                        <span className="inline-flex items-center gap-1 text-[10px] text-[#7a6b5c] bg-[#faf8f6] px-1.5 py-0.5 rounded">
+                        <span className="inline-flex items-center gap-1 text-[10px] text-[#7a6b5c] bg-[var(--app-bg)] px-1.5 py-0.5 rounded">
                           <d.Icon className="w-2.5 h-2.5" /> {f.type}
                         </span>
                         {f.options && f.options.length > 0 && <span className="text-[10px] text-[#b09e8d]">{f.options.length} options</span>}
@@ -976,7 +976,7 @@ export default function FieldsPage() {
           ) : (
             <div className="bg-white rounded-2xl border border-black/[0.06] overflow-hidden">
               {/* Table header */}
-              <div className="hidden sm:grid grid-cols-[1fr_200px_1fr_100px] gap-3 px-4 py-2.5 border-b border-black/[0.04] bg-[#faf8f6]">
+              <div className="hidden sm:grid grid-cols-[1fr_200px_1fr_100px] gap-3 px-4 py-2.5 border-b border-black/[0.04] bg-[var(--app-bg)]">
                 <span className="text-[10px] font-bold text-[#7a6b5c] uppercase tracking-wider">Name</span>
                 <span className="text-[10px] font-bold text-[#7a6b5c] uppercase tracking-wider">Unique Key</span>
                 <span className="text-[10px] font-bold text-[#7a6b5c] uppercase tracking-wider">Replaces with</span>
@@ -986,7 +986,7 @@ export default function FieldsPage() {
               {filteredValues.map((v) => {
                 const token = slugify(v.name);
                 return (
-                <div key={v.id} className="group grid grid-cols-1 sm:grid-cols-[1fr_200px_1fr_100px] gap-3 px-4 py-3 border-b border-black/[0.04] last:border-b-0 hover:bg-[#faf8f6] transition-colors items-center">
+                <div key={v.id} className="group grid grid-cols-1 sm:grid-cols-[1fr_200px_1fr_100px] gap-3 px-4 py-3 border-b border-black/[0.04] last:border-b-0 hover:bg-[var(--app-bg)] transition-colors items-center">
                   <p className="text-[13px] text-[#1c1410] font-medium truncate">{v.name}</p>
                   <button onClick={() => copyToken(token)} className="text-left">
                     <code className="text-[11px] font-mono text-primary bg-primary/10 hover:bg-primary/15 px-2 py-1 rounded inline-block transition-colors">{`{%${token}%}`}</code>

@@ -11,6 +11,7 @@ import {
 import { format, parseISO } from 'date-fns';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { brandHex } from '@/lib/brand';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface Analytics {
@@ -72,7 +73,7 @@ function KpiCard({ label, value, prev, sub, icon: Icon, accent }: {
 
   if (accent) return (
     <div className="rounded-xl px-4 py-3.5 flex items-center gap-3"
-      style={{ background: 'linear-gradient(135deg,#c2410c 0%,#ea580c 55%,#f97316 100%)', boxShadow: '0 4px 20px rgba(234,88,12,0.25)' }}>
+      style={{ background: 'linear-gradient(135deg,var(--brand-dark) 0%,var(--brand) 55%,var(--brand-light) 100%)', boxShadow: '0 4px 20px rgba(234,88,12,0.25)' }}>
       <div className="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center shrink-0">
         <Icon className="w-4 h-4 text-white" />
       </div>
@@ -220,7 +221,7 @@ export default function InboxOverviewPage() {
         </div>
         <button
           onClick={() => { fetchMain(period); fetchLogs(period, direction, search, logPage); }}
-          className="flex items-center gap-1.5 text-[12px] font-semibold text-[#7a6b5c] border border-black/10 rounded-lg px-3 py-1.5 hover:bg-[#f5ede3] transition-colors"
+          className="flex items-center gap-1.5 text-[12px] font-semibold text-[#7a6b5c] border border-black/10 rounded-lg px-3 py-1.5 hover:bg-[var(--accent-tint)] transition-colors"
         >
           <RefreshCw className="w-3.5 h-3.5" />Refresh
         </button>
@@ -233,8 +234,8 @@ export default function InboxOverviewPage() {
             className={cn(
               'text-[12px] font-semibold px-3.5 py-1.5 rounded-lg border transition-all',
               period === pr.value
-                ? 'bg-[#ea580c] text-white border-[#ea580c] shadow-sm'
-                : 'bg-white text-[#7a6b5c] border-black/10 hover:border-[#ea580c]/40 hover:text-[#ea580c]',
+                ? 'bg-[var(--brand)] text-white border-[var(--brand)] shadow-sm'
+                : 'bg-white text-[#7a6b5c] border-black/10 hover:border-primary/40 hover:text-[var(--brand)]',
             )}>
             {pr.label}
           </button>
@@ -283,7 +284,7 @@ export default function InboxOverviewPage() {
           </div>
           {loading ? (
             <div className="h-[210px] flex items-center justify-center">
-              <RefreshCw className="w-5 h-5 animate-spin text-[#c2410c]" />
+              <RefreshCw className="w-5 h-5 animate-spin text-[var(--brand-dark)]" />
             </div>
           ) : volume.length === 0 ? (
             <div className="h-[210px] flex items-center justify-center text-[13px] text-[#9a8a7a]">
@@ -301,7 +302,7 @@ export default function InboxOverviewPage() {
                 <Tooltip content={<VolumeTooltip />} />
                 <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
                 <Bar dataKey="received" name="Received" fill="#bfdbfe" radius={[3, 3, 0, 0]} maxBarSize={32} />
-                <Area dataKey="sent" name="Sent" fill="rgba(234,88,12,0.12)" stroke="#ea580c" strokeWidth={2} dot={false} type="monotone" />
+                <Area dataKey="sent" name="Sent" fill="rgba(234,88,12,0.12)" stroke={brandHex()} strokeWidth={2} dot={false} type="monotone" />
               </ComposedChart>
             </ResponsiveContainer>
           )}
@@ -345,7 +346,7 @@ export default function InboxOverviewPage() {
                     </p>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <div
-                        className="h-1.5 rounded-full bg-[#ea580c] transition-all"
+                        className="h-1.5 rounded-full bg-[var(--brand)] transition-all"
                         style={{ width: `${Math.round((c.total / maxContact) * 100)}%`, minWidth: 4 }}
                       />
                       <span className="text-[9px] text-[#9a8a7a] shrink-0">{c.sent}↑ {c.received}↓</span>
@@ -374,7 +375,7 @@ export default function InboxOverviewPage() {
                 <button key={d} onClick={() => { setDirection(d); setLogPage(0); }}
                   className={cn(
                     'px-3 py-1.5 transition-colors capitalize',
-                    direction === d ? 'bg-[#ea580c] text-white' : 'text-[#7a6b5c] hover:bg-[#f5ede3]',
+                    direction === d ? 'bg-[var(--brand)] text-white' : 'text-[#7a6b5c] hover:bg-[var(--accent-tint)]',
                   )}>
                   {d}
                 </button>
@@ -387,7 +388,7 @@ export default function InboxOverviewPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search contact or phone…"
-                className="pl-8 pr-3 py-1.5 text-[12px] border border-black/10 rounded-lg w-48 focus:outline-none focus:border-[#ea580c] transition-colors"
+                className="pl-8 pr-3 py-1.5 text-[12px] border border-black/10 rounded-lg w-48 focus:outline-none focus:border-[var(--brand)] transition-colors"
               />
             </div>
           </div>
@@ -396,7 +397,7 @@ export default function InboxOverviewPage() {
         {/* Table */}
         {logsLoading ? (
           <div className="flex items-center justify-center py-12">
-            <RefreshCw className="w-5 h-5 animate-spin text-[#c2410c]" />
+            <RefreshCw className="w-5 h-5 animate-spin text-[var(--brand-dark)]" />
           </div>
         ) : logs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-14 gap-2">
@@ -420,7 +421,7 @@ export default function InboxOverviewPage() {
               </thead>
               <tbody className="divide-y divide-black/5">
                 {logs.map((row) => (
-                  <tr key={row.id} className="hover:bg-[#faf8f6] transition-colors">
+                  <tr key={row.id} className="hover:bg-[var(--app-bg)] transition-colors">
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
@@ -490,12 +491,12 @@ export default function InboxOverviewPage() {
             </span>
             <div className="flex items-center gap-1">
               <button disabled={logPage === 0} onClick={() => setLogPage((p) => p - 1)}
-                className="p-1.5 rounded-lg border border-black/10 hover:bg-[#f5ede3] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                className="p-1.5 rounded-lg border border-black/10 hover:bg-[var(--accent-tint)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
               <span className="text-[11px] font-semibold text-[#1c1410] px-2">{logPage + 1} / {totalPages}</span>
               <button disabled={logPage >= totalPages - 1} onClick={() => setLogPage((p) => p + 1)}
-                className="p-1.5 rounded-lg border border-black/10 hover:bg-[#f5ede3] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                className="p-1.5 rounded-lg border border-black/10 hover:bg-[var(--accent-tint)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                 <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>

@@ -146,7 +146,7 @@ function AddLeadModal({ onClose }: { onClose: () => void }) {
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
           {/* Opportunity pill */}
           <div>
-            <button className="px-4 py-1.5 rounded-lg text-[13px] font-bold text-white" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>
+            <button className="px-4 py-1.5 rounded-lg text-[13px] font-bold text-white" style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}>
               Opportunity
             </button>
           </div>
@@ -238,7 +238,7 @@ function AddLeadModal({ onClose }: { onClose: () => void }) {
           <p className="text-[11px] text-gray-400">Created On: {format(new Date(now), 'dd/MM/yyyy HH:mm aa').toUpperCase()}</p>
           <div className="flex gap-2">
             <button onClick={onClose} className="px-5 py-2 rounded-xl text-[13px] font-bold text-white bg-red-500 hover:bg-red-600 transition-colors">CANCEL</button>
-            <button onClick={handleSave} disabled={saving} className="px-5 py-2 rounded-xl text-[13px] font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-60" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>{saving ? 'Saving…' : 'SAVE'}</button>
+            <button onClick={handleSave} disabled={saving} className="px-5 py-2 rounded-xl text-[13px] font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-60" style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}>{saving ? 'Saving…' : 'SAVE'}</button>
           </div>
         </div>
       </div>
@@ -364,7 +364,7 @@ function FilterPanel({ filters, onChange, onClose, stages }: { filters: FilterSt
     <div className="flex items-center gap-1.5 px-3 py-3 border-t border-black/5 shrink-0">
       <button onClick={clearAll} className="text-[12px] font-semibold text-red-500 hover:text-red-600 transition-colors shrink-0 mr-1">Clear all</button>
       <button onClick={onClose} className="px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] font-semibold text-[#1c1410] hover:bg-gray-50 transition-colors shrink-0">Cancel</button>
-      <button onClick={apply} className="flex-1 py-1.5 rounded-lg text-[12px] font-bold text-white whitespace-nowrap" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 100%)' }}>Apply & Save</button>
+      <button onClick={apply} className="flex-1 py-1.5 rounded-lg text-[12px] font-bold text-white whitespace-nowrap" style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 100%)' }}>Apply & Save</button>
       <button onClick={apply} className="px-3 py-1.5 rounded-lg text-[12px] font-bold text-white shrink-0" style={{ background: 'linear-gradient(135deg, #7f1d1d 0%, #b91c1c 100%)' }}>Apply</button>
     </div>
   );
@@ -499,7 +499,7 @@ function FilterPopover({ filters, onChange, onClose, stages, anchorRef }: {
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#b09e8d]" />
           <input
             autoFocus
-            className="w-full pl-8 pr-3 py-1.5 text-[12px] bg-[#faf8f6] border border-transparent rounded-lg outline-none focus:border-primary/30 focus:bg-white placeholder:text-gray-400"
+            className="w-full pl-8 pr-3 py-1.5 text-[12px] bg-[var(--app-bg)] border border-transparent rounded-lg outline-none focus:border-primary/30 focus:bg-white placeholder:text-gray-400"
             placeholder="Search filters..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -513,7 +513,7 @@ function FilterPopover({ filters, onChange, onClose, stages, anchorRef }: {
           const sel = countFor(s.key);
           return (
             <div key={s.key}>
-              <button onClick={() => setExpanded(isOpen ? '' : s.key)} className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-[#faf8f6] transition-colors">
+              <button onClick={() => setExpanded(isOpen ? '' : s.key)} className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-[var(--app-bg)] transition-colors">
                 <span className="flex-1 text-left text-[13px] font-semibold text-[#1c1410]">{s.label}</span>
                 {sel > 0 && <span className="text-[10px] font-bold bg-primary/10 text-primary rounded-full px-2 py-0.5">{sel}</span>}
                 <ChevronDown className={cn('w-3.5 h-3.5 text-[#b09e8d] transition-transform', isOpen && 'rotate-180')} />
@@ -528,7 +528,7 @@ function FilterPopover({ filters, onChange, onClose, stages, anchorRef }: {
                         key={o.value}
                         onClick={() => s.type === 'multi' ? toggleArr(s.key, o.value) : setRadio(s.key, o.value)}
                         className={cn('w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-colors',
-                          isOn ? 'bg-[#faf0e8] text-primary' : 'hover:bg-[#faf8f6] text-[#1c1410]')}
+                          isOn ? 'bg-[#faf0e8] text-primary' : 'hover:bg-[var(--app-bg)] text-[#1c1410]')}
                       >
                         {s.type === 'multi' ? (
                           <div className={cn('w-4 h-4 rounded border-2 flex items-center justify-center shrink-0', isOn ? 'bg-primary border-primary' : 'border-gray-300')}>
@@ -551,7 +551,7 @@ function FilterPopover({ filters, onChange, onClose, stages, anchorRef }: {
         {matching.length === 0 && <p className="text-[12px] text-[#b09e8d] text-center py-6">No filters match "{search}"</p>}
       </div>
 
-      <div className="px-4 py-2 border-t border-black/5 bg-[#faf8f6] shrink-0 text-center">
+      <div className="px-4 py-2 border-t border-black/5 bg-[var(--app-bg)] shrink-0 text-center">
         <p className="text-[10px] text-[#7a6b5c]">Instant apply · <kbd className="text-[9px] bg-white border border-black/10 rounded px-1">Esc</kbd> to close</p>
       </div>
     </div>
@@ -775,7 +775,7 @@ function ImportModal({ onClose }: { onClose: () => void }) {
   };
 
   const previewRows = allRows.slice(0, 3);
-  const btnStyle = { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' };
+  const btnStyle = { background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40">
@@ -1062,7 +1062,7 @@ function NoteModal({ leadId, onClose, onCreated }: { leadId: string; onClose: ()
         </div>
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-black/5">
           <button onClick={onClose} className="px-5 py-2 rounded-xl text-[13px] font-semibold text-[#7a6b5c] hover:bg-gray-100 transition-colors">Cancel</button>
-          <button onClick={submit} disabled={saving} className="px-6 py-2 rounded-xl text-[13px] font-bold text-white hover:-translate-y-0.5 transition-all disabled:opacity-60" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}>{saving ? 'Saving…' : 'Save Note'}</button>
+          <button onClick={submit} disabled={saving} className="px-6 py-2 rounded-xl text-[13px] font-bold text-white hover:-translate-y-0.5 transition-all disabled:opacity-60" style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}>{saving ? 'Saving…' : 'Save Note'}</button>
         </div>
       </div>
     </div>
@@ -1168,7 +1168,7 @@ function FollowUpModal({ leadId, onClose, onCreated, onNoteCreated }: { leadId: 
           )}
           <div className="flex items-center justify-end gap-3 pt-1">
             <button type="button" onClick={onClose} className="px-5 py-2 rounded-xl text-[13px] font-semibold text-[#7a6b5c] hover:bg-gray-100 transition-colors">Cancel</button>
-            <button type="submit" disabled={saving} className="px-6 py-2 rounded-xl text-[13px] font-bold text-white hover:-translate-y-0.5 transition-all disabled:opacity-60" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}>
+            <button type="submit" disabled={saving} className="px-6 py-2 rounded-xl text-[13px] font-bold text-white hover:-translate-y-0.5 transition-all disabled:opacity-60" style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}>
               {saving ? 'Saving…' : isNote ? 'Save Note' : 'Schedule'}
             </button>
           </div>
@@ -1205,7 +1205,7 @@ function AssignModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
         </div>
         <div className="p-4 space-y-2">
           {staff.filter((s) => s.status === 'active').map((s) => (
-            <button key={s.id} onClick={() => setSelected(s.id)} className={cn('w-full flex items-center gap-3 p-3 rounded-lg border transition-colors text-left', selected === s.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-[#f5ede3]')}>
+            <button key={s.id} onClick={() => setSelected(s.id)} className={cn('w-full flex items-center gap-3 p-3 rounded-lg border transition-colors text-left', selected === s.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-[var(--accent-tint)]')}>
               <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary">{s.avatar}</div>
               <div><p className="text-sm font-medium">{s.name}</p><p className="text-[11px] text-[#7a6b5c] capitalize">{s.role}</p></div>
               {selected === s.id && <Check className="w-4 h-4 text-primary ml-auto" />}
@@ -1547,7 +1547,7 @@ function EditLeadModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
                     } catch (err: any) { toast.error(err.message ?? 'Failed to add follow-up'); }
                   }}
                   className="w-full py-2 rounded-xl text-white text-[13px] font-bold transition-all hover:-translate-y-0.5"
-                  style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}
+                  style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}
                 >ADD</button>
               </div>
 
@@ -1703,7 +1703,7 @@ function EditLeadModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
                     }
                   }}
                   className="px-8 py-2 rounded-xl text-white text-[13px] font-bold transition-all hover:-translate-y-0.5"
-                  style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}
+                  style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}
                 >Book Appointment</button>
               </div>
 
@@ -1712,7 +1712,7 @@ function EditLeadModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
                 <div className="space-y-2 pt-2 border-t border-black/5">
                   <p className="text-[12px] font-semibold text-[#7a6b5c]">Existing Appointments</p>
                   {leadEvents.map((ev) => (
-                    <div key={ev.id} className="flex items-center gap-3 p-3 rounded-xl bg-[#faf8f6] border border-black/5">
+                    <div key={ev.id} className="flex items-center gap-3 p-3 rounded-xl bg-[var(--app-bg)] border border-black/5">
                       <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                         <Calendar className="w-4 h-4 text-primary" />
                       </div>
@@ -1768,7 +1768,7 @@ function EditLeadModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
                     <p className="text-[11px] text-gray-400 mt-1">Calls will appear here after Superfone syncs</p>
                   </div>
                 ) : leadCalls.map((c) => (
-                  <div key={c.id} className="rounded-xl border border-black/5 bg-[#faf8f6] overflow-hidden">
+                  <div key={c.id} className="rounded-xl border border-black/5 bg-[var(--app-bg)] overflow-hidden">
                     <div className="flex items-center gap-3 px-4 py-3">
                       {/* Direction icon */}
                       <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center shrink-0',
@@ -1930,7 +1930,7 @@ function EditFieldsDrawer({ lead, onClose, onSaved }: {
             <h3 className="font-headline font-bold text-[15px] text-[#1c1410]">Edit Fields</h3>
             <p className="text-[11px] text-[#7a6b5c] mt-0.5">{activeDefs.length} fields available</p>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f5ede3] transition-colors">
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] transition-colors">
             <X className="w-4 h-4 text-[#7a6b5c]" />
           </button>
         </div>
@@ -1941,7 +1941,7 @@ function EditFieldsDrawer({ lead, onClose, onSaved }: {
             <div className="flex items-center justify-center py-16 text-[13px] text-[#7a6b5c]">Loading fields…</div>
           ) : activeDefs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
-              <FileText className="w-8 h-8 text-[#c2410c]/30" />
+              <FileText className="w-8 h-8 text-primary/30" />
               <p className="text-[13px] font-semibold text-[#1c1410]">No fields defined yet</p>
               <p className="text-[12px] text-[#7a6b5c]">Go to Settings → Fields to create custom fields</p>
             </div>
@@ -1969,7 +1969,7 @@ function EditFieldsDrawer({ lead, onClose, onSaved }: {
             onClick={handleSave}
             disabled={saving || loading}
             className="flex-1 py-2.5 rounded-lg text-[13px] font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-50"
-            style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 12px rgba(234,88,12,0.25)' }}
+            style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 12px rgba(234,88,12,0.25)' }}
           >
             {saving ? 'Saving…' : 'Save Fields'}
           </button>
@@ -2380,7 +2380,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
               </span>
             )}
             {!editMode && canEditLead && (
-              <button onClick={() => setEditMode(true)} title="Edit" className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors">
+              <button onClick={() => setEditMode(true)} title="Edit" className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] hover:text-primary transition-colors">
                 <Pencil className="w-4 h-4" />
               </button>
             )}
@@ -2392,7 +2392,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
             {showDeleteModal && (
               <DeleteLeadModal lead={lead} onClose={() => setShowDeleteModal(false)} onDeleted={onClose} />
             )}
-            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center hover:bg-[#f5ede3] rounded-lg transition-colors">
+            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center hover:bg-[var(--accent-tint)] rounded-lg transition-colors">
               <X className="w-5 h-5 text-[#7a6b5c]" />
             </button>
           </div>
@@ -2406,7 +2406,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
         {!editMode ? (
           <div className="px-5 py-5 border-b border-black/5">
             <div className="flex items-start gap-4 mb-4">
-              <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-[16px] shrink-0" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>
+              <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-[16px] shrink-0" style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}>
                 {lead.firstName[0]}{lead.lastName?.[0] ?? ''}
               </div>
               <div className="flex-1 min-w-0">
@@ -2454,7 +2454,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
               {lead.tags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 pt-0.5">
                   {lead.tags.map((t) => (
-                    <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-orange-50 text-[#c2410c] border border-orange-100">
+                    <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-orange-50 text-[var(--brand-dark)] border border-orange-100">
                       <Tag className="w-2.5 h-2.5" />{t}
                     </span>
                   ))}
@@ -2466,7 +2466,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
                 <div className="flex items-center justify-between">
                   <button
                     onClick={() => setShowCustomFields((v) => !v)}
-                    className="flex items-center gap-1.5 text-[12px] font-semibold text-primary hover:text-[#c2410c] transition-colors"
+                    className="flex items-center gap-1.5 text-[12px] font-semibold text-primary hover:text-[var(--brand-dark)] transition-colors"
                   >
                     <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${showCustomFields ? 'rotate-90' : ''}`} />
                     Additional Fields {lead.customFields && lead.customFields.length > 0 ? `(${lead.customFields.length})` : ''}
@@ -2474,7 +2474,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
                   {canEditLead && (
                     <button
                       onClick={() => setShowEditFields(true)}
-                      className="flex items-center gap-1 text-[11px] font-semibold text-[#7a6b5c] hover:text-[#c2410c] transition-colors px-2 py-1 rounded-lg hover:bg-[#f5ede3]"
+                      className="flex items-center gap-1 text-[11px] font-semibold text-[#7a6b5c] hover:text-[var(--brand-dark)] transition-colors px-2 py-1 rounded-lg hover:bg-[var(--accent-tint)]"
                     >
                       <Pencil className="w-3 h-3" /> Edit Fields
                     </button>
@@ -2641,7 +2641,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
                   )}
                   <div className="flex gap-2">
                     <input
-                      className="flex-1 border border-dashed border-gray-300 rounded-lg px-3 py-2 text-[12px] text-[#1c1410] outline-none focus:border-primary/40 bg-[#faf8f6] placeholder:text-gray-400"
+                      className="flex-1 border border-dashed border-gray-300 rounded-lg px-3 py-2 text-[12px] text-[#1c1410] outline-none focus:border-primary/40 bg-[var(--app-bg)] placeholder:text-gray-400"
                       placeholder="Add tag..."
                       value={editForm.tagInput}
                       onChange={(e) => setEditForm({ ...editForm, tagInput: e.target.value })}
@@ -2664,7 +2664,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
             <AdditionalInfoSection lead={lead} onUpdate={(customFields) => updateLead(lead.id, { customFields })} />
 
             {/* ═══ FOOTER · Save / Cancel ═══ */}
-            <div className="flex gap-2 px-5 py-4 bg-[#faf8f6] sticky bottom-0 border-t border-black/5">
+            <div className="flex gap-2 px-5 py-4 bg-[var(--app-bg)] sticky bottom-0 border-t border-black/5">
               <button
                 onClick={() => { setEditMode(false); setEditForm({ firstName: lead.firstName, lastName: lead.lastName, phone: lead.phone, email: lead.email, dealValue: lead.dealValue, source: lead.source, assignedTo: lead.assignedTo ?? '', tags: [...lead.tags], tagInput: '', leadQuality: lead.leadQuality ?? '', teamMembers: [...(lead.teamMembers ?? [])] }); }}
                 className="flex-1 py-2.5 rounded-lg text-[13px] font-semibold text-[#7a6b5c] hover:bg-gray-100 transition-colors"
@@ -2672,7 +2672,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
               <button
                 onClick={handleSaveEdit}
                 className="flex-1 py-2.5 rounded-lg text-[13px] font-bold text-white transition-all hover:-translate-y-0.5"
-                style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 12px rgba(234,88,12,0.25)' }}
+                style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 12px rgba(234,88,12,0.25)' }}
               >Save Changes</button>
             </div>
           </div>
@@ -2702,12 +2702,12 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
                     <div className="fixed inset-0 z-30" onClick={() => setShowWaDropdown(false)} />
                     <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-white border border-black/10 rounded-xl shadow-xl z-40 w-52 py-1">
                       <button onClick={() => { handleWhatsApp(); setShowWaDropdown(false); }}
-                        className="w-full text-left px-3 py-2 text-xs hover:bg-[#f5ede3] flex items-center gap-2">
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-[var(--accent-tint)] flex items-center gap-2">
                         <MessageCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                         Open WhatsApp Business
                       </button>
                       <button onClick={() => { setShowWaDropdown(false); setShowWaSendModal(true); }}
-                        className="w-full text-left px-3 py-2 text-xs hover:bg-[#f5ede3] flex items-center gap-2">
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-[var(--accent-tint)] flex items-center gap-2">
                         <Smartphone className="w-3.5 h-3.5 text-teal-600 shrink-0" />
                         Send via Personal WA
                       </button>
@@ -2752,7 +2752,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
               />
               <div className="flex gap-2 justify-end">
                 <button onClick={() => { setShowWaSendModal(false); setWaMessage(''); }}
-                  className="px-4 py-2 text-sm border border-black/10 rounded-xl hover:bg-[#f5ede3] transition-colors">
+                  className="px-4 py-2 text-sm border border-black/10 rounded-xl hover:bg-[var(--accent-tint)] transition-colors">
                   Cancel
                 </button>
                 <button onClick={handleSendPersonalWa} disabled={!waMessage.trim() || waSending}
@@ -2804,7 +2804,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
         {!editMode && (
           <div className="px-5 py-4 border-t border-black/5">
             <h4 className="text-[13px] font-bold text-[#1c1410] mb-3 flex items-center gap-2">
-              <PhoneIncoming className="w-4 h-4 text-[#c2410c]" />
+              <PhoneIncoming className="w-4 h-4 text-[var(--brand-dark)]" />
               Calls {leadCalls.length > 0 && <span className="ml-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-orange-100 text-orange-700">{leadCalls.length}</span>}
             </h4>
             {leadCalls.length === 0 ? (
@@ -3029,7 +3029,7 @@ function QuickEditModal({ lead, onClose, onSaved }: {
           </div>
 
           {/* Created date — read only */}
-          <div className="flex items-center justify-between py-2.5 px-3 rounded-xl bg-[#faf8f6] border border-black/5">
+          <div className="flex items-center justify-between py-2.5 px-3 rounded-xl bg-[var(--app-bg)] border border-black/5">
             <span className="text-[12px] font-semibold text-[#7a6b5c]">Created</span>
             <span className="text-[12px] font-bold text-[#1c1410]">
               {new Date(lead.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -3039,7 +3039,7 @@ function QuickEditModal({ lead, onClose, onSaved }: {
 
         <div className="flex gap-2 px-5 pb-5">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] hover:bg-gray-100 transition-colors">Cancel</button>
-          <button onClick={handleSave} className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white transition-all" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>
+          <button onClick={handleSave} className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white transition-all" style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}>
             Update
           </button>
         </div>
@@ -3233,7 +3233,7 @@ function AppointmentModal({ lead, onClose, onBooked }: { lead: Lead; onClose: ()
           <button
             onClick={handleBook}
             className="px-8 py-2.5 rounded-lg text-[13px] font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-50"
-            style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}
+            style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}
           >
             Book Appointment
           </button>
@@ -3263,7 +3263,7 @@ function LeadCard({ lead, onClick, onFollowUp, onNote, onAssign, showPhone, high
   const [showCardMenu, setShowCardMenu] = useState(false);
 
   const initials = `${lead.firstName[0] ?? ''}${lead.lastName[0] ?? ''}`.toUpperCase() || '?';
-  const bgPalette = ['#fde8d8','#dbeafe','#dcfce7','#ede9fe','#fce7f3','#fef9c3'];
+  const bgPalette = ['#f5ede3','#dbeafe','#dcfce7','#ede9fe','#fce7f3','#fef9c3'];
   const fgPalette = ['#c2410c','#1d4ed8','#15803d','#7c3aed','#be185d','#a16207'];
   const ci = (lead.firstName.charCodeAt(0) ?? 0) % bgPalette.length;
 
@@ -3323,7 +3323,7 @@ function LeadCard({ lead, onClick, onFollowUp, onNote, onAssign, showPhone, high
           <div className="flex items-center gap-1.5 shrink-0">
             {assignedCardName && (
               <div title={`Assigned: ${assignedCardName}`}
-                className="w-5 h-5 rounded-full bg-[#f5ede3] flex items-center justify-center text-[9px] font-bold text-primary">
+                className="w-5 h-5 rounded-full bg-[var(--accent-tint)] flex items-center justify-center text-[9px] font-bold text-primary">
                 {assignedCardAvatar}
               </div>
             )}
@@ -3657,7 +3657,7 @@ function NewPipelineModal({ onClose }: { onClose: () => void }) {
                 onClick={addStage}
                 disabled={!stageInput.trim()}
                 className="px-3 py-2 rounded-lg text-[12px] font-semibold text-white disabled:opacity-40 transition-all hover:-translate-y-0.5 shrink-0"
-                style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 100%)' }}
+                style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 100%)' }}
               >
                 Add
               </button>
@@ -3673,7 +3673,7 @@ function NewPipelineModal({ onClose }: { onClose: () => void }) {
           <button
             onClick={handleSave}
             className="px-6 py-2.5 rounded-xl text-[13px] font-bold text-white transition-all hover:-translate-y-0.5"
-            style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}
+            style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}
           >
             Create Pipeline
           </button>
@@ -4191,7 +4191,7 @@ export default function LeadsPage() {
       )}
 
       {/* ── Smart Toolbar ── */}
-      <div className="sticky top-0 z-20 bg-[#faf8f6] pt-2 pb-3 space-y-2.5">
+      <div className="sticky top-0 z-20 bg-[var(--app-bg)] pt-2 pb-3 space-y-2.5">
 
         {/* Row 1: Contextual bar — bulk actions when leads selected, else default toolbar */}
         {selectedIds.length > 0 ? (
@@ -4303,7 +4303,7 @@ export default function LeadsPage() {
                         const cnt = leads.filter((l) => l.pipelineId === p.id).length;
                         return (
                           <button key={p.id} onClick={() => { setPipeline(p.id); setPipelineOpen(false); }}
-                            className={cn('w-full text-left px-4 py-2.5 text-[13px] transition-colors flex items-center gap-2', p.id === selectedPipelineId ? 'bg-[#faf0e8] text-primary font-semibold' : 'text-[#1c1410] hover:bg-[#faf8f6]')}>
+                            className={cn('w-full text-left px-4 py-2.5 text-[13px] transition-colors flex items-center gap-2', p.id === selectedPipelineId ? 'bg-[#faf0e8] text-primary font-semibold' : 'text-[#1c1410] hover:bg-[var(--app-bg)]')}>
                             {p.id === selectedPipelineId && <div className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />}
                             <span className="flex-1 truncate">{p.name}</span>
                             <span className="text-[10px] text-[#b09e8d] font-normal">{cnt}</span>
@@ -4482,7 +4482,7 @@ export default function LeadsPage() {
         <div className="bg-white rounded-2xl border border-black/5 card-shadow overflow-y-auto flex-1 min-h-0">
           <table className="w-full text-[13px]">
             <thead>
-              <tr className="bg-[#faf8f6] border-b border-black/5">
+              <tr className="bg-[var(--app-bg)] border-b border-black/5">
                 <th className="w-10 px-4 py-3">
                   <input type="checkbox"
                     checked={filteredLeads.length > 0 && selectedIds.length === filteredLeads.length}
@@ -4513,7 +4513,7 @@ export default function LeadsPage() {
                 const initials = `${lead.firstName[0] ?? ''}${lead.lastName[0] ?? ''}`.toUpperCase();
                 const pipeline = pipelines.find((p) => p.id === lead.pipelineId);
                 return (
-                  <tr key={lead.id} className={cn('hover:bg-[#faf8f6] transition-colors', isSelected && 'bg-primary/[0.03]')}>
+                  <tr key={lead.id} className={cn('hover:bg-[var(--app-bg)] transition-colors', isSelected && 'bg-primary/[0.03]')}>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={isSelected}
                         onChange={() => setSelectedIds(isSelected ? selectedIds.filter((x) => x !== lead.id) : [...selectedIds, lead.id])}
@@ -4527,7 +4527,7 @@ export default function LeadsPage() {
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0" style={{ background: 'linear-gradient(135deg, #c2410c, #ea580c)' }}>{initials}</div>
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0" style={{ background: 'linear-gradient(135deg, var(--brand-dark), var(--brand))' }}>{initials}</div>
                         <button onClick={() => setSelectedLeadId(lead.id)} className="text-primary font-semibold hover:underline text-[13px] truncate max-w-[90px]">
                           {lead.firstName}
                         </button>

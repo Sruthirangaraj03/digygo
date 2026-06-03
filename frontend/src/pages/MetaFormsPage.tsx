@@ -155,11 +155,11 @@ function MapFieldsModal({ form, onClose }: { form: MetaFormRow; onClose: () => v
             <h3 className="font-headline font-bold text-[#1c1410] text-[15px]">Map Fields</h3>
             <p className="text-[11px] text-[#7a6b5c] mt-0.5">{form.form_name}</p>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors">
+          <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-[var(--accent-tint)] text-[#7a6b5c] transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="grid grid-cols-2 gap-4 px-6 py-3 bg-[#faf8f6] border-b border-black/5">
+        <div className="grid grid-cols-2 gap-4 px-6 py-3 bg-[var(--app-bg)] border-b border-black/5">
           <p className="text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c]">Facebook Form Field</p>
           <p className="text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c]">CRM Field</p>
         </div>
@@ -177,7 +177,7 @@ function MapFieldsModal({ form, onClose }: { form: MetaFormRow; onClose: () => v
               const q = questions.find((q) => q.key === row.fb_field);
               const label = q?.label ?? row.fb_field;
               return (
-                <div key={row.fb_field} className={cn('px-6 py-4', i % 2 === 0 ? 'bg-[#faf8f6]/60' : 'bg-white')}>
+                <div key={row.fb_field} className={cn('px-6 py-4', i % 2 === 0 ? 'bg-[var(--app-bg)]/60' : 'bg-white')}>
                   <div className="grid grid-cols-2 gap-4 items-center">
                     <div>
                       <p className="text-[13px] text-[#1c1410] leading-snug">{label}</p>
@@ -213,7 +213,7 @@ function MapFieldsModal({ form, onClose }: { form: MetaFormRow; onClose: () => v
             })
           )}
         </div>
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-black/5 bg-[#faf8f6]">
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-black/5 bg-[var(--app-bg)]">
           <Button variant="outline" onClick={onClose}>Close</Button>
           <Button onClick={handleSave} disabled={saving || loading || questions.length === 0}>
             {saving ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />Saving…</> : <><Check className="w-3.5 h-3.5 mr-1.5" />Save Mapping</>}
@@ -377,7 +377,7 @@ function NewPipelineModal({
             onClick={handleSave}
             disabled={saving}
             className="px-6 py-2 rounded-xl text-[13px] font-bold text-white disabled:opacity-60 transition-all hover:-translate-y-0.5"
-            style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}
+            style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}
           >
             {saving ? 'Saving…' : 'Save'}
           </button>
@@ -427,7 +427,7 @@ function ImportConfigModal({
               <p className="text-[11px] text-[#7a6b5c]">{type === 'old' ? 'Import historical' : 'Import recent'} leads</p>
               <h3 className="font-bold text-[#1c1410] text-[15px] leading-tight">{form.form_name}</h3>
             </div>
-            <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors">
+            <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-[var(--accent-tint)] text-[#7a6b5c] transition-colors">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -492,7 +492,7 @@ function ImportConfigModal({
           <div className="flex gap-2 px-6 py-4 border-t border-black/5">
             <button
               onClick={onClose}
-              className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#faf8f6] transition-colors"
+              className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[var(--app-bg)] transition-colors"
             >
               Cancel
             </button>
@@ -500,7 +500,7 @@ function ImportConfigModal({
               onClick={() => onConfirm(selectedPipelineId, selectedStageId)}
               disabled={!canImport}
               className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white disabled:opacity-40 transition-all"
-              style={canImport ? { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' } : { background: '#d1cbc7' }}
+              style={canImport ? { background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' } : { background: '#d1cbc7' }}
             >
               {type === 'old' ? 'Import Old Leads' : 'Import New Leads'}
             </button>
@@ -567,7 +567,7 @@ function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose: () => void })
 
   const Row = ({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value?: string | null }) =>
     value ? (
-      <div className="flex items-start gap-3 px-3 py-2.5 bg-[#faf8f6] rounded-xl">
+      <div className="flex items-start gap-3 px-3 py-2.5 bg-[var(--app-bg)] rounded-xl">
         <Icon className="w-4 h-4 text-[#7a6b5c] shrink-0 mt-0.5" />
         <div className="min-w-0 flex-1">
           <p className="text-[10px] text-[#7a6b5c] font-medium uppercase tracking-wide">{label}</p>
@@ -584,7 +584,7 @@ function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose: () => void })
         <div className="flex items-center justify-between px-5 py-4 border-b border-black/5 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-[14px] shrink-0"
-              style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>
+              style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}>
               {initials}
             </div>
             <div>
@@ -646,14 +646,14 @@ function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose: () => void })
               <div>
                 <SectionLabel text="Additional Fields" />
                 {fields.length === 0 ? (
-                  <div className="flex items-center gap-2 px-3 py-3 bg-[#faf8f6] rounded-xl">
+                  <div className="flex items-center gap-2 px-3 py-3 bg-[var(--app-bg)] rounded-xl">
                     <Settings2 className="w-4 h-4 text-gray-300" />
                     <p className="text-[12px] text-[#b09e8d]">No additional fields recorded</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
                     {fields.map((f, i) => (
-                      <div key={i} className="flex items-start gap-3 px-3 py-2.5 bg-[#faf8f6] rounded-xl">
+                      <div key={i} className="flex items-start gap-3 px-3 py-2.5 bg-[var(--app-bg)] rounded-xl">
                         <Link className="w-4 h-4 text-primary shrink-0 mt-0.5" />
                         <div className="min-w-0 flex-1">
                           <p className="text-[10px] text-[#7a6b5c] font-medium uppercase tracking-wide">{f.field_name}</p>
@@ -669,7 +669,7 @@ function LeadDetailModal({ lead, onClose }: { lead: Lead; onClose: () => void })
               {full?.notes && (
                 <div>
                   <SectionLabel text="Notes" />
-                  <div className="px-3 py-2.5 bg-[#faf8f6] rounded-xl">
+                  <div className="px-3 py-2.5 bg-[var(--app-bg)] rounded-xl">
                     <p className="text-[13px] text-[#1c1410] whitespace-pre-wrap">{full.notes}</p>
                   </div>
                 </div>
@@ -1243,7 +1243,7 @@ export default function MetaFormsPage() {
                   <p className="text-[11px] text-[#7a6b5c] mt-0.5">Read this to connect all your pages</p>
                 </div>
               </div>
-              <button onClick={() => setOauthInstructionTarget(null)} className="p-1.5 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c]">
+              <button onClick={() => setOauthInstructionTarget(null)} className="p-1.5 rounded-xl hover:bg-[var(--accent-tint)] text-[#7a6b5c]">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -1273,7 +1273,7 @@ export default function MetaFormsPage() {
                 </ol>
               </div>
               <div className="flex gap-2 pt-1">
-                <button onClick={() => setOauthInstructionTarget(null)} className="flex-1 py-2.5 rounded-xl text-[12px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#faf8f6] transition-colors">
+                <button onClick={() => setOauthInstructionTarget(null)} className="flex-1 py-2.5 rounded-xl text-[12px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[var(--app-bg)] transition-colors">
                   Cancel
                 </button>
                 <button
@@ -1378,7 +1378,7 @@ export default function MetaFormsPage() {
 
         {pageForms.length === 0 ? (
           <div className="bg-white rounded-2xl border border-black/5 card-shadow px-8 py-14 text-center">
-            <div className="w-12 h-12 bg-[#f5ede3] rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <div className="w-12 h-12 bg-[var(--accent-tint)] rounded-2xl flex items-center justify-center mx-auto mb-4">
               <Link className="w-6 h-6 text-primary" />
             </div>
             <p className="text-[14px] font-semibold text-[#1c1410] mb-1">No forms yet</p>
@@ -1400,10 +1400,10 @@ export default function MetaFormsPage() {
               const isMapped = mappedCount > 0;
               const isActive = form.is_active;
               return (
-                <div key={form.id} className="flex items-center gap-3 px-5 py-4 hover:bg-[#faf8f6] transition-colors">
+                <div key={form.id} className="flex items-center gap-3 px-5 py-4 hover:bg-[var(--app-bg)] transition-colors">
 
                   {/* Icon */}
-                  <div className="w-9 h-9 rounded-xl bg-[#f5ede3] flex items-center justify-center shrink-0">
+                  <div className="w-9 h-9 rounded-xl bg-[var(--accent-tint)] flex items-center justify-center shrink-0">
                     <Zap className="w-4 h-4 text-primary" />
                   </div>
 
@@ -1469,7 +1469,7 @@ export default function MetaFormsPage() {
                         onClick={() => setHistoricalImportTarget(form)}
                         disabled={!!exportingId}
                         title="Import all leads ever submitted to this form from Meta (past leads)"
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-[#f5ede3] text-primary hover:bg-primary hover:text-white disabled:opacity-50 transition-colors whitespace-nowrap"
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-[var(--accent-tint)] text-primary hover:bg-primary hover:text-white disabled:opacity-50 transition-colors whitespace-nowrap"
                       >
                         {exportingId === `${form.form_id}-old`
                           ? <RefreshCw className="w-3 h-3 animate-spin" />
@@ -1478,7 +1478,7 @@ export default function MetaFormsPage() {
                       </button>
                       <button
                         onClick={() => { setOpenForm(form); setContactSearch(''); }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#f5ede3] text-primary hover:bg-[#fde8d5] text-[12px] font-semibold transition-colors whitespace-nowrap"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--accent-tint)] text-primary hover:bg-[var(--accent-tint)] text-[12px] font-semibold transition-colors whitespace-nowrap"
                       >
                         <Eye className="w-3.5 h-3.5" /> View Leads
                       </button>
@@ -1511,13 +1511,13 @@ export default function MetaFormsPage() {
                 </div>
                 <button
                   onClick={() => setOpenForm(null)}
-                  className="p-1.5 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-[#1c1410] transition-colors mt-0.5"
+                  className="p-1.5 rounded-xl hover:bg-[var(--accent-tint)] text-[#7a6b5c] hover:text-[#1c1410] transition-colors mt-0.5"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
               <div className="px-5 py-3 border-b border-black/5">
-                <div className="flex items-center gap-2 bg-[#faf8f6] border border-black/8 rounded-xl px-3 py-2">
+                <div className="flex items-center gap-2 bg-[var(--app-bg)] border border-black/8 rounded-xl px-3 py-2">
                   <Search className="w-3.5 h-3.5 text-[#b09e8d] shrink-0" />
                   <input
                     type="text"
@@ -1538,7 +1538,7 @@ export default function MetaFormsPage() {
                   <div className="flex items-center justify-center h-full text-[13px] text-[#7a6b5c]">Loading leads…</div>
                 ) : filteredLeads.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-8">
-                    <div className="w-12 h-12 bg-[#f5ede3] rounded-2xl flex items-center justify-center">
+                    <div className="w-12 h-12 bg-[var(--accent-tint)] rounded-2xl flex items-center justify-center">
                       <User className="w-5 h-5 text-primary" />
                     </div>
                     <p className="text-[13px] font-semibold text-[#1c1410]">No leads found</p>
@@ -1551,7 +1551,7 @@ export default function MetaFormsPage() {
                     {filteredLeads.map((lead) => (
                       <div
                         key={lead.id}
-                        className="flex items-start gap-3 px-5 py-4 hover:bg-[#faf8f6] transition-colors cursor-pointer group"
+                        className="flex items-start gap-3 px-5 py-4 hover:bg-[var(--app-bg)] transition-colors cursor-pointer group"
                         onClick={() => setSelectedLead(lead)}
                       >
                         <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
@@ -1617,7 +1617,7 @@ export default function MetaFormsPage() {
                   <h3 className="text-[16px] font-bold text-[#1c1410]">Download Leads</h3>
                   <p className="text-[11px] text-[#7a6b5c] mt-0.5">Download all lead data from Meta as Excel</p>
                 </div>
-                <button onClick={() => setDownloadModal(false)} className="p-1.5 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors">
+                <button onClick={() => setDownloadModal(false)} className="p-1.5 rounded-xl hover:bg-[var(--accent-tint)] text-[#7a6b5c] transition-colors">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -1639,7 +1639,7 @@ export default function MetaFormsPage() {
               <div className="flex gap-2 mt-5">
                 <button
                   onClick={() => setDownloadModal(false)}
-                  className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                  className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[var(--app-bg)] transition-colors"
                 >
                   Cancel
                 </button>
@@ -1647,7 +1647,7 @@ export default function MetaFormsPage() {
                   onClick={handleDownloadLeads}
                   disabled={!downloadFormId || downloading}
                   className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white disabled:opacity-40 flex items-center justify-center gap-1.5 transition-all"
-                  style={downloadFormId && !downloading ? { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' } : { background: '#d1cbc7' }}
+                  style={downloadFormId && !downloading ? { background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' } : { background: '#d1cbc7' }}
                 >
                   {downloading ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" />Downloading…</> : <><Download className="w-3.5 h-3.5" />Download</>}
                 </button>
@@ -1665,7 +1665,7 @@ export default function MetaFormsPage() {
                   <h3 className="text-[16px] font-bold text-[#1c1410]">Trigger Workflow</h3>
                   <p className="text-[11px] text-[#7a6b5c] mt-0.5 truncate max-w-[240px]">{triggerModal.form_name}</p>
                 </div>
-                <button onClick={() => setTriggerModal(null)} className="p-1.5 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors">
+                <button onClick={() => setTriggerModal(null)} className="p-1.5 rounded-xl hover:bg-[var(--accent-tint)] text-[#7a6b5c] transition-colors">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -1706,7 +1706,7 @@ export default function MetaFormsPage() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => setTriggerModal(null)}
-                    className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                    className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[var(--app-bg)] transition-colors"
                   >
                     Cancel
                   </button>
@@ -1714,7 +1714,7 @@ export default function MetaFormsPage() {
                     onClick={() => handlePushToAutomation(triggerModal, 'old', triggerWorkflowId || undefined)}
                     disabled={!triggerWorkflowId}
                     className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white disabled:opacity-40 transition-all"
-                    style={triggerWorkflowId ? { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' } : { background: '#d1cbc7' }}
+                    style={triggerWorkflowId ? { background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' } : { background: '#d1cbc7' }}
                   >
                     Run Workflow
                   </button>
@@ -1722,7 +1722,7 @@ export default function MetaFormsPage() {
                 {triggerWorkflows.length > 0 && (
                   <button
                     onClick={() => handlePushToAutomation(triggerModal, 'old')}
-                    className="w-full py-2 rounded-xl text-[12px] font-medium text-[#7a6b5c] border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                    className="w-full py-2 rounded-xl text-[12px] font-medium text-[#7a6b5c] border border-black/10 hover:bg-[var(--app-bg)] transition-colors"
                   >
                     Import leads + run all matching workflows
                   </button>
@@ -1860,7 +1860,7 @@ export default function MetaFormsPage() {
           onClick={() => setOauthInstructionTarget('add-page')}
           className="bg-white rounded-2xl border-2 border-dashed border-black/10 card-shadow p-5 flex flex-col gap-4 text-left hover:border-blue-300 hover:-translate-y-0.5 transition-all duration-150"
         >
-          <div className="w-11 h-11 rounded-xl bg-[#faf8f6] flex items-center justify-center shrink-0">
+          <div className="w-11 h-11 rounded-xl bg-[var(--app-bg)] flex items-center justify-center shrink-0">
             <Plus className="w-5 h-5 text-[#7a6b5c]" />
           </div>
           <div>
@@ -1890,7 +1890,7 @@ export default function MetaFormsPage() {
               </div>
               <button
                 onClick={() => { setConnectBlockedPage(null); setBlockedToken(''); }}
-                className="p-1.5 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors"
+                className="p-1.5 rounded-xl hover:bg-[var(--accent-tint)] text-[#7a6b5c] transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1927,7 +1927,7 @@ export default function MetaFormsPage() {
               <div className="flex gap-2">
                 <button
                   onClick={() => { setConnectBlockedPage(null); setBlockedToken(''); }}
-                  className="flex-1 py-2 rounded-xl text-[12px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                  className="flex-1 py-2 rounded-xl text-[12px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[var(--app-bg)] transition-colors"
                 >
                   Cancel
                 </button>
@@ -1959,7 +1959,7 @@ export default function MetaFormsPage() {
                   <p className="text-[11px] text-[#7a6b5c] mt-0.5">Read this to connect all your pages</p>
                 </div>
               </div>
-              <button onClick={() => setOauthInstructionTarget(null)} className="p-1.5 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c]">
+              <button onClick={() => setOauthInstructionTarget(null)} className="p-1.5 rounded-xl hover:bg-[var(--accent-tint)] text-[#7a6b5c]">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -1995,7 +1995,7 @@ export default function MetaFormsPage() {
 
               {/* Already connected note */}
               {pages.length > 0 && (
-                <div className="rounded-xl bg-[#faf8f6] border border-black/5 px-4 py-3">
+                <div className="rounded-xl bg-[var(--app-bg)] border border-black/5 px-4 py-3">
                   <p className="text-[11px] text-[#7a6b5c]">
                     You currently have <strong>{pages.length} page{pages.length !== 1 ? 's' : ''}</strong> connected. After reconnecting, all previously connected pages plus any newly selected ones will be kept.
                   </p>
@@ -2005,7 +2005,7 @@ export default function MetaFormsPage() {
               <div className="flex gap-2 pt-1">
                 <button
                   onClick={() => setOauthInstructionTarget(null)}
-                  className="flex-1 py-2.5 rounded-xl text-[12px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                  className="flex-1 py-2.5 rounded-xl text-[12px] font-semibold text-[#7a6b5c] border border-black/10 hover:bg-[var(--app-bg)] transition-colors"
                 >
                   Cancel
                 </button>
@@ -2045,7 +2045,7 @@ export default function MetaFormsPage() {
               <button
                 onClick={() => { const t = historicalImportTarget; setHistoricalImportTarget(null); openTriggerModal(t); }}
                 className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white transition-all"
-                style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}
+                style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}
               >
                 Yes, Import All
               </button>

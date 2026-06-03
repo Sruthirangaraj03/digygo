@@ -232,7 +232,7 @@ function StaffModal({ initial, onClose, onSave }: StaffModalProps) {
               {isEdit ? 'Update details or change access password' : 'Staff will log in using email + password below'}
             </p>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f5ede3] transition-colors">
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] transition-colors">
             <X className="w-4 h-4 text-[#7a6b5c]" />
           </button>
         </div>
@@ -265,7 +265,7 @@ function StaffModal({ initial, onClose, onSave }: StaffModalProps) {
                 'border-[#e8ddd4] focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/10')}>
                 <div className="relative">
                   <button type="button" onClick={() => setShowCountryDrop(!showCountryDrop)}
-                    className="flex items-center gap-1 px-2 py-2 border-r border-[#e8ddd4] hover:bg-[#f5ede3] text-xs text-[#7a6b5c]">
+                    className="flex items-center gap-1 px-2 py-2 border-r border-[#e8ddd4] hover:bg-[var(--accent-tint)] text-xs text-[#7a6b5c]">
                     <span>{countryCode.flag}</span>
                     <ChevronDown className="w-3 h-3" />
                   </button>
@@ -275,7 +275,7 @@ function StaffModal({ initial, onClose, onSave }: StaffModalProps) {
                       <div className="absolute top-full left-0 mt-1 bg-white border border-[#e8ddd4] rounded-xl shadow-xl z-50 py-1 w-32">
                         {COUNTRY_CODES.map((c) => (
                           <button key={c.country} type="button" onClick={() => { setCountryCode(c); setShowCountryDrop(false); }}
-                            className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs hover:bg-[#f5ede3]">
+                            className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs hover:bg-[var(--accent-tint)]">
                             <span>{c.flag}</span><span className="text-[#7a6b5c]">{c.code}</span>
                           </button>
                         ))}
@@ -341,7 +341,7 @@ function StaffModal({ initial, onClose, onSave }: StaffModalProps) {
               <label className="text-xs font-semibold text-[#1c1410] mb-1 block">Profile Image</label>
               <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
               <button type="button" onClick={() => fileRef.current?.click()}
-                className="w-full h-[38px] rounded-xl border-2 border-dashed border-[#e8ddd4] bg-white hover:border-primary/50 hover:bg-[#f5ede3] transition-all flex items-center justify-center gap-1.5 text-xs text-[#7a6b5c]">
+                className="w-full h-[38px] rounded-xl border-2 border-dashed border-[#e8ddd4] bg-white hover:border-primary/50 hover:bg-[var(--accent-tint)] transition-all flex items-center justify-center gap-1.5 text-xs text-[#7a6b5c]">
                 {avatarUrl
                   ? <img src={avatarUrl} className="w-6 h-6 rounded-full object-cover" />
                   : <><Upload className="w-3.5 h-3.5" /> Upload photo</>}
@@ -522,7 +522,7 @@ function PermissionsModal({ member, onClose }: { member: StaffMember; onClose: (
               <p className="text-[11px] text-[#7a6b5c]">{member.email} · Permissions</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f5ede3] transition-colors">
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] transition-colors">
             <X className="w-4 h-4 text-[#7a6b5c]" />
           </button>
         </div>
@@ -576,7 +576,7 @@ function PermissionsModal({ member, onClose }: { member: StaffMember; onClose: (
                     'flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all select-none',
                     permissions[ONLY_ASSIGNED_KEY]
                       ? 'bg-orange-50 border-orange-200'
-                      : 'bg-[#faf8f6] border-[#e8ddd4] hover:border-orange-200 hover:bg-orange-50/40',
+                      : 'bg-[var(--app-bg)] border-[#e8ddd4] hover:border-orange-200 hover:bg-orange-50/40',
                   )}
                 >
                   <PermCheckbox checked={permissions[ONLY_ASSIGNED_KEY] ?? false} onChange={() => togglePerm(ONLY_ASSIGNED_KEY)} />
@@ -656,7 +656,7 @@ function PermissionsModal({ member, onClose }: { member: StaffMember; onClose: (
                           </div>
                           {group.rows.map((row, i) => (
                             <div key={row.label}
-                              className={cn('grid items-center px-3 py-2.5 rounded-lg transition-colors hover:bg-[#faf8f6]', i % 2 === 1 && 'bg-[#fdfcfb]')}
+                              className={cn('grid items-center px-3 py-2.5 rounded-lg transition-colors hover:bg-[var(--app-bg)]', i % 2 === 1 && 'bg-[#fdfcfb]')}
                               style={{ gridTemplateColumns: '1fr 80px 80px 80px 80px' }}>
                               <span className="text-[13px] font-medium text-[#1c1410]">{row.label}</span>
                               {row.keys.map((key, j) => (
@@ -673,7 +673,7 @@ function PermissionsModal({ member, onClose }: { member: StaffMember; onClose: (
                             <div className="mt-1 pt-2 border-t border-[#f0ebe5] space-y-0.5">
                               {group.simpleRows!.map((row, i) => (
                                 <div key={row.label}
-                                  className={cn('flex items-center px-3 py-2.5 rounded-lg transition-colors hover:bg-[#faf8f6]', i % 2 === 1 && 'bg-[#fdfcfb]')}>
+                                  className={cn('flex items-center px-3 py-2.5 rounded-lg transition-colors hover:bg-[var(--app-bg)]', i % 2 === 1 && 'bg-[#fdfcfb]')}>
                                   <span className="text-[13px] font-medium text-[#1c1410] flex-1">{row.label}</span>
                                   <div className="flex items-center gap-6">
                                     {row.keys.map(({ key, label }) => (
@@ -747,7 +747,7 @@ function PermCheckbox({ checked, onChange }: { checked: boolean; onChange: () =>
       onClick={(e) => { e.stopPropagation(); onChange(); }}
       className={cn(
         'w-[17px] h-[17px] rounded border-[1.5px] inline-flex items-center justify-center transition-all shrink-0 cursor-pointer',
-        checked ? 'bg-[#c2410c] border-[#c2410c]' : 'border-[#c9bdb6] bg-white hover:border-[#c2410c]',
+        checked ? 'bg-[var(--brand-dark)] border-[var(--brand-dark)]' : 'border-[#c9bdb6] bg-white hover:border-[var(--brand-dark)]',
       )}
     >
       {checked && <Check className="w-[9px] h-[9px] text-white" strokeWidth={3.5} />}
@@ -883,8 +883,8 @@ export default function StaffPage() {
           {/* Staff list */}
           {staff.length === 0 ? (
             <div className="bg-white rounded-2xl border border-[#ede8e2] flex flex-col items-center justify-center py-20 gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-[#f5ede3] flex items-center justify-center">
-                <User className="w-6 h-6 text-[#c2410c]" />
+              <div className="w-12 h-12 rounded-2xl bg-[var(--accent-tint)] flex items-center justify-center">
+                <User className="w-6 h-6 text-[var(--brand-dark)]" />
               </div>
               <p className="text-[14px] font-bold text-[#1c1410]">No team members yet</p>
               <p className="text-[12px] text-[#7a6b5c]">Add your first staff member to get started</p>
@@ -897,7 +897,7 @@ export default function StaffPage() {
           ) : (
             <div className="bg-white rounded-2xl border border-black/5 card-shadow divide-y divide-black/5">
               {staff.map((s) => (
-                <div key={s.id} className="flex items-center gap-4 px-5 py-4 hover:bg-[#faf8f6] transition-colors">
+                <div key={s.id} className="flex items-center gap-4 px-5 py-4 hover:bg-[var(--app-bg)] transition-colors">
 
                   {/* Avatar */}
                   <div className={cn(
@@ -943,14 +943,14 @@ export default function StaffPage() {
                     <div className="flex items-center gap-1 shrink-0 ml-2">
                       <button
                         onClick={() => setEditMember(s)}
-                        className="p-2 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-[#c2410c] transition-colors"
+                        className="p-2 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] hover:text-[var(--brand-dark)] transition-colors"
                         title="Edit member"
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => setPermsMember(s)}
-                        className="p-2 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-[#c2410c] transition-colors"
+                        className="p-2 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] hover:text-[var(--brand-dark)] transition-colors"
                         title="Edit permissions"
                       >
                         <ShieldCheck className="w-4 h-4" />
@@ -958,7 +958,7 @@ export default function StaffPage() {
                       <div className="relative">
                         <button
                           onClick={() => setOpenMenuId(openMenuId === s.id ? null : s.id)}
-                          className="p-2 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-foreground transition-colors"
+                          className="p-2 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] hover:text-foreground transition-colors"
                           title="More actions"
                         >
                           <MoreHorizontal className="w-4 h-4" />
@@ -975,7 +975,7 @@ export default function StaffPage() {
                                       .catch(() => toast.error('Failed to resend invite'));
                                     setOpenMenuId(null);
                                   }}
-                                  className="w-full text-left px-3 py-2.5 text-sm flex items-center gap-2.5 hover:bg-[#faf8f6] transition-colors text-[#1c1410]"
+                                  className="w-full text-left px-3 py-2.5 text-sm flex items-center gap-2.5 hover:bg-[var(--app-bg)] transition-colors text-[#1c1410]"
                                 >
                                   <Mail className="w-4 h-4 text-[#7a6b5c]" />
                                   Resend Invite
@@ -1024,8 +1024,8 @@ export default function StaffPage() {
 
           {staff.length === 0 ? (
             <div className="bg-white rounded-2xl border border-[#ede8e2] flex flex-col items-center justify-center py-20 gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-[#f5ede3] flex items-center justify-center">
-                <ShieldCheck className="w-6 h-6 text-[#c2410c]" />
+              <div className="w-12 h-12 rounded-2xl bg-[var(--accent-tint)] flex items-center justify-center">
+                <ShieldCheck className="w-6 h-6 text-[var(--brand-dark)]" />
               </div>
               <p className="text-[14px] font-bold text-[#1c1410]">No staff yet</p>
               <p className="text-[12px] text-[#7a6b5c]">Add team members first to configure their permissions</p>
@@ -1034,7 +1034,7 @@ export default function StaffPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {staff.map((s) => (
                 <div key={s.id}
-                  className="bg-white rounded-2xl border border-[#ede8e2] p-5 flex items-center gap-4 hover:border-[#c2410c]/30 hover:shadow-sm transition-all group">
+                  className="bg-white rounded-2xl border border-[#ede8e2] p-5 flex items-center gap-4 hover:border-primary/30 hover:shadow-sm transition-all group">
                   <div className={cn(
                     'w-11 h-11 rounded-full flex items-center justify-center text-[13px] font-bold shrink-0',
                     s.status === 'active' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
@@ -1052,7 +1052,7 @@ export default function StaffPage() {
                   <button
                     type="button"
                     onClick={() => setPermsMember(s)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold text-[#c2410c] bg-orange-50 border border-orange-100 hover:bg-orange-100 transition-colors shrink-0 group-hover:border-[#c2410c]/40"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold text-[var(--brand-dark)] bg-orange-50 border border-orange-100 hover:bg-orange-100 transition-colors shrink-0 group-hover:border-primary/40"
                   >
                     <ShieldCheck className="w-3.5 h-3.5" />
                     Permissions
@@ -1070,7 +1070,7 @@ export default function StaffPage() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-black/5 bg-[#faf8f6]">
+                <tr className="border-b border-black/5 bg-[var(--app-bg)]">
                   {['Name', 'Leads Handled', 'Converted', 'Conv. Rate', 'Avg Response', 'Conversations', 'Follow-ups'].map((h) => (
                     <th key={h} className="text-left text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c] px-4 py-3 whitespace-nowrap">{h}</th>
                   ))}
@@ -1080,7 +1080,7 @@ export default function StaffPage() {
                 {perfData.map((p) => {
                   const convRate = Math.round((p.converted / p.leadsHandled) * 100);
                   return (
-                    <tr key={p.id} className="border-b border-black/5 last:border-0 hover:bg-[#faf8f6] transition-colors">
+                    <tr key={p.id} className="border-b border-black/5 last:border-0 hover:bg-[var(--app-bg)] transition-colors">
                       <td className="px-4 py-3 text-sm font-medium text-foreground">{p.name}</td>
                       <td className="px-4 py-3 text-sm text-foreground">{p.leadsHandled}</td>
                       <td className="px-4 py-3 text-sm text-foreground">{p.converted}</td>

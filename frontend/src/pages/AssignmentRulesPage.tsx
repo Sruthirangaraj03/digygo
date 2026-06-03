@@ -54,7 +54,7 @@ function RuleModal({ onClose, onSave, staffList }: {
       <div className="bg-card rounded-2xl border border-black/5 w-full max-w-md shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-black/5">
           <h3 className="font-headline font-bold text-[#1c1410]">Add Assignment Rule</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[#f5ede3]"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[var(--accent-tint)]"><X className="w-4 h-4" /></button>
         </div>
         <div className="p-5 space-y-4">
           <div>
@@ -66,7 +66,7 @@ function RuleModal({ onClose, onSave, staffList }: {
             <div className="grid grid-cols-2 gap-2">
               {(['round-robin', 'source', 'stage', 'manual'] as const).map((m) => (
                 <button key={m} onClick={() => setMethod(m)}
-                  className={cn('p-2.5 rounded-xl border text-sm font-medium transition-all capitalize', method === m ? 'border-primary bg-primary/5 text-primary' : 'border-border text-muted-foreground hover:border-primary/50 hover:bg-[#f5ede3]')}>
+                  className={cn('p-2.5 rounded-xl border text-sm font-medium transition-all capitalize', method === m ? 'border-primary bg-primary/5 text-primary' : 'border-border text-muted-foreground hover:border-primary/50 hover:bg-[var(--accent-tint)]')}>
                   {m.replace('-', ' ')}
                 </button>
               ))}
@@ -174,7 +174,7 @@ export default function AssignmentRulesPage() {
   return (
     <div className="space-y-8 max-w-3xl">
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate('/settings')} className="p-2 rounded-lg hover:bg-[#f5ede3] text-muted-foreground hover:text-foreground transition-colors">
+        <button onClick={() => navigate('/settings')} className="p-2 rounded-lg hover:bg-[var(--accent-tint)] text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="w-5 h-5" />
         </button>
         <Button className="ml-auto" onClick={() => setShowModal(true)}><Plus className="w-4 h-4 mr-1" /> Add Rule</Button>
@@ -195,7 +195,7 @@ export default function AssignmentRulesPage() {
           </div>
         ) : (
           rules.map((rule, i) => (
-            <div key={rule.id} className={cn('flex items-center gap-3 px-4 py-3.5 border-b border-black/5 last:border-0 hover:bg-[#faf8f6] transition-colors', !rule.is_active && 'opacity-60')}>
+            <div key={rule.id} className={cn('flex items-center gap-3 px-4 py-3.5 border-b border-black/5 last:border-0 hover:bg-[var(--app-bg)] transition-colors', !rule.is_active && 'opacity-60')}>
               <button className="cursor-grab text-muted-foreground"><GripVertical className="w-4 h-4" /></button>
               <span className="text-[11px] text-[#7a6b5c] w-5 shrink-0">{i + 1}</span>
               <div className="flex-1 min-w-0">

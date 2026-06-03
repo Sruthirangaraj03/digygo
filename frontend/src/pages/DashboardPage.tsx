@@ -14,6 +14,7 @@ import {
   addDays, getDaysInMonth, subMonths, startOfMonth,
 } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
+import { brandHex } from '@/lib/brand';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Analytics {
@@ -75,7 +76,7 @@ function StatCard({ label, value, sub, icon: Icon, accent = false, warn = false,
     <div
       onClick={onClick}
       className={`rounded-xl px-4 py-3 flex items-center gap-3 text-white ${clickClass}`}
-      style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 20px rgba(234,88,12,0.25)' }}
+      style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 20px rgba(234,88,12,0.25)' }}
     >
       <div className="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center shrink-0">
         <Icon className="w-4 h-4 text-white" />
@@ -185,7 +186,7 @@ function PipelineFunnelVisual({ funnels }: { funnels: Analytics['pipeline_funnel
               key={p.id}
               onClick={() => setSelectedId(p.id)}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
-                pipeline.id === p.id ? 'bg-primary text-white' : 'bg-[#faf8f6] text-[#7a6b5c] hover:bg-primary/10'
+                pipeline.id === p.id ? 'bg-primary text-white' : 'bg-[var(--app-bg)] text-[#7a6b5c] hover:bg-primary/10'
               }`}
             >
               {p.name}
@@ -251,7 +252,7 @@ function ManagementDashboard({ analytics, lineData }: {
     ? <span className="text-[12px] font-bold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700">↑ +{growth}% vs last month</span>
     : growth < 0
     ? <span className="text-[12px] font-bold px-2.5 py-1 rounded-lg bg-red-50 text-red-600">↓ {Math.abs(growth)}% vs last month</span>
-    : <span className="text-[12px] font-bold px-2.5 py-1 rounded-lg bg-[#faf8f6] text-[#7a6b5c]">→ Same as last month</span>;
+    : <span className="text-[12px] font-bold px-2.5 py-1 rounded-lg bg-[var(--app-bg)] text-[#7a6b5c]">→ Same as last month</span>;
 
   return (
     <div className="space-y-5">
@@ -308,7 +309,7 @@ function ManagementDashboard({ analytics, lineData }: {
             <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#8a7c6e' }} axisLine={false} tickLine={false} interval={Math.max(0, Math.floor(lineData.length / 6))} />
             <YAxis tick={{ fontSize: 10, fill: '#8a7c6e' }} axisLine={false} tickLine={false} allowDecimals={false} width={28} />
             <Tooltip contentStyle={{ borderRadius: 10, border: 'none', background: '#1c1410', color: '#fff', fontSize: 11 }} />
-            <Line type="monotone" dataKey="leads" stroke="#ea580c" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
+            <Line type="monotone" dataKey="leads" stroke={brandHex()} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -374,7 +375,7 @@ function ManagementDashboard({ analytics, lineData }: {
                   }
                   labelFormatter={(_: any, p: any) => p?.[0]?.payload?.fullName ?? _}
                 />
-                <Bar yAxisId="left" dataKey="total" fill="#ea580c" radius={[4, 4, 0, 0]}>
+                <Bar yAxisId="left" dataKey="total" fill={brandHex()} radius={[4, 4, 0, 0]}>
                   <LabelList dataKey="total" position="top" style={{ fontSize: 10, fill: '#1c1410', fontWeight: 700 }} />
                 </Bar>
                 <Line yAxisId="right" type="monotone" dataKey="conv" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} />
@@ -500,7 +501,7 @@ function ManagerDashboard({ analytics, lineData }: { analytics: Analytics; lineD
                       const barColor  = s.contacted_pct >= 70 ? '#10b981' : s.contacted_pct >= 40 ? '#f59e0b' : '#ef4444';
                       const textColor = s.contacted_pct >= 70 ? 'text-emerald-600' : s.contacted_pct >= 40 ? 'text-amber-500' : 'text-red-500';
                       return (
-                        <tr key={s.id} className="border-b border-black/[0.03] hover:bg-[#faf8f6] transition-colors">
+                        <tr key={s.id} className="border-b border-black/[0.03] hover:bg-[var(--app-bg)] transition-colors">
                           <td className="py-2 px-1">
                             <div className="flex items-center gap-1.5">
                               <div className="w-6 h-6 rounded-md bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary shrink-0">
@@ -588,7 +589,7 @@ function ManagerDashboard({ analytics, lineData }: { analytics: Analytics; lineD
                     <div
                       key={f.id}
                       onClick={() => navigate(`/leads?lead=${f.lead_id}`)}
-                      className="flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-[#faf8f6] cursor-pointer transition-colors"
+                      className="flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-[var(--app-bg)] cursor-pointer transition-colors"
                     >
                       <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${overdue ? 'bg-red-400' : 'bg-emerald-400'}`} />
                       <div className="flex-1 min-w-0">
@@ -621,7 +622,7 @@ function ManagerDashboard({ analytics, lineData }: { analytics: Analytics; lineD
             <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#8a7c6e' }} axisLine={false} tickLine={false} interval={Math.max(0, Math.floor(lineData.length / 6))} />
             <YAxis tick={{ fontSize: 10, fill: '#8a7c6e' }} axisLine={false} tickLine={false} allowDecimals={false} width={28} />
             <Tooltip contentStyle={{ borderRadius: 10, border: 'none', background: '#1c1410', color: '#fff', fontSize: 11 }} />
-            <Line type="monotone" dataKey="leads" stroke="#ea580c" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+            <Line type="monotone" dataKey="leads" stroke={brandHex()} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -693,7 +694,7 @@ function StaffDashboard({ analytics }: { analytics: Analytics }) {
                     <div
                       key={f.id}
                       onClick={() => navigate(`/leads?lead=${f.lead_id}`)}
-                      className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-[#faf8f6] cursor-pointer transition-colors"
+                      className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-[var(--app-bg)] cursor-pointer transition-colors"
                     >
                       <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${isOverdue ? 'bg-red-400' : 'bg-emerald-400'}`} />
                       <div className="flex-1 min-w-0">
@@ -713,11 +714,11 @@ function StaffDashboard({ analytics }: { analytics: Analytics }) {
         <div className="bg-white rounded-2xl border border-black/5 card-shadow p-5">
           <h3 className="font-headline font-bold text-[#1c1410] text-[14px] mb-3">My Numbers</h3>
           <div className="grid grid-cols-1 gap-2.5">
-            <div className="rounded-xl bg-[#faf8f6] px-4 py-3">
+            <div className="rounded-xl bg-[var(--app-bg)] px-4 py-3">
               <p className="text-[11px] text-[#7a6b5c] mb-0.5">Total Leads</p>
               <p className="font-headline text-[22px] font-bold text-[#1c1410]">{analytics.total_leads}</p>
             </div>
-            <div className="rounded-xl bg-[#faf8f6] px-4 py-3">
+            <div className="rounded-xl bg-[var(--app-bg)] px-4 py-3">
               <p className="text-[11px] text-[#7a6b5c] mb-0.5">{analytics.range_label ?? 'This Period'}</p>
               <p className="font-headline text-[22px] font-bold text-[#1c1410]">{analytics.range_leads ?? 0}</p>
             </div>

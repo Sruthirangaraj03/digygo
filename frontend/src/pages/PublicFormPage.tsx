@@ -84,7 +84,7 @@ export default function PublicFormPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#faf8f6]">
+      <div className="min-h-screen flex items-center justify-center bg-[var(--app-bg)]">
         <p className="text-[14px] text-[#7a6b5c]">Loading form…</p>
       </div>
     );
@@ -92,7 +92,7 @@ export default function PublicFormPage() {
 
   if (notFound || !form) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#faf8f6]">
+      <div className="min-h-screen flex items-center justify-center bg-[var(--app-bg)]">
         <div className="text-center">
           <p className="text-[18px] font-bold text-[#1c1410] mb-2">Form not found</p>
           <p className="text-[14px] text-[#7a6b5c]">This form is no longer active or the link is incorrect.</p>
@@ -103,7 +103,7 @@ export default function PublicFormPage() {
 
   if (submitted) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#faf8f6]">
+      <div className="min-h-screen flex items-center justify-center bg-[var(--app-bg)]">
         <div className="text-center max-w-md px-6">
           <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5"
             style={{ background: btnColor }}>
@@ -118,7 +118,7 @@ export default function PublicFormPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#faf8f6] px-4 py-12">
+    <div className="min-h-screen flex items-center justify-center bg-[var(--app-bg)] px-4 py-12">
       <div className="w-full max-w-md rounded-2xl shadow-xl p-8" style={{ background: bg, color: textColor }}>
         <h1 className="text-[22px] font-bold mb-6" style={{ color: textColor }}>{form.name}</h1>
 

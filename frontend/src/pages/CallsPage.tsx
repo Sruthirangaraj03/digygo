@@ -211,7 +211,7 @@ export default function CallsPage() {
       <div className="flex-1 bg-white border border-black/[0.07] rounded-2xl overflow-hidden flex flex-col min-h-0">
         <div className="overflow-auto flex-1">
           <table className="w-full text-[13px]">
-            <thead className="sticky top-0 bg-[#faf8f6] border-b border-black/[0.07] z-10">
+            <thead className="sticky top-0 bg-[var(--app-bg)] border-b border-black/[0.07] z-10">
               <tr>
                 <th className="text-left px-4 py-3 font-semibold text-[#7a6b5c] w-10">#</th>
                 <th className="text-left px-4 py-3 font-semibold text-[#7a6b5c]">Lead</th>
@@ -244,7 +244,7 @@ export default function CallsPage() {
 
                 return (
                   <>
-                    <tr key={c.id} className="hover:bg-[#faf8f6] transition-colors">
+                    <tr key={c.id} className="hover:bg-[var(--app-bg)] transition-colors">
                       <td className="px-4 py-3 text-[#b09e8d]">{(page - 1) * LIMIT + idx + 1}</td>
                       <td className="px-4 py-3">
                         <p className="font-semibold text-[#1c1410] truncate max-w-[160px]">{c.lead_name ?? '—'}</p>
@@ -311,7 +311,7 @@ export default function CallsPage() {
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-black/[0.05] bg-[#faf8f6]">
+          <div className="flex items-center justify-between px-4 py-3 border-t border-black/[0.05] bg-[var(--app-bg)]">
             <span className="text-[12px] text-[#7a6b5c]">
               Showing {(page - 1) * LIMIT + 1}–{Math.min(page * LIMIT, total)} of {total}
             </span>

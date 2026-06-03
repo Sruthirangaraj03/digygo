@@ -81,7 +81,7 @@ export function AppLayout() {
 
   return (
     // pt-10 (40px) reserves space for the fixed ImpersonationBanner when active
-    <div className={`h-[100dvh] flex w-full bg-[#faf8f6] overflow-hidden${isImpersonating ? ' pt-10' : ''}`}>
+    <div className={`h-[100dvh] flex w-full bg-[var(--app-bg)] overflow-hidden${isImpersonating ? ' pt-10' : ''}`}>
       {/* Sidebar — desktop only */}
       <div className="hidden md:flex">
         <AppSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />

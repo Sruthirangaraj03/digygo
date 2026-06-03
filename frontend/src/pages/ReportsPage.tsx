@@ -11,6 +11,7 @@ import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useUserLevel } from '@/hooks/useUserLevel';
+import { brandHex } from '@/lib/brand';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface KpiShape {
@@ -67,7 +68,7 @@ const STAGE_COLORS  = ['#6366f1','#3b82f6','#06b6d4','#8b5cf6','#f59e0b','#ea580
 function Spinner() {
   return (
     <div className="flex items-center justify-center py-20">
-      <RefreshCw className="w-5 h-5 animate-spin text-[#c2410c]" />
+      <RefreshCw className="w-5 h-5 animate-spin text-[var(--brand-dark)]" />
     </div>
   );
 }
@@ -89,8 +90,8 @@ function PeriodFilter({ period, onChange, from, to, onFrom, onTo }: {
             className={cn(
               'text-[12px] font-semibold px-3.5 py-1.5 rounded-lg border transition-all',
               period === p.value
-                ? 'bg-[#ea580c] text-white border-[#ea580c] shadow-sm'
-                : 'bg-white text-[#7a6b5c] border-black/10 hover:border-[#ea580c]/40 hover:text-[#ea580c]',
+                ? 'bg-[var(--brand)] text-white border-[var(--brand)] shadow-sm'
+                : 'bg-white text-[#7a6b5c] border-black/10 hover:border-primary/40 hover:text-[var(--brand)]',
             )}>
             {p.label}
           </button>
@@ -99,10 +100,10 @@ function PeriodFilter({ period, onChange, from, to, onFrom, onTo }: {
       {period === 'custom' && (
         <div className="flex items-center gap-2 flex-wrap">
           <input type="date" value={from} onChange={(e) => onFrom(e.target.value)}
-            className="border border-black/10 rounded-lg px-3 py-1.5 text-[12px] focus:outline-none focus:border-[#ea580c] transition-colors bg-white" />
+            className="border border-black/10 rounded-lg px-3 py-1.5 text-[12px] focus:outline-none focus:border-[var(--brand)] transition-colors bg-white" />
           <span className="text-[12px] text-[#9a8a7a] font-medium">to</span>
           <input type="date" value={to} onChange={(e) => onTo(e.target.value)}
-            className="border border-black/10 rounded-lg px-3 py-1.5 text-[12px] focus:outline-none focus:border-[#ea580c] transition-colors bg-white" />
+            className="border border-black/10 rounded-lg px-3 py-1.5 text-[12px] focus:outline-none focus:border-[var(--brand)] transition-colors bg-white" />
         </div>
       )}
     </div>
@@ -125,7 +126,7 @@ function KpiCard({ label, value, sub, icon: Icon, accent }: {
   );
   if (accent) return (
     <div className="rounded-xl px-4 py-3.5 flex items-center gap-3"
-      style={{ background: 'linear-gradient(135deg,#c2410c 0%,#ea580c 55%,#f97316 100%)', boxShadow: '0 4px 20px rgba(234,88,12,0.25)' }}>
+      style={{ background: 'linear-gradient(135deg,var(--brand-dark) 0%,var(--brand) 55%,var(--brand-light) 100%)', boxShadow: '0 4px 20px rgba(234,88,12,0.25)' }}>
       <div className="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center shrink-0">
         <Icon className="w-4 h-4 text-white" />
       </div>
@@ -169,7 +170,7 @@ function TrendChart({ data }: { data: WinLossRow[] }) {
         <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #f0ebe5', fontSize: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }} />
         <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
         <Bar dataKey="new_leads" name="New Leads" fill="#bfdbfe" radius={[3, 3, 0, 0]} maxBarSize={32} />
-        <Area dataKey="won" name="Won" type="monotone" fill="rgba(234,88,12,0.12)" stroke="#ea580c" strokeWidth={2} dot={false} />
+        <Area dataKey="won" name="Won" type="monotone" fill="rgba(234,88,12,0.12)" stroke={brandHex()} strokeWidth={2} dot={false} />
       </ComposedChart>
     </ResponsiveContainer>
   );
@@ -397,7 +398,7 @@ function PipelineDropdown({ pipelines, selected, onChange }: {
           {pipelines.map((pl) => (
             <button key={pl.id} onClick={() => { onChange(pl.id); setOpen(false); }}
               className={cn('w-full text-left px-4 py-2.5 text-[13px] transition-colors',
-                pl.id === selected ? 'bg-primary/8 text-primary font-semibold' : 'text-[#1c1410] hover:bg-[#faf8f6] font-medium')}>
+                pl.id === selected ? 'bg-primary/8 text-primary font-semibold' : 'text-[#1c1410] hover:bg-[var(--app-bg)] font-medium')}>
               {pl.name}
             </button>
           ))}

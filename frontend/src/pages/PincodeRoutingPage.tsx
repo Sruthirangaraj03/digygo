@@ -280,7 +280,7 @@ export default function PincodeRoutingPage() {
         </div>
         <Button
           onClick={() => setShowCreate(true)}
-          style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)' }}
+          style={{ background: 'linear-gradient(135deg,var(--brand-dark),var(--brand))' }}
           className="flex items-center gap-2 text-white"
         >
           <Plus className="w-4 h-4" /> New Routing Set
@@ -290,7 +290,7 @@ export default function PincodeRoutingPage() {
       {/* Sets list */}
       {loading ? (
         <div className="flex justify-center py-16">
-          <div className="w-8 h-8 border-4 border-[#ea580c] border-t-transparent rounded-full animate-spin" />
+          <div className="w-8 h-8 border-4 border-[var(--brand)] border-t-transparent rounded-full animate-spin" />
         </div>
       ) : sets.length === 0 ? (
         <div className="bg-white rounded-2xl border border-black/5 p-16 text-center">
@@ -298,7 +298,7 @@ export default function PincodeRoutingPage() {
           <p className="font-semibold text-[#1c1410]">No routing sets yet</p>
           <p className="text-[13px] text-[#7a6b5c] mt-1">Create a routing set to map field values to pipelines</p>
           <Button onClick={() => setShowCreate(true)} className="mt-4"
-            style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)' }}>
+            style={{ background: 'linear-gradient(135deg,var(--brand-dark),var(--brand))' }}>
             <Plus className="w-4 h-4 mr-1" /> Create First Set
           </Button>
         </div>
@@ -328,27 +328,27 @@ export default function PincodeRoutingPage() {
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     onClick={() => { setTestSetId(testSetId === set.id ? null : set.id); setTestVal(''); setTestResult(null); }}
-                    className="px-3 py-1.5 text-[12px] font-semibold rounded-lg border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                    className="px-3 py-1.5 text-[12px] font-semibold rounded-lg border border-black/10 hover:bg-[var(--app-bg)] transition-colors"
                   >
                     Test
                   </button>
                   <button
                     onClick={() => openPreview(set)}
-                    className="p-1.5 rounded-lg border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                    className="p-1.5 rounded-lg border border-black/10 hover:bg-[var(--app-bg)] transition-colors"
                     title="Preview rows"
                   >
                     <Eye className="w-4 h-4 text-[#7a6b5c]" />
                   </button>
                   <button
                     onClick={() => openUpload(set.id)}
-                    className="p-1.5 rounded-lg border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                    className="p-1.5 rounded-lg border border-black/10 hover:bg-[var(--app-bg)] transition-colors"
                     title="Upload data"
                   >
                     <Upload className="w-4 h-4 text-[#7a6b5c]" />
                   </button>
                   <button
                     onClick={() => handleExport(set)}
-                    className="p-1.5 rounded-lg border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                    className="p-1.5 rounded-lg border border-black/10 hover:bg-[var(--app-bg)] transition-colors"
                     title="Download as Excel"
                   >
                     <Download className="w-4 h-4 text-[#7a6b5c]" />
@@ -356,7 +356,7 @@ export default function PincodeRoutingPage() {
                   <div className="relative">
                     <button
                       onClick={() => setMenuOpen(menuOpen === set.id ? null : set.id)}
-                      className="p-1.5 rounded-lg border border-black/10 hover:bg-[#faf8f6] transition-colors"
+                      className="p-1.5 rounded-lg border border-black/10 hover:bg-[var(--app-bg)] transition-colors"
                     >
                       <MoreVertical className="w-4 h-4 text-[#7a6b5c]" />
                     </button>
@@ -364,13 +364,13 @@ export default function PincodeRoutingPage() {
                       <div className="absolute right-0 top-8 bg-white rounded-xl border border-black/10 shadow-lg z-20 py-1 min-w-[130px]">
                         <button
                           onClick={() => { setRenamingSet(set); setRenameVal(set.name); setMenuOpen(null); }}
-                          className="w-full px-4 py-2 text-left text-[13px] hover:bg-[#faf8f6] flex items-center gap-2"
+                          className="w-full px-4 py-2 text-left text-[13px] hover:bg-[var(--app-bg)] flex items-center gap-2"
                         >
                           <Edit2 className="w-3.5 h-3.5" /> Rename
                         </button>
                         <button
                           onClick={() => { downloadTemplate(set.match_field); setMenuOpen(null); }}
-                          className="w-full px-4 py-2 text-left text-[13px] hover:bg-[#faf8f6] flex items-center gap-2"
+                          className="w-full px-4 py-2 text-left text-[13px] hover:bg-[var(--app-bg)] flex items-center gap-2"
                         >
                           <Download className="w-3.5 h-3.5" /> Template
                         </button>
@@ -472,7 +472,7 @@ export default function PincodeRoutingPage() {
                         <Button variant="outline" size="sm" onClick={() => setMapperOpen(false)}>Cancel</Button>
                         <Button size="sm" onClick={applyColumnMap}
                           disabled={!columnMap.value || !columnMap.pipeline}
-                          style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)' }}>
+                          style={{ background: 'linear-gradient(135deg,var(--brand-dark),var(--brand))' }}>
                           Apply → Preview
                         </Button>
                       </div>
@@ -489,21 +489,21 @@ export default function PincodeRoutingPage() {
                             {uploading ? 'Uploading…' : 'Merge'}
                           </Button>
                           <Button size="sm" onClick={() => handleUpload(true)} disabled={uploading}
-                            style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)' }}>
+                            style={{ background: 'linear-gradient(135deg,var(--brand-dark),var(--brand))' }}>
                             {uploading ? 'Uploading…' : 'Replace All'}
                           </Button>
                         </div>
                       </div>
                       <div className="overflow-hidden rounded-xl border border-black/5 max-h-48 overflow-y-auto">
                         <table className="w-full text-[12px]">
-                          <thead className="bg-[#faf8f6] sticky top-0">
+                          <thead className="bg-[var(--app-bg)] sticky top-0">
                             <tr>{['Value', 'Pipeline', 'District', 'State'].map((h) => (
                               <th key={h} className="px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-[#7a6b5c]">{h}</th>
                             ))}</tr>
                           </thead>
                           <tbody className="divide-y divide-black/[0.04]">
                             {preview.slice(0, 30).map((r, i) => (
-                              <tr key={i} className="hover:bg-[#faf8f6]">
+                              <tr key={i} className="hover:bg-[var(--app-bg)]">
                                 <td className="px-3 py-1.5 font-mono text-[#1c1410]">{r.match_value}</td>
                                 <td className="px-3 py-1.5 text-[#1c1410]">{r.pipeline_name ?? '—'}</td>
                                 <td className="px-3 py-1.5 text-[#7a6b5c]">{r.district ?? '—'}</td>
@@ -573,7 +573,7 @@ export default function PincodeRoutingPage() {
                     <button
                       key={t}
                       onClick={() => setNewMatchType(t)}
-                      className={`flex-1 py-2 text-[13px] rounded-xl border font-medium transition-colors ${newMatchType === t ? 'bg-orange-50 border-orange-300 text-orange-700' : 'border-black/10 text-[#7a6b5c] hover:bg-[#faf8f6]'}`}
+                      className={`flex-1 py-2 text-[13px] rounded-xl border font-medium transition-colors ${newMatchType === t ? 'bg-orange-50 border-orange-300 text-orange-700' : 'border-black/10 text-[#7a6b5c] hover:bg-[var(--app-bg)]'}`}
                     >
                       {t === 'exact' ? 'Exact match' : 'Contains'}
                     </button>
@@ -587,7 +587,7 @@ export default function PincodeRoutingPage() {
             <div className="flex gap-2 pt-1">
               <Button variant="outline" className="flex-1" onClick={() => setShowCreate(false)}>Cancel</Button>
               <Button className="flex-1" onClick={handleCreate} disabled={creating || !newName.trim()}
-                style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)' }}>
+                style={{ background: 'linear-gradient(135deg,var(--brand-dark),var(--brand))' }}>
                 {creating ? 'Creating…' : 'Create Set'}
               </Button>
             </div>
@@ -609,7 +609,7 @@ export default function PincodeRoutingPage() {
             <div className="flex gap-2">
               <Button variant="outline" className="flex-1" onClick={() => setRenamingSet(null)}>Cancel</Button>
               <Button className="flex-1" onClick={handleRename} disabled={!renameVal.trim()}
-                style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)' }}>Save</Button>
+                style={{ background: 'linear-gradient(135deg,var(--brand-dark),var(--brand))' }}>Save</Button>
             </div>
           </div>
         </div>
@@ -642,18 +642,18 @@ export default function PincodeRoutingPage() {
             <div className="flex-1 overflow-auto">
               {previewLoading ? (
                 <div className="flex justify-center py-8">
-                  <div className="w-6 h-6 border-4 border-[#ea580c] border-t-transparent rounded-full animate-spin" />
+                  <div className="w-6 h-6 border-4 border-[var(--brand)] border-t-transparent rounded-full animate-spin" />
                 </div>
               ) : (
                 <table className="w-full text-[13px]">
-                  <thead className="bg-[#faf8f6] sticky top-0">
+                  <thead className="bg-[var(--app-bg)] sticky top-0">
                     <tr>{['Value', 'Pipeline', 'District', 'State'].map((h) => (
                       <th key={h} className="px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide text-[#7a6b5c]">{h}</th>
                     ))}</tr>
                   </thead>
                   <tbody className="divide-y divide-black/[0.04]">
                     {previewRows.map((r) => (
-                      <tr key={r.id} className="hover:bg-[#faf8f6]">
+                      <tr key={r.id} className="hover:bg-[var(--app-bg)]">
                         <td className="px-4 py-2.5 font-mono text-[#1c1410]">{r.match_value}</td>
                         <td className="px-4 py-2.5 text-[#1c1410]">{r.pipeline_name ?? '—'}</td>
                         <td className="px-4 py-2.5 text-[#7a6b5c]">{r.district ?? '—'}</td>

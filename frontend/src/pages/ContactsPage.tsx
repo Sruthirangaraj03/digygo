@@ -145,7 +145,7 @@ function ContactDetailModal({ lead, onClose }: { lead: Lead; onClose: () => void
               className="px-5 py-2 rounded-lg text-[13px] font-bold text-white transition-all"
               style={{
                 background: activeTab === 'opportunity'
-                  ? 'linear-gradient(135deg, #c2410c 0%, #ea580c 100%)'
+                  ? 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 100%)'
                   : '#e5e7eb',
                 color: activeTab === 'opportunity' ? '#fff' : '#555',
               }}
@@ -158,7 +158,7 @@ function ContactDetailModal({ lead, onClose }: { lead: Lead; onClose: () => void
               className="px-5 py-2 rounded-lg text-[13px] font-bold transition-all"
               style={{
                 background: activeTab === 'additional'
-                  ? 'linear-gradient(135deg, #c2410c 0%, #ea580c 100%)'
+                  ? 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 100%)'
                   : '#e5e7eb',
                 color: activeTab === 'additional' ? '#fff' : '#555',
               }}
@@ -279,7 +279,7 @@ function ContactDetailModal({ lead, onClose }: { lead: Lead; onClose: () => void
                 </div>
               ) : fields.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
-                  <div className="w-12 h-12 bg-[#faf8f6] rounded-2xl flex items-center justify-center">
+                  <div className="w-12 h-12 bg-[var(--app-bg)] rounded-2xl flex items-center justify-center">
                     <FileText className="w-5 h-5 text-gray-300" />
                   </div>
                   <p className="text-[13px] font-semibold text-[#1c1410]">No additional fields</p>
@@ -319,7 +319,7 @@ function ContactDetailModal({ lead, onClose }: { lead: Lead; onClose: () => void
               onClick={handleSave}
               disabled={saving}
               className="px-6 py-2 rounded-lg text-[13px] font-bold text-white transition-colors disabled:opacity-60"
-              style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 100%)' }}
+              style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 100%)' }}
             >
               {saving ? 'SAVING…' : 'SAVE'}
             </button>
@@ -436,7 +436,7 @@ export default function ContactsPage() {
           return isHighlight ? (
             <div key={s.label}
               className="rounded-2xl px-5 py-4 flex items-center gap-4 text-white hover:-translate-y-0.5 transition-all duration-300"
-              style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 6px 24px rgba(234,88,12,0.25)' }}>
+              style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 6px 24px rgba(234,88,12,0.25)' }}>
               <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
                 <s.icon className="w-5 h-5 text-white" />
               </div>
@@ -580,7 +580,7 @@ export default function ContactsPage() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-[13px]">
             <thead>
-              <tr className="border-b border-black/5 bg-[#faf8f6]">
+              <tr className="border-b border-black/5 bg-[var(--app-bg)]">
                 <th className="w-10 px-4 py-3">
                   <input type="checkbox"
                     checked={filtered.length > 0 && selected.length === filtered.length}
@@ -600,7 +600,7 @@ export default function ContactsPage() {
                 <tr>
                   <td colSpan={9} className="py-16 text-center">
                     <div className="flex flex-col items-center gap-2">
-                      <div className="w-12 h-12 rounded-2xl bg-[#f5ede3] flex items-center justify-center">
+                      <div className="w-12 h-12 rounded-2xl bg-[var(--accent-tint)] flex items-center justify-center">
                         <Users className="w-6 h-6 text-[#c4b09e]" />
                       </div>
                       <p className="text-[13px] font-semibold text-[#1c1410]">No contacts found</p>
@@ -613,7 +613,7 @@ export default function ContactsPage() {
                 const isSelected = selected.includes(lead.id);
                 const isCustomer = lead.stage === 'Closed Won';
                 return (
-                  <tr key={lead.id} className={cn('hover:bg-[#faf8f6] transition-colors', isSelected && 'bg-primary/[0.03]')}>
+                  <tr key={lead.id} className={cn('hover:bg-[var(--app-bg)] transition-colors', isSelected && 'bg-primary/[0.03]')}>
 
                     <td className="px-4 py-3.5">
                       <input type="checkbox" checked={isSelected} onChange={() => toggleOne(lead.id)} className="w-4 h-4 accent-primary" />
@@ -689,7 +689,7 @@ export default function ContactsPage() {
                       <div className="relative">
                         <button
                           onClick={() => setOpenMenu(openMenu === lead.id ? null : lead.id)}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#7a6b5c] hover:bg-[#f5ede3] hover:text-primary transition-colors"
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#7a6b5c] hover:bg-[var(--accent-tint)] hover:text-primary transition-colors"
                         >
                           <MoreVertical className="w-4 h-4" />
                         </button>

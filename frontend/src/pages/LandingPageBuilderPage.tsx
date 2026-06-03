@@ -308,9 +308,9 @@ function PropsPanel({ block, onChange }: { block: Block; onChange: (props: Recor
       <label className="block text-[10px] font-bold uppercase tracking-wider text-[#7a6b5c] mb-1">{label}</label>
       {multiline
         ? <textarea value={p[key] ?? ''} onChange={(e) => set(key, e.target.value)} rows={3}
-            className="w-full px-3 py-2 rounded-xl border border-black/10 text-[12px] text-[#1c1410] bg-[#faf8f6] outline-none focus:border-primary/40 resize-none" />
+            className="w-full px-3 py-2 rounded-xl border border-black/10 text-[12px] text-[#1c1410] bg-[var(--app-bg)] outline-none focus:border-primary/40 resize-none" />
         : <input type="text" value={p[key] ?? ''} onChange={(e) => set(key, e.target.value)}
-            className="w-full px-3 py-2 rounded-xl border border-black/10 text-[12px] text-[#1c1410] bg-[#faf8f6] outline-none focus:border-primary/40" />
+            className="w-full px-3 py-2 rounded-xl border border-black/10 text-[12px] text-[#1c1410] bg-[var(--app-bg)] outline-none focus:border-primary/40" />
       }
     </div>
   );
@@ -318,7 +318,7 @@ function PropsPanel({ block, onChange }: { block: Block; onChange: (props: Recor
   const seg = (label: string, key: string, opts: { value: string; label: string }[]) => (
     <div key={key}>
       <label className="block text-[10px] font-bold uppercase tracking-wider text-[#7a6b5c] mb-1">{label}</label>
-      <div className="flex gap-0.5 p-1 bg-[#f5ede3] rounded-xl">
+      <div className="flex gap-0.5 p-1 bg-[var(--accent-tint)] rounded-xl">
         {opts.map((o) => (
           <button key={o.value} onClick={() => set(key, o.value)}
             className={cn('flex-1 px-1.5 py-1 rounded-lg text-[11px] font-semibold transition-all',
@@ -403,7 +403,7 @@ function PropsPanel({ block, onChange }: { block: Block; onChange: (props: Recor
       {textInput('Section Title', 'title')}
       <div className="space-y-3">
         {(p.items as any[]).map((item, i) => (
-          <div key={i} className="p-3 rounded-xl bg-[#faf8f6] border border-black/5 space-y-2">
+          <div key={i} className="p-3 rounded-xl bg-[var(--app-bg)] border border-black/5 space-y-2">
             <div className="flex gap-2">
               <input type="text" value={item.icon} onChange={(e) => { const items = [...p.items]; items[i] = { ...item, icon: e.target.value }; set('items', items); }}
                 className="w-10 px-2 py-1 rounded-lg border border-black/10 text-center text-[13px] bg-white outline-none" />
@@ -429,9 +429,9 @@ function PropsPanel({ block, onChange }: { block: Block; onChange: (props: Recor
         {(p.items as any[]).map((item, i) => (
           <div key={i} className="flex gap-2">
             <input type="text" value={item.value} placeholder="Value" onChange={(e) => { const items = [...p.items]; items[i] = { ...item, value: e.target.value }; set('items', items); }}
-              className="w-20 px-2 py-1.5 rounded-lg border border-black/10 text-[12px] font-bold bg-[#faf8f6] outline-none" />
+              className="w-20 px-2 py-1.5 rounded-lg border border-black/10 text-[12px] font-bold bg-[var(--app-bg)] outline-none" />
             <input type="text" value={item.label} placeholder="Label" onChange={(e) => { const items = [...p.items]; items[i] = { ...item, label: e.target.value }; set('items', items); }}
-              className="flex-1 px-2 py-1.5 rounded-lg border border-black/10 text-[12px] bg-[#faf8f6] outline-none" />
+              className="flex-1 px-2 py-1.5 rounded-lg border border-black/10 text-[12px] bg-[var(--app-bg)] outline-none" />
           </div>
         ))}
       </div>
@@ -576,7 +576,7 @@ export default function LandingPageBuilderPage() {
                 {Object.entries(THEMES).map(([key, t]) => (
                   <button key={key} onClick={() => { setThemeKey(key); setShowThemes(false); }}
                     className={cn('w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[12px] font-medium transition-colors',
-                      themeKey === key ? 'bg-primary/10 text-primary' : 'text-[#1c1410] hover:bg-[#faf8f6]')}>
+                      themeKey === key ? 'bg-primary/10 text-primary' : 'text-[#1c1410] hover:bg-[var(--app-bg)]')}>
                     <span className="w-3.5 h-3.5 rounded-full border border-black/10 shrink-0"
                       style={{ background: SWATCHES[key as keyof typeof SWATCHES] }} />
                     {t.name}
@@ -589,7 +589,7 @@ export default function LandingPageBuilderPage() {
         </div>
 
         {/* Device toggle */}
-        <div className="flex items-center gap-0.5 p-0.5 bg-[#f5ede3] rounded-lg">
+        <div className="flex items-center gap-0.5 p-0.5 bg-[var(--accent-tint)] rounded-lg">
           {([['desktop', Monitor], ['tablet', Tablet], ['mobile', Smartphone]] as const).map(([d, Icon]) => (
             <button key={d} onClick={() => setDevice(d)}
               className={cn('p-1.5 rounded-md transition-all', device === d ? 'bg-white text-primary shadow-sm' : 'text-[#7a6b5c] hover:text-primary')}>
@@ -640,7 +640,7 @@ export default function LandingPageBuilderPage() {
                 <p className="px-4 pt-4 pb-1 text-[9px] font-bold uppercase tracking-widest text-[#b09e8d]">{cat.category}</p>
                 {cat.items.map((item) => (
                   <button key={item.type} onClick={() => addBlock(item.type)}
-                    className="w-full flex items-center gap-2.5 px-4 py-2 hover:bg-[#faf8f6] transition-colors group text-left">
+                    className="w-full flex items-center gap-2.5 px-4 py-2 hover:bg-[var(--app-bg)] transition-colors group text-left">
                     <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
                       <item.icon className="w-3.5 h-3.5 text-primary" />
                     </div>
@@ -722,7 +722,7 @@ export default function LandingPageBuilderPage() {
                   <p className="text-[12px] font-semibold text-[#1c1410] mt-0.5 capitalize">{selectedBlock.type}</p>
                 </div>
                 <button onClick={() => setSelectedId(null)}
-                  className="p-1 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors">
+                  className="p-1 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] hover:text-primary transition-colors">
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>

@@ -222,8 +222,8 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
             <button
               onClick={() => setShowNotifs(!showNotifs)}
               className={cn(
-                'relative p-2 rounded-xl text-[#7a6b5c] hover:text-primary hover:bg-[#f5ede3] transition-colors',
-                showNotifs && 'text-primary bg-[#f5ede3]'
+                'relative p-2 rounded-xl text-[#7a6b5c] hover:text-primary hover:bg-[var(--accent-tint)] transition-colors',
+                showNotifs && 'text-primary bg-[var(--accent-tint)]'
               )}
             >
               <Bell className="w-5 h-5" />
@@ -255,7 +255,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
                             Clear all
                           </button>
                         )}
-                        <button onClick={() => setShowNotifs(false)} className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors">
+                        <button onClick={() => setShowNotifs(false)} className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] transition-colors">
                           <X size={14} />
                         </button>
                       </div>
@@ -271,8 +271,8 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
                             className={cn(
                               'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors',
                               notifTab === tab
-                                ? 'bg-[#f5ede3] text-primary'
-                                : 'text-[#7a6b5c] hover:bg-[#faf8f6]'
+                                ? 'bg-[var(--accent-tint)] text-primary'
+                                : 'text-[#7a6b5c] hover:bg-[var(--app-bg)]'
                             )}
                           >
                             {tab === 'alerts' ? 'Alerts' : 'Activity'}
@@ -297,7 +297,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
                       if (list.length === 0) {
                         return (
                           <div className="flex flex-col items-center justify-center py-10 gap-2">
-                            <div className="w-10 h-10 rounded-2xl bg-[#f5ede3] flex items-center justify-center">
+                            <div className="w-10 h-10 rounded-2xl bg-[var(--accent-tint)] flex items-center justify-center">
                               <Bell size={20} className="text-[#c4b09e]" />
                             </div>
                             <p className="text-[13px] font-semibold text-[#8a7c6e]">
@@ -316,7 +316,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
                           <div
                             key={n.id}
                             className={cn(
-                              'group flex items-start gap-3 px-4 py-3 hover:bg-[#faf8f6] transition-colors',
+                              'group flex items-start gap-3 px-4 py-3 hover:bg-[var(--app-bg)] transition-colors',
                               unread && 'bg-primary/[0.03]'
                             )}
                           >
@@ -374,7 +374,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
           <div className="relative">
             <button
               onClick={() => { setShowProfile((v) => !v); setShowNotifs(false); }}
-              className="flex items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-[#f5ede3] transition-colors"
+              className="flex items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-[var(--accent-tint)] transition-colors"
             >
               <div className="hidden sm:block text-right">
                 <p className="text-[13px] font-semibold text-[#1c1410] leading-tight">{currentUser?.name ?? 'User'}</p>
@@ -382,7 +382,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
               </div>
               <div
                 className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold ring-2 ring-primary/20 hover:ring-primary/40 transition-all shrink-0"
-                style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}
+                style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}
               >
                 {initials}
               </div>
@@ -399,7 +399,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
                   <div className="px-4 py-3.5 border-b border-black/5">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-                        style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}>
+                        style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}>
                         {initials}
                       </div>
                       <div className="min-w-0">
@@ -412,11 +412,11 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
                   {/* Menu items */}
                   <div className="py-1.5">
                     <Link to="/settings/company" onClick={() => setShowProfile(false)}
-                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf8f6] transition-colors">
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[var(--app-bg)] transition-colors">
                       <User className="w-4 h-4 text-[#7a6b5c]" /> Profile
                     </Link>
                     <Link to="/settings" onClick={() => setShowProfile(false)}
-                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[#faf8f6] transition-colors">
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] text-[#1c1410] hover:bg-[var(--app-bg)] transition-colors">
                       <Settings className="w-4 h-4 text-[#7a6b5c]" /> Settings
                     </Link>
                   </div>

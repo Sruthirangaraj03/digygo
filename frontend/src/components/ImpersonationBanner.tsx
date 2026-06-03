@@ -20,7 +20,7 @@ export default function ImpersonationBanner() {
   return (
     <div
       className="fixed top-0 left-0 right-0 z-[9999] h-10 flex items-center justify-between px-4 md:px-6 shrink-0"
-      style={{ background: 'linear-gradient(90deg, #7c2d12 0%, #c2410c 50%, #ea580c 100%)', boxShadow: '0 2px 12px rgba(194,65,12,0.4)' }}
+      style={{ background: 'linear-gradient(90deg, #7c2d12 0%, var(--brand-dark) 50%, var(--brand) 100%)', boxShadow: '0 2px 12px rgba(194,65,12,0.4)' }}
     >
       {/* Left — what you're viewing */}
       <div className="flex items-center gap-2 text-white min-w-0">

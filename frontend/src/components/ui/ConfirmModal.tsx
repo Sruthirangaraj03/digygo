@@ -28,7 +28,7 @@ export function ConfirmModal({ title, message, confirmLabel = 'Delete', onConfir
           <button
             onClick={onClose}
             disabled={loading}
-            className="flex-1 py-2.5 rounded-xl border border-black/10 text-[13px] font-semibold text-[#7a6b5c] hover:bg-[#faf8f6] transition-colors disabled:opacity-50"
+            className="flex-1 py-2.5 rounded-xl border border-black/10 text-[13px] font-semibold text-[#7a6b5c] hover:bg-[var(--app-bg)] transition-colors disabled:opacity-50"
           >
             Cancel
           </button>

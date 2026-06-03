@@ -92,7 +92,7 @@ export default function WhatsAppSetupPage() {
       <div className="flex items-center gap-3">
         <button
           onClick={() => navigate('/lead-generation')}
-          className="p-2 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-[#1c1410] transition-colors shrink-0"
+          className="p-2 rounded-xl hover:bg-[var(--accent-tint)] text-[#7a6b5c] hover:text-[#1c1410] transition-colors shrink-0"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
@@ -206,7 +206,7 @@ export default function WhatsAppSetupPage() {
         <div>
           <label className="text-sm font-medium text-foreground mb-1.5 block">Inbound Webhook URL</label>
           <div className="flex gap-2">
-            <Input value={webhookUrl} readOnly className="flex-1 font-mono text-sm bg-[#faf8f6]" />
+            <Input value={webhookUrl} readOnly className="flex-1 font-mono text-sm bg-[var(--app-bg)]" />
             <Button variant="outline" onClick={() => { copyToClipboard(webhookUrl); toast.success('URL copied'); }}>
               <Copy className="w-4 h-4" />
             </Button>
@@ -215,7 +215,7 @@ export default function WhatsAppSetupPage() {
         <div>
           <label className="text-sm font-medium text-foreground mb-1.5 block">Webhook Verify Token</label>
           <div className="flex gap-2">
-            <Input value={verifyToken} readOnly className="flex-1 font-mono text-sm bg-[#faf8f6]" />
+            <Input value={verifyToken} readOnly className="flex-1 font-mono text-sm bg-[var(--app-bg)]" />
             <Button variant="outline" onClick={() => { copyToClipboard(verifyToken); toast.success('Copied'); }}>
               <Copy className="w-4 h-4" />
             </Button>

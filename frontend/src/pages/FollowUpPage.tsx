@@ -86,7 +86,7 @@ function AddFollowUpModal({ onClose }: { onClose: () => void }) {
         </div>
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-black/5">
           <button onClick={onClose} className="px-5 py-2 rounded-xl text-[13px] font-semibold text-[#7a6b5c] hover:bg-gray-100 transition-colors">Cancel</button>
-          <button onClick={submit} className="px-6 py-2 rounded-xl text-[13px] font-bold text-white hover:-translate-y-0.5 transition-all" style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}>
+          <button onClick={submit} className="px-6 py-2 rounded-xl text-[13px] font-bold text-white hover:-translate-y-0.5 transition-all" style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}>
             Schedule
           </button>
         </div>
@@ -236,7 +236,7 @@ export default function FollowUpPage() {
             <button
               onClick={() => setShowAdd(true)}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-[12px] font-bold transition-all hover:-translate-y-0.5"
-              style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 12px rgba(234,88,12,0.25)' }}
+              style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 12px rgba(234,88,12,0.25)' }}
             >
               <Plus className="w-3.5 h-3.5" /> Follow-up
             </button>
@@ -245,7 +245,7 @@ export default function FollowUpPage() {
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
             )}
-            <button className="w-8 h-8 rounded-lg bg-[#faf8f6] flex items-center justify-center text-[#7a6b5c] hover:bg-gray-100 transition-colors" title="Export">
+            <button className="w-8 h-8 rounded-lg bg-[var(--app-bg)] flex items-center justify-center text-[#7a6b5c] hover:bg-gray-100 transition-colors" title="Export">
               <Download className="w-3.5 h-3.5" />
             </button>
             <div className="relative">
@@ -255,7 +255,7 @@ export default function FollowUpPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search"
-                className="pl-9 pr-4 py-1.5 text-[12px] bg-[#faf8f6] border border-black/5 rounded-xl outline-none focus:ring-1 focus:ring-primary/30 w-44"
+                className="pl-9 pr-4 py-1.5 text-[12px] bg-[var(--app-bg)] border border-black/5 rounded-xl outline-none focus:ring-1 focus:ring-primary/30 w-44"
               />
             </div>
           </div>
@@ -265,7 +265,7 @@ export default function FollowUpPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-[13px] min-w-[860px]">
             <thead>
-              <tr className="border-b border-black/5 bg-[#faf8f6]">
+              <tr className="border-b border-black/5 bg-[var(--app-bg)]">
                 <th className="w-10 px-4 py-3">
                   <input type="checkbox"
                     checked={filtered.length > 0 && selected.length === filtered.length}
@@ -296,7 +296,7 @@ export default function FollowUpPage() {
                   const createdAt = fu.createdAt ? new Date(fu.createdAt) : null;
 
                 return (
-                  <tr key={fu.id} className={cn('hover:bg-[#faf8f6] transition-colors', isSelected && 'bg-primary/[0.03]')}>
+                  <tr key={fu.id} className={cn('hover:bg-[var(--app-bg)] transition-colors', isSelected && 'bg-primary/[0.03]')}>
                     {/* Checkbox */}
                     <td className="px-4 py-4">
                       <input type="checkbox" checked={isSelected} onChange={() => toggleOne(fu.id)} className="w-4 h-4 accent-primary" />
@@ -402,7 +402,7 @@ export default function FollowUpPage() {
                               {!fu.completed && (
                                 <button
                                   onClick={() => { completeFollowUp(fu.id, fu.leadId); toast.success('Marked complete'); setOpenMenu(null); }}
-                                  className="w-full flex items-center gap-2 px-4 py-2.5 text-[12px] text-[#1c1410] hover:bg-[#faf8f6]"
+                                  className="w-full flex items-center gap-2 px-4 py-2.5 text-[12px] text-[#1c1410] hover:bg-[var(--app-bg)]"
                                 >
                                   <Check className="w-3.5 h-3.5 text-green-500" /> Complete
                                 </button>

@@ -61,7 +61,7 @@ function mapApi(f: any): FUItem {
 
 const S: Record<FUStatus, { bar: string; bg: string; text: string; border: string; label: string }> = {
   overdue:   { bar: 'bg-red-400',    bg: 'bg-red-50',     text: 'text-red-600',    border: 'border-red-200',    label: 'Overdue'   },
-  today:     { bar: 'bg-[#c2410c]',  bg: 'bg-orange-50',  text: 'text-[#c2410c]', border: 'border-orange-200', label: 'Today'     },
+  today:     { bar: 'bg-[var(--brand-dark)]',  bg: 'bg-orange-50',  text: 'text-[var(--brand-dark)]', border: 'border-orange-200', label: 'Today'     },
   upcoming:  { bar: 'bg-violet-400', bg: 'bg-violet-50',  text: 'text-violet-700', border: 'border-violet-200', label: 'Upcoming'  },
   completed: { bar: 'bg-gray-300',   bg: 'bg-gray-100',   text: 'text-gray-500',   border: 'border-gray-200',   label: 'Done'      },
 };
@@ -147,12 +147,12 @@ function CreateModal({
           <div className="flex items-center gap-2">
             {step === 'form' && !preselectedLead && (
               <button onClick={() => setStep('search')}
-                className="text-[12px] text-[#7a6b5c] hover:text-[#c2410c] transition-colors font-medium">
+                className="text-[12px] text-[#7a6b5c] hover:text-[var(--brand-dark)] transition-colors font-medium">
                 Change lead
               </button>
             )}
             <button onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors">
+              className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] transition-colors">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -168,9 +168,9 @@ function CreateModal({
                 placeholder="Search lead by name or phone…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 h-11 rounded-xl border border-black/10 text-[13px] outline-none focus:border-[#c2410c]/40 focus:ring-2 focus:ring-[#c2410c]/10 transition-all"
+                className="w-full pl-10 pr-4 h-11 rounded-xl border border-black/10 text-[13px] outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all"
               />
-              {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#c2410c] animate-spin" />}
+              {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--brand-dark)] animate-spin" />}
             </div>
 
             <div className="mt-3 max-h-60 overflow-y-auto space-y-1">
@@ -181,7 +181,7 @@ function CreateModal({
               ) : results.map((lead) => (
                 <button key={lead.id} onClick={() => selectLead(lead)}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#faf0e8] transition-colors text-left">
-                  <div className="w-8 h-8 rounded-full bg-[#f5ede3] flex items-center justify-center text-[11px] font-bold text-[#c2410c] shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-[var(--accent-tint)] flex items-center justify-center text-[11px] font-bold text-[var(--brand-dark)] shrink-0">
                     {(lead.name ?? '?')[0].toUpperCase()}
                   </div>
                   <div className="min-w-0">
@@ -206,7 +206,7 @@ function CreateModal({
                 placeholder="e.g. Call back after demo"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full px-3 h-10 rounded-xl border border-black/10 text-[13px] outline-none focus:border-[#c2410c]/40 focus:ring-2 focus:ring-[#c2410c]/10 transition-all"
+                className="w-full px-3 h-10 rounded-xl border border-black/10 text-[13px] outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all"
               />
             </div>
 
@@ -218,7 +218,7 @@ function CreateModal({
                   value={date}
                   min={format(new Date(), 'yyyy-MM-dd')}
                   onChange={(e) => setDate(e.target.value)}
-                  className="w-full px-3 h-10 rounded-xl border border-black/10 text-[13px] outline-none focus:border-[#c2410c]/40 focus:ring-2 focus:ring-[#c2410c]/10 transition-all"
+                  className="w-full px-3 h-10 rounded-xl border border-black/10 text-[13px] outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all"
                 />
               </div>
               <div>
@@ -227,7 +227,7 @@ function CreateModal({
                   type="time"
                   value={time}
                   onChange={(e) => setTime(e.target.value)}
-                  className="w-full px-3 h-10 rounded-xl border border-black/10 text-[13px] outline-none focus:border-[#c2410c]/40 focus:ring-2 focus:ring-[#c2410c]/10 transition-all"
+                  className="w-full px-3 h-10 rounded-xl border border-black/10 text-[13px] outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all"
                 />
               </div>
             </div>
@@ -239,20 +239,20 @@ function CreateModal({
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 rows={2}
-                className="w-full px-3 py-2 rounded-xl border border-black/10 text-[13px] outline-none focus:border-[#c2410c]/40 focus:ring-2 focus:ring-[#c2410c]/10 transition-all resize-none"
+                className="w-full px-3 py-2 rounded-xl border border-black/10 text-[13px] outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all resize-none"
               />
             </div>
 
             <div className="flex gap-3 pt-1">
               <button onClick={onClose}
-                className="flex-1 h-10 rounded-xl border border-black/10 text-[13px] font-semibold text-[#7a6b5c] hover:bg-[#f5ede3] transition-colors">
+                className="flex-1 h-10 rounded-xl border border-black/10 text-[13px] font-semibold text-[#7a6b5c] hover:bg-[var(--accent-tint)] transition-colors">
                 Cancel
               </button>
               <button
                 onClick={submit}
                 disabled={saving || !title.trim() || !date || !time}
                 className="flex-1 h-10 rounded-xl text-[13px] font-bold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}
+                style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Check className="w-4 h-4" /> Schedule</>}
               </button>
@@ -333,7 +333,7 @@ function CompleteModal({
             <p className="text-[11px] text-[#b09e8d] mt-1.5 line-clamp-1">"{fu.title}"</p>
           </div>
           <button onClick={onCancel}
-            className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors shrink-0">
+            className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] transition-colors shrink-0">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -351,7 +351,7 @@ function CompleteModal({
                 value={date}
                 min={format(new Date(), 'yyyy-MM-dd')}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 h-10 rounded-xl border border-black/10 text-[13px] outline-none focus:border-[#c2410c]/40 focus:ring-2 focus:ring-[#c2410c]/10 transition-all"
+                className="w-full px-3 h-10 rounded-xl border border-black/10 text-[13px] outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all"
               />
             </div>
             <div>
@@ -360,7 +360,7 @@ function CompleteModal({
                 type="time"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
-                className="w-full px-3 h-10 rounded-xl border border-black/10 text-[13px] outline-none focus:border-[#c2410c]/40 focus:ring-2 focus:ring-[#c2410c]/10 transition-all"
+                className="w-full px-3 h-10 rounded-xl border border-black/10 text-[13px] outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all"
               />
             </div>
           </div>
@@ -371,7 +371,7 @@ function CompleteModal({
               placeholder="What to follow up on…"
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              className="w-full px-3 h-10 rounded-xl border border-black/10 text-[13px] outline-none focus:border-[#c2410c]/40 focus:ring-2 focus:ring-[#c2410c]/10 transition-all"
+              className="w-full px-3 h-10 rounded-xl border border-black/10 text-[13px] outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all"
             />
           </div>
 
@@ -379,7 +379,7 @@ function CompleteModal({
             <button
               onClick={markDoneOnly}
               disabled={saving}
-              className="flex-1 h-10 rounded-xl border border-black/10 text-[12px] font-semibold text-[#7a6b5c] hover:bg-[#f5ede3] transition-colors disabled:opacity-50"
+              className="flex-1 h-10 rounded-xl border border-black/10 text-[12px] font-semibold text-[#7a6b5c] hover:bg-[var(--accent-tint)] transition-colors disabled:opacity-50"
             >
               No Follow-up Needed
             </button>
@@ -387,7 +387,7 @@ function CompleteModal({
               onClick={markDoneAndSchedule}
               disabled={saving || !date}
               className="flex-1 h-10 rounded-xl text-[13px] font-bold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}
+              style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Check className="w-4 h-4" /> Done &amp; Schedule</>}
             </button>
@@ -495,7 +495,7 @@ function FollowUpCard({
             'w-9 h-9 rounded-full flex items-center justify-center transition-all',
             fu.completed
               ? 'bg-gray-100 text-gray-400 hover:bg-gray-200'
-              : 'bg-[#fff0e6] text-[#c2410c] hover:bg-[#f5ede3] group-hover:scale-110',
+              : 'bg-[#fff0e6] text-[var(--brand-dark)] hover:bg-[var(--accent-tint)] group-hover:scale-110',
           )}
           title={fu.completed ? 'Mark as pending' : 'Mark as done'}
         >
@@ -676,7 +676,7 @@ export default function FollowUpsPage() {
   const TABS: { key: FUFilter; label: string; count: number; color: string }[] = [
     { key: 'all',       label: 'All',       count: items.length,      color: 'text-[#1c1410]' },
     { key: 'overdue',   label: 'Overdue',   count: stats.overdue,     color: 'text-red-600'   },
-    { key: 'today',     label: 'Today',     count: stats.today,       color: 'text-[#c2410c]' },
+    { key: 'today',     label: 'Today',     count: stats.today,       color: 'text-[var(--brand-dark)]' },
     { key: 'upcoming',  label: 'Upcoming',  count: stats.upcoming,    color: 'text-violet-600' },
     { key: 'completed', label: 'Completed', count: stats.completed,   color: 'text-gray-500'  },
   ];
@@ -706,7 +706,7 @@ export default function FollowUpsPage() {
               <select
                 value={staffFilter}
                 onChange={(e) => setStaffFilter(e.target.value)}
-                className="appearance-none h-9 pl-3 pr-8 rounded-xl border border-black/10 text-[12px] font-medium text-[#1c1410] bg-white outline-none focus:border-[#c2410c]/40 cursor-pointer transition-all"
+                className="appearance-none h-9 pl-3 pr-8 rounded-xl border border-black/10 text-[12px] font-medium text-[#1c1410] bg-white outline-none focus:border-primary/40 cursor-pointer transition-all"
               >
                 <option value="all">All Staff</option>
                 {staff.map((s) => (
@@ -724,7 +724,7 @@ export default function FollowUpsPage() {
               placeholder="Search lead or task…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 pr-4 h-9 rounded-xl border border-black/10 text-[12px] outline-none focus:border-[#c2410c]/40 focus:ring-2 focus:ring-[#c2410c]/10 bg-white transition-all w-48"
+              className="pl-9 pr-4 h-9 rounded-xl border border-black/10 text-[12px] outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 bg-white transition-all w-48"
             />
             {search && (
               <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2">
@@ -737,7 +737,7 @@ export default function FollowUpsPage() {
           <button
             onClick={() => setCreateOpen(true)}
             className="flex items-center gap-1.5 h-9 px-4 rounded-xl text-[13px] font-bold text-white transition-all hover:-translate-y-0.5"
-            style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 12px rgba(194,65,12,0.3)' }}
+            style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 12px rgba(194,65,12,0.3)' }}
           >
             <Plus className="w-4 h-4" /> New Follow-up
           </button>
@@ -754,7 +754,7 @@ export default function FollowUpsPage() {
               'flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12px] font-semibold whitespace-nowrap transition-all',
               filter === tab.key
                 ? 'bg-[#1c1410] text-white'
-                : 'text-[#7a6b5c] hover:bg-[#f5ede3] hover:text-[#1c1410]'
+                : 'text-[#7a6b5c] hover:bg-[var(--accent-tint)] hover:text-[#1c1410]'
             )}
           >
             {tab.label}
@@ -772,8 +772,8 @@ export default function FollowUpsPage() {
       <div className="flex-1 overflow-y-auto pt-4 pb-24">
         {visible.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-[#f5ede3] flex items-center justify-center mb-3">
-              <Calendar className="w-6 h-6 text-[#c2410c]" />
+            <div className="w-14 h-14 rounded-2xl bg-[var(--accent-tint)] flex items-center justify-center mb-3">
+              <Calendar className="w-6 h-6 text-[var(--brand-dark)]" />
             </div>
             <p className="text-[15px] font-bold text-[#1c1410] mb-1">
               {filter === 'today' ? 'Nothing due today' : `No ${filter} follow-ups`}
@@ -797,7 +797,7 @@ export default function FollowUpsPage() {
             )}
             {grouped.today.length > 0 && (
               <div>
-                <SectionHeader label="Today" count={grouped.today.length} color="text-[#c2410c]" />
+                <SectionHeader label="Today" count={grouped.today.length} color="text-[var(--brand-dark)]" />
                 <div className="space-y-2">
                   {grouped.today.map((fu) => (
                     <FollowUpCard key={fu.id} fu={fu} showAssignee={isAdminOrOwner} onToggle={handleToggle} onNavigate={handleLeadClick} />
@@ -840,7 +840,7 @@ export default function FollowUpsPage() {
       <button
         onClick={() => setCreateOpen(true)}
         className="fixed bottom-6 right-6 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-lg sm:hidden transition-all active:scale-95"
-        style={{ background: 'linear-gradient(135deg, #c2410c, #ea580c)', boxShadow: '0 6px 20px rgba(194,65,12,0.4)' }}
+        style={{ background: 'linear-gradient(135deg, var(--brand-dark), var(--brand))', boxShadow: '0 6px 20px rgba(194,65,12,0.4)' }}
       >
         <Plus className="w-6 h-6" />
       </button>

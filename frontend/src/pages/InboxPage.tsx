@@ -460,7 +460,7 @@ export default function InboxPage() {
           {/* Row 1: search bar + New button */}
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#c2410c]/50" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary/50" />
               <input
                 className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-orange-200 bg-white placeholder:text-[#b8a89a] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-colors"
                 placeholder="Search conversations..."
@@ -485,7 +485,7 @@ export default function InboxPage() {
                 return (
                   <button key={key} onClick={() => setFilterTab(key)}
                     className={cn('px-3 py-1 text-xs font-medium rounded-full whitespace-nowrap transition-colors flex items-center gap-1',
-                      filterTab === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-[#f5ede3]')}>
+                      filterTab === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-[var(--accent-tint)]')}>
                     {label}
                     {count > 0 && <span className={cn('text-[10px] rounded-full px-1', filterTab === key ? 'bg-white/20' : 'bg-primary/10 text-primary')}>{count}</span>}
                   </button>
@@ -501,7 +501,7 @@ export default function InboxPage() {
                 className={cn('w-7 h-7 rounded-full flex items-center justify-center transition-colors',
                   channelFilter !== 'all' || waAccountFilter
                     ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:bg-[#f5ede3]')}>
+                    : 'text-muted-foreground hover:bg-[var(--accent-tint)]')}>
                 <Filter className="w-3.5 h-3.5" />
               </button>
               {showChannelDropdown && (
@@ -516,7 +516,7 @@ export default function InboxPage() {
                     ]).map(({ key, label, Icon: Ic, color }) => (
                       <button key={key}
                         onClick={() => { setChannelFilter(key); if (key !== 'personal_wa') setWaAccountFilter(null); setShowChannelDropdown(false); }}
-                        className={cn('w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[#f5ede3] transition-colors',
+                        className={cn('w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[var(--accent-tint)] transition-colors',
                           channelFilter === key && !waAccountFilter ? 'text-primary font-medium' : 'text-foreground')}>
                         {Ic ? <Ic className={cn('w-3.5 h-3.5', color)} /> : <div className="w-3.5" />}
                         {label}
@@ -528,7 +528,7 @@ export default function InboxPage() {
                         <p className="px-3 pt-0.5 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Account</p>
                         <button
                           onClick={() => { setChannelFilter('personal_wa'); setWaAccountFilter(null); setShowChannelDropdown(false); }}
-                          className={cn('w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[#f5ede3] transition-colors',
+                          className={cn('w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[var(--accent-tint)] transition-colors',
                             channelFilter === 'personal_wa' && !waAccountFilter ? 'text-primary font-medium' : 'text-foreground')}>
                           <Smartphone className="w-3.5 h-3.5 text-teal-600" /> All Numbers
                           {channelFilter === 'personal_wa' && !waAccountFilter && <Check className="w-3 h-3 ml-auto text-primary" />}
@@ -536,7 +536,7 @@ export default function InboxPage() {
                         {waAccounts.map((acc) => (
                           <button key={acc}
                             onClick={() => { setChannelFilter('personal_wa'); setWaAccountFilter(acc); setShowChannelDropdown(false); }}
-                            className={cn('w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[#f5ede3] transition-colors',
+                            className={cn('w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[var(--accent-tint)] transition-colors',
                               waAccountFilter === acc ? 'text-primary font-medium' : 'text-foreground')}>
                             <Smartphone className="w-3.5 h-3.5 text-teal-600" /> +{acc.slice(-10)}
                             {waAccountFilter === acc && <Check className="w-3 h-3 ml-auto text-primary" />}
@@ -562,7 +562,7 @@ export default function InboxPage() {
           {filtered.map((conv) => (
             <button key={conv.id} onClick={() => handleSelectConversation(conv.id)}
               className={cn('w-full text-left px-4 py-3 border-b border-orange-50 hover:bg-[#fef3ea] transition-colors flex gap-3',
-                conv.id === selectedId ? 'bg-[#fde8d8] border-l-2 border-l-primary' : 'border-l-2 border-l-transparent')}>
+                conv.id === selectedId ? 'bg-[var(--accent-tint)] border-l-2 border-l-primary' : 'border-l-2 border-l-transparent')}>
               <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-sm font-semibold text-primary shrink-0">
                 {getInitials(conv.lead_name, conv.lead_phone)}
               </div>
@@ -605,7 +605,7 @@ export default function InboxPage() {
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-orange-100 bg-[#faf4ef]">
               <div className="flex items-center gap-3">
-                <button onClick={handleBack} className="sm:hidden p-1 hover:bg-[#f5ede3] rounded-lg"><ArrowLeft className="w-5 h-5" /></button>
+                <button onClick={handleBack} className="sm:hidden p-1 hover:bg-[var(--accent-tint)] rounded-lg"><ArrowLeft className="w-5 h-5" /></button>
                 <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-semibold">
                   {getInitials(selected.lead_name, selected.lead_phone)}
                 </div>
@@ -679,7 +679,7 @@ export default function InboxPage() {
                   <button
                     onClick={handleLoadMore}
                     disabled={loadingMore}
-                    className="text-xs text-[#7a6b5c] hover:text-primary flex items-center gap-1 px-3 py-1.5 rounded-lg hover:bg-[#f5ede3] transition-colors disabled:opacity-50">
+                    className="text-xs text-[#7a6b5c] hover:text-primary flex items-center gap-1 px-3 py-1.5 rounded-lg hover:bg-[var(--accent-tint)] transition-colors disabled:opacity-50">
                     {loadingMore
                       ? <><Loader2 className="w-3 h-3 animate-spin" /> Loading…</>
                       : 'Load older messages'}
@@ -750,7 +750,7 @@ export default function InboxPage() {
 
             {/* Quick Replies */}
             {showQuickReplies && (
-              <div className="border-t border-black/5 bg-[#faf8f6] p-3 max-h-48 overflow-y-auto">
+              <div className="border-t border-black/5 bg-[var(--app-bg)] p-3 max-h-48 overflow-y-auto">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-[11px] font-bold uppercase tracking-wider text-[#7a6b5c]">Quick Replies</p>
                   <button onClick={() => setShowQuickReplies(false)}><X className="w-4 h-4 text-muted-foreground" /></button>
@@ -777,10 +777,10 @@ export default function InboxPage() {
               <div className="flex items-end gap-2">
                 <div className="flex gap-1">
                   <button onClick={() => setShowQuickReplies(!showQuickReplies)}
-                    className={cn('p-2 rounded-lg transition-colors', showQuickReplies ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-[#f5ede3]')}
+                    className={cn('p-2 rounded-lg transition-colors', showQuickReplies ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-[var(--accent-tint)]')}
                     title="Quick replies"><Zap className="w-5 h-5" /></button>
                   <button onClick={() => setIsNote(!isNote)}
-                    className={cn('p-2 rounded-lg transition-colors', isNote ? 'bg-yellow-200 text-yellow-700' : 'text-muted-foreground hover:text-foreground hover:bg-[#f5ede3]')}
+                    className={cn('p-2 rounded-lg transition-colors', isNote ? 'bg-yellow-200 text-yellow-700' : 'text-muted-foreground hover:text-foreground hover:bg-[var(--accent-tint)]')}
                     title="Internal note"><StickyNote className="w-5 h-5" /></button>
                   <button
                     onClick={() => fileInputRef.current?.click()}
@@ -788,7 +788,7 @@ export default function InboxPage() {
                     className={cn('p-2 rounded-lg transition-colors',
                       uploading || isNote
                         ? 'text-muted-foreground/40 cursor-not-allowed'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-[#f5ede3]')}
+                        : 'text-muted-foreground hover:text-foreground hover:bg-[var(--accent-tint)]')}
                     title="Send image or file">
                     {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
                   </button>
@@ -856,7 +856,7 @@ export default function InboxPage() {
                   <div className="absolute z-10 top-full mt-1 left-0 right-0 bg-card border border-black/10 rounded-xl shadow-lg max-h-48 overflow-y-auto">
                     {waContactSuggestions.map((c) => (
                       <button key={c.id}
-                        className="w-full text-left px-3 py-2 hover:bg-[#f5ede3] transition-colors flex items-center gap-2"
+                        className="w-full text-left px-3 py-2 hover:bg-[var(--accent-tint)] transition-colors flex items-center gap-2"
                         onClick={() => { setNewChatPhone(c.phone); setWaContactSuggestions([]); }}>
                         <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary shrink-0">
                           {c.name.slice(0, 2).toUpperCase()}

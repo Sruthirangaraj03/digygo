@@ -20,7 +20,7 @@ import type { CalendarEvent } from '@/data/mockData';
 import type { EventType } from './CalendarEditPage';
 
 // ── Styles ────────────────────────────────────────────────────────────────────
-const gradStyle   = { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' };
+const gradStyle   = { background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' };
 const shadowStyle = { ...gradStyle, boxShadow: '0 4px 14px rgba(234,88,12,0.28)' };
 
 // ── Status system ─────────────────────────────────────────────────────────────
@@ -171,10 +171,10 @@ function ApptPopup({ event, onClose, onStatusChange, onDelete, onUpdate, staff }
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button onClick={() => setEditing((v) => !v)}
-                  className={cn('p-1.5 rounded-lg transition-colors', editing ? 'bg-orange-100 text-[#c2410c]' : 'hover:bg-[#f5ede3] text-[#7a6b5c]')}>
+                  className={cn('p-1.5 rounded-lg transition-colors', editing ? 'bg-orange-100 text-[var(--brand-dark)]' : 'hover:bg-[var(--accent-tint)] text-[#7a6b5c]')}>
                   <Pencil className="w-3.5 h-3.5" />
                 </button>
-                <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors">
+                <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] transition-colors">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -273,7 +273,7 @@ function ApptPopup({ event, onClose, onStatusChange, onDelete, onUpdate, staff }
                 </div>
                 <div className="flex gap-2 pt-1">
                   <button onClick={() => { setEditing(false); setIsRescheduling(false); }}
-                    className="flex-1 py-2 rounded-xl text-[12px] font-bold text-[#7a6b5c] border border-black/10 bg-white hover:bg-[#faf8f6]">Cancel</button>
+                    className="flex-1 py-2 rounded-xl text-[12px] font-bold text-[#7a6b5c] border border-black/10 bg-white hover:bg-[var(--app-bg)]">Cancel</button>
                   <button onClick={handleSaveEdit} disabled={saving}
                     className="flex-1 py-2 rounded-xl text-[12px] font-bold text-white disabled:opacity-50" style={shadowStyle}>
                     {saving ? 'Saving…' : isRescheduling ? 'Reschedule' : 'Save'}
@@ -345,7 +345,7 @@ function ApptPopup({ event, onClose, onStatusChange, onDelete, onUpdate, staff }
                 </div>
                 <div className="px-6 pb-5 flex gap-2">
                   <button onClick={() => setPendingAction(null)}
-                    className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-[#7a6b5c] border border-black/10 bg-white hover:bg-[#faf8f6] transition-colors">
+                    className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-[#7a6b5c] border border-black/10 bg-white hover:bg-[var(--app-bg)] transition-colors">
                     Go Back
                   </button>
                   <button
@@ -386,9 +386,9 @@ function MiniCal({ cursor, onDayClick }: { cursor: Date; onDayClick: (d: Date) =
   return (
     <div className="px-3 py-3">
       <div className="flex items-center justify-between mb-2 px-1">
-        <button onClick={() => setMiniMonth((m) => subMonths(m, 1))} className="p-1 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors"><ChevronLeft className="w-3 h-3" /></button>
+        <button onClick={() => setMiniMonth((m) => subMonths(m, 1))} className="p-1 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] transition-colors"><ChevronLeft className="w-3 h-3" /></button>
         <p className="text-[11px] font-bold text-[#1c1410]">{format(miniMonth, 'MMM yyyy')}</p>
-        <button onClick={() => setMiniMonth((m) => addMonths(m, 1))} className="p-1 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors"><ChevronRight className="w-3 h-3" /></button>
+        <button onClick={() => setMiniMonth((m) => addMonths(m, 1))} className="p-1 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] transition-colors"><ChevronRight className="w-3 h-3" /></button>
       </div>
       <div className="grid grid-cols-7 mb-1">
         {['S','M','T','W','T','F','S'].map((d, i) => (
@@ -403,10 +403,10 @@ function MiniCal({ cursor, onDayClick }: { cursor: Date; onDayClick: (d: Date) =
           return (
             <button key={day.toISOString()} onClick={() => onDayClick(day)}
               className={cn('w-7 h-7 mx-auto flex items-center justify-center rounded-full text-[10.5px] font-medium transition-all',
-                sel && tod  ? 'bg-[#c2410c] text-white font-bold' :
-                sel         ? 'bg-[#f5ede3] text-[#c2410c] font-bold ring-1 ring-[#c2410c]/30' :
-                tod         ? 'bg-[#fff0e6] text-[#c2410c] font-bold' :
-                inM         ? 'text-[#1c1410] hover:bg-[#f5ede3]' :
+                sel && tod  ? 'bg-[var(--brand-dark)] text-white font-bold' :
+                sel         ? 'bg-[var(--accent-tint)] text-[var(--brand-dark)] font-bold ring-1 ring-primary/30' :
+                tod         ? 'bg-[#fff0e6] text-[var(--brand-dark)] font-bold' :
+                inM         ? 'text-[#1c1410] hover:bg-[var(--accent-tint)]' :
                               'text-[#c9bdb6]',
               )}>
               {format(day, 'd')}
@@ -434,7 +434,7 @@ function CalWeekView({ cursor, byDay, visibleStatuses, onEventClick, onDayClick 
           <div key={day.toISOString()} className="border-r border-[#f0ebe5] last:border-r-0 py-3 flex flex-col items-center gap-1">
             <p className="text-[10px] font-bold text-[#9c8f84] uppercase tracking-widest">{format(day, 'EEE')}</p>
             <button onClick={() => onDayClick(day)} className={cn('w-9 h-9 rounded-full flex items-center justify-center text-[19px] font-extrabold transition-all',
-              isToday(day) ? 'bg-[#c2410c] text-white shadow-md' : 'text-[#1c1410] hover:bg-[#f5ede3]')}>
+              isToday(day) ? 'bg-[var(--brand-dark)] text-white shadow-md' : 'text-[#1c1410] hover:bg-[var(--accent-tint)]')}>
               {format(day, 'd')}
             </button>
           </div>
@@ -449,11 +449,11 @@ function CalWeekView({ cursor, byDay, visibleStatuses, onEventClick, onDayClick 
             const more     = dayItems.length - visible.length;
             return (
               <div key={key} className={cn('border-r border-[#f0ebe5] last:border-r-0 p-1.5 space-y-[3px] min-h-[460px]',
-                isToday(day) ? 'bg-orange-50/25' : 'hover:bg-[#faf8f6]')}>
+                isToday(day) ? 'bg-orange-50/25' : 'hover:bg-[var(--app-bg)]')}>
                 {visible.map((e) => <ApptPill key={e.id} event={e} onClick={() => onEventClick(e)} />)}
                 {more > 0 && (
                   <button type="button" onClick={() => onDayClick(day)}
-                    className="w-full text-left text-[10px] font-semibold text-[#7a6b5c] pl-2 py-[2px] hover:text-[#c2410c] transition-colors">
+                    className="w-full text-left text-[10px] font-semibold text-[#7a6b5c] pl-2 py-[2px] hover:text-[var(--brand-dark)] transition-colors">
                     +{more} more
                   </button>
                 )}
@@ -495,10 +495,10 @@ function CalMonthView({ cursor, byDay, visibleStatuses, onEventClick, onDayClick
             return (
               <div key={day.toISOString()} onClick={() => onDayClick(day)}
                 className={cn('border-r border-b border-[#f0ebe5] last:border-r-0 min-h-[110px] p-1.5 cursor-pointer',
-                  isToday(day) ? 'bg-orange-50/30' : !inMonth ? 'bg-[#fdfcfb]' : 'hover:bg-[#faf8f6]')}>
+                  isToday(day) ? 'bg-orange-50/30' : !inMonth ? 'bg-[#fdfcfb]' : 'hover:bg-[var(--app-bg)]')}>
                 <div className="flex justify-start mb-1">
                   <span className={cn('w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-semibold',
-                    isToday(day) ? 'bg-[#c2410c] text-white font-extrabold' :
+                    isToday(day) ? 'bg-[var(--brand-dark)] text-white font-extrabold' :
                     inMonth ? 'text-[#1c1410]' : 'text-[#c9bdb6]')}>
                     {format(day, 'd')}
                   </span>
@@ -530,14 +530,14 @@ function CalDayView({ cursor, byDay, visibleStatuses, onEventClick }: {
         <div className={cn('px-6 py-5 border-b border-[#f0ebe5]', isToday(cursor) && 'bg-orange-50/40')}>
           <p className="text-[10px] font-bold text-[#9c8f84] uppercase tracking-widest">{format(cursor, 'EEEE')}</p>
           <div className="flex items-end justify-between mt-1">
-            <p className={cn('text-[38px] font-extrabold font-headline leading-none', isToday(cursor) ? 'text-[#c2410c]' : 'text-[#1c1410]')}>{format(cursor, 'd')}</p>
+            <p className={cn('text-[38px] font-extrabold font-headline leading-none', isToday(cursor) ? 'text-[var(--brand-dark)]' : 'text-[#1c1410]')}>{format(cursor, 'd')}</p>
             <p className="text-[13px] text-[#7a6b5c] mb-1">{format(cursor, 'MMMM yyyy')}</p>
           </div>
         </div>
         {items.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-[#f5ede3] flex items-center justify-center">
-              <CalendarDays className="w-6 h-6 text-[#c2410c]" />
+            <div className="w-12 h-12 rounded-2xl bg-[var(--accent-tint)] flex items-center justify-center">
+              <CalendarDays className="w-6 h-6 text-[var(--brand-dark)]" />
             </div>
             <p className="text-[14px] font-bold text-[#1c1410]">Nothing scheduled</p>
             <p className="text-[12px] text-[#7a6b5c]">No appointments for this day</p>
@@ -549,7 +549,7 @@ function CalDayView({ cursor, byDay, visibleStatuses, onEventClick }: {
               const IIcon = Icon(e.type);
               return (
                 <button key={e.id} type="button" onClick={() => onEventClick(e)}
-                  className="w-full flex items-center gap-4 px-6 py-4 hover:bg-[#faf8f6] transition-colors text-left">
+                  className="w-full flex items-center gap-4 px-6 py-4 hover:bg-[var(--app-bg)] transition-colors text-left">
                   <span className={cn('w-[3px] h-10 rounded-full shrink-0', AS[st].bar)} />
                   <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center text-white shrink-0', typeColors[e.type])}>
                     <IIcon className="w-3.5 h-3.5" />
@@ -902,11 +902,11 @@ export default function CalendarPage() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-headline text-[17px] font-semibold text-[#1c1410]">{format(currentMonth, 'MMMM yyyy')}</h3>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="w-8 h-8 rounded-lg hover:bg-[#f5ede3] flex items-center justify-center text-[#7a6b5c]">
+                  <button onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="w-8 h-8 rounded-lg hover:bg-[var(--accent-tint)] flex items-center justify-center text-[#7a6b5c]">
                     <ChevronLeft className="w-4 h-4" />
                   </button>
-                  <button onClick={() => { setCurrentMonth(new Date()); setSelectedDate(new Date()); }} className="px-3 py-1.5 rounded-lg hover:bg-[#f5ede3] text-[12px] font-semibold text-[#1c1410]">Today</button>
-                  <button onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="w-8 h-8 rounded-lg hover:bg-[#f5ede3] flex items-center justify-center text-[#7a6b5c]">
+                  <button onClick={() => { setCurrentMonth(new Date()); setSelectedDate(new Date()); }} className="px-3 py-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[12px] font-semibold text-[#1c1410]">Today</button>
+                  <button onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="w-8 h-8 rounded-lg hover:bg-[var(--accent-tint)] flex items-center justify-center text-[#7a6b5c]">
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
@@ -929,7 +929,7 @@ export default function CalendarPage() {
                       className={cn('rounded-lg min-h-[50px] flex flex-col items-center justify-center gap-1 transition-colors',
                         isSel ? 'bg-primary text-white shadow-sm' :
                         isTod ? 'bg-[#faf0e8] text-[#1c1410]' :
-                                'hover:bg-[#faf8f6] text-[#1c1410]',
+                                'hover:bg-[var(--app-bg)] text-[#1c1410]',
                         !isSameMonth(day, currentMonth) && 'opacity-40'
                       )}>
                       <span className="font-semibold text-[13px] tabular-nums">{format(day, 'd')}</span>
@@ -1039,14 +1039,14 @@ export default function CalendarPage() {
                           <p className="text-[12px] text-[#7a6b5c]">{et.duration} min · {et.meetingType}</p>
                         </div>
                         <button onClick={(e) => { e.stopPropagation(); navigate(`/calendar/edit/${et.id}`, { state: { eventType: et } }); }}
-                          className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#b09e8d] hover:text-primary transition-colors" title="Edit">
+                          className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#b09e8d] hover:text-primary transition-colors" title="Edit">
                           <Settings2 className="w-4 h-4" />
                         </button>
                       </div>
                       {et.description && <p className="text-[12px] text-[#7a6b5c] line-clamp-2">{et.description}</p>}
 
                       {/* Auto-generated booking link */}
-                      <div className="flex items-center gap-1.5 px-3 py-2 bg-[#faf8f6] rounded-xl border border-black/[0.04] cursor-pointer hover:bg-[#f0ebe5] transition-colors" onClick={(e) => { e.stopPropagation(); window.open(bookingUrl, '_blank'); }}>
+                      <div className="flex items-center gap-1.5 px-3 py-2 bg-[var(--app-bg)] rounded-xl border border-black/[0.04] cursor-pointer hover:bg-[#f0ebe5] transition-colors" onClick={(e) => { e.stopPropagation(); window.open(bookingUrl, '_blank'); }}>
                         <ExternalLink className="w-3 h-3 text-[#b09e8d] shrink-0" />
                         <span className="text-[10px] text-[#7a6b5c] font-mono truncate flex-1">/book/{et.slug}</span>
                         <button onClick={(e) => { e.stopPropagation(); copyToClipboard(bookingUrl); toast.success('Link copied!'); }}
@@ -1055,7 +1055,7 @@ export default function CalendarPage() {
                         </button>
                       </div>
                     </div>
-                    <div className="px-5 py-3 border-t border-black/[0.04] bg-[#faf8f6] flex items-center justify-between">
+                    <div className="px-5 py-3 border-t border-black/[0.04] bg-[var(--app-bg)] flex items-center justify-between">
                       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                         <button onClick={async (e) => {
                           e.stopPropagation();
@@ -1102,7 +1102,7 @@ export default function CalendarPage() {
             ] as const).map((f) => (
               <button key={f.key} onClick={() => setApptFilter(f.key)}
                 className={cn('flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-semibold border transition-all',
-                  apptFilter === f.key ? 'text-white border-transparent' : 'text-[#7a6b5c] border-black/10 bg-white hover:bg-[#faf8f6]')}
+                  apptFilter === f.key ? 'text-white border-transparent' : 'text-[#7a6b5c] border-black/10 bg-white hover:bg-[var(--app-bg)]')}
                 style={apptFilter === f.key ? shadowStyle : { boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                 {f.label}
                 <span className={cn('text-[10px] rounded-full px-1.5 py-0.5 min-w-[20px] text-center font-bold',
@@ -1124,7 +1124,7 @@ export default function CalendarPage() {
                 <div className="space-y-3">
                   {apts.map((apt) => (
                     <div key={apt.id} className="bg-white rounded-2xl border border-black/[0.06] overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                      <div className="px-6 py-4 flex items-center gap-5 cursor-pointer hover:bg-[#faf8f6] transition-colors"
+                      <div className="px-6 py-4 flex items-center gap-5 cursor-pointer hover:bg-[var(--app-bg)] transition-colors"
                         onClick={() => { const e = calendarEvents.find((ce) => ce.id === apt.id); if (e) setSelectedEvent(e); }}>
                         <div className={cn('w-3 h-3 rounded-full shrink-0', DOT_COLOR[apt.status])} />
                         <div className="flex-1 min-w-0 flex items-center gap-6 flex-wrap">
@@ -1140,7 +1140,7 @@ export default function CalendarPage() {
                         </div>
                         <span className={cn('text-[11px] font-semibold px-2.5 py-1 rounded-full border shrink-0', STATUS_BADGE[apt.status])}>{STATUS_LBL[apt.status]}</span>
                       </div>
-                      <div className="px-6 py-3 border-t border-black/[0.04] bg-[#faf8f6] flex items-center gap-2 flex-wrap">
+                      <div className="px-6 py-3 border-t border-black/[0.04] bg-[var(--app-bg)] flex items-center gap-2 flex-wrap">
                         {(apt.status === 'booked' || apt.status === 'rescheduled') && [
                           { label: 'Show Up',  status: 'completed', Icon: UserCheck,    cls: 'text-green-600 bg-green-50 border-green-200 hover:bg-green-100' },
                           { label: 'No Show',  status: 'no-show',   Icon: AlertTriangle, cls: 'text-amber-600 bg-amber-50 border-amber-200 hover:bg-amber-100' },
@@ -1183,7 +1183,7 @@ export default function CalendarPage() {
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden">
             <div className="px-6 py-4 border-b border-black/[0.05] flex items-center justify-between">
               <h3 className="font-headline font-semibold text-[16px] text-[#1c1410]">New Event</h3>
-              <button onClick={() => { setShowNewEvent(false); setLeadSearch(''); setShowLeadDrop(false); }} className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c]"><X className="w-4 h-4" /></button>
+              <button onClick={() => { setShowNewEvent(false); setLeadSearch(''); setShowLeadDrop(false); }} className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c]"><X className="w-4 h-4" /></button>
             </div>
             <div className="px-6 py-5 space-y-4">
               <div className="grid grid-cols-2 gap-3">
@@ -1222,7 +1222,7 @@ export default function CalendarPage() {
                       {matches.length > 0 ? matches.map((l) => (
                         <button key={l.id} type="button"
                           onMouseDown={() => { const name = (l.firstName + ' ' + l.lastName).trim(); setLeadSearch(name); setNewEventForm((f) => ({ ...f, leadId: l.id, leadName: name })); setShowLeadDrop(false); }}
-                          className="w-full text-left px-3 py-2 hover:bg-[#faf8f6] transition-colors">
+                          className="w-full text-left px-3 py-2 hover:bg-[var(--app-bg)] transition-colors">
                           <p className="text-[12px] font-semibold text-[#1c1410]">{l.firstName} {l.lastName}</p>
                           {l.email && <p className="text-[11px] text-[#9c8f84]">{l.email}</p>}
                         </button>
@@ -1239,7 +1239,7 @@ export default function CalendarPage() {
                   {(['call','demo','meeting'] as const).map((t) => (
                     <button key={t} onClick={() => setNewEventForm((f) => ({ ...f, type: t }))}
                       className={cn('flex-1 py-2 rounded-xl text-[12px] font-bold border capitalize transition-all',
-                        newEventForm.type === t ? 'text-white border-transparent' : 'text-[#7a6b5c] border-black/10 bg-white hover:bg-[#faf8f6]')}
+                        newEventForm.type === t ? 'text-white border-transparent' : 'text-[#7a6b5c] border-black/10 bg-white hover:bg-[var(--app-bg)]')}
                       style={newEventForm.type === t ? shadowStyle : {}}>{t}</button>
                   ))}
                 </div>
@@ -1250,7 +1250,7 @@ export default function CalendarPage() {
                   {[15,30,60].map((d) => (
                     <button key={d} onClick={() => setNewEventForm((f) => ({ ...f, duration: d }))}
                       className={cn('flex-1 py-2 rounded-xl text-[12px] font-bold border transition-all',
-                        newEventForm.duration === d ? 'text-white border-transparent' : 'text-[#7a6b5c] border-black/10 bg-white hover:bg-[#faf8f6]')}
+                        newEventForm.duration === d ? 'text-white border-transparent' : 'text-[#7a6b5c] border-black/10 bg-white hover:bg-[var(--app-bg)]')}
                       style={newEventForm.duration === d ? shadowStyle : {}}>{d} min</button>
                   ))}
                 </div>
@@ -1271,7 +1271,7 @@ export default function CalendarPage() {
               </div>
             </div>
             <div className="px-6 pb-5 flex gap-2">
-              <button onClick={() => setShowNewEvent(false)} className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-[#7a6b5c] border border-black/10 bg-white hover:bg-[#faf8f6]">Cancel</button>
+              <button onClick={() => setShowNewEvent(false)} className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-[#7a6b5c] border border-black/10 bg-white hover:bg-[var(--app-bg)]">Cancel</button>
               <button onClick={handleCreateEvent} disabled={newEventForm.leadName.trim().length < 2}
                 className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white disabled:opacity-40 transition-opacity" style={shadowStyle}>Create</button>
             </div>

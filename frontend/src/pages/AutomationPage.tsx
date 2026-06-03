@@ -150,7 +150,7 @@ function ContactSidebar({
     return map;
   })();
 
-  const bgPalette = ['#fde8d8','#dbeafe','#dcfce7','#ede9fe','#fce7f3'];
+  const bgPalette = ['#f5ede3','#dbeafe','#dcfce7','#ede9fe','#fce7f3'];
   const fgPalette = ['#c2410c','#1d4ed8','#15803d','#7c3aed','#be185d'];
 
   const labelConfig: Record<SidebarFilter, { label: string; dot: string }> = {
@@ -224,14 +224,14 @@ function ContactSidebar({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors shrink-0"
+            className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] hover:text-primary transition-colors shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Stats + select-all bar */}
-        <div className="shrink-0 px-5 py-2.5 bg-[#faf8f6] border-b border-black/5 flex items-center gap-3">
+        <div className="shrink-0 px-5 py-2.5 bg-[var(--app-bg)] border-b border-black/5 flex items-center gap-3">
           {/* Select-all checkbox */}
           {filtered.length > 0 && (
             <button
@@ -270,7 +270,7 @@ function ContactSidebar({
           {/* Refresh button */}
           <button
             onClick={loadLogs}
-            className="p-1.5 rounded-lg text-[#b09e8d] hover:text-primary hover:bg-[#f5ede3] transition-colors"
+            className="p-1.5 rounded-lg text-[#b09e8d] hover:text-primary hover:bg-[var(--accent-tint)] transition-colors"
             title="Refresh"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -285,7 +285,7 @@ function ContactSidebar({
             </div>
           ) : filtered.length === 0 ? (
             <div className="py-16 text-center px-6">
-              <div className="w-12 h-12 bg-[#f5ede3] rounded-2xl flex items-center justify-center mx-auto mb-3">
+              <div className="w-12 h-12 bg-[var(--accent-tint)] rounded-2xl flex items-center justify-center mx-auto mb-3">
                 <Users className="w-6 h-6 text-primary" />
               </div>
               <p className="text-[14px] font-semibold text-[#1c1410] mb-1">No contacts yet</p>
@@ -319,7 +319,7 @@ function ContactSidebar({
                       rStatus === 'running' && 'bg-blue-50/40',
                     )}
                   >
-                    <div className="flex items-center gap-3 px-4 py-3.5 hover:bg-[#faf8f6] transition-colors">
+                    <div className="flex items-center gap-3 px-4 py-3.5 hover:bg-[var(--app-bg)] transition-colors">
                       {/* Checkbox */}
                       <button
                         onClick={(e) => { e.stopPropagation(); toggleOne(log.id); }}
@@ -375,7 +375,7 @@ function ContactSidebar({
 
                     {/* Steps expanded */}
                     {isOpen && (
-                      <div className="px-5 pb-3 pt-1 space-y-2 bg-[#faf8f6]">
+                      <div className="px-5 pb-3 pt-1 space-y-2 bg-[var(--app-bg)]">
                         {/* Execution-level error — shown when the whole run crashed */}
                         {log.error && (
                           <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-1">
@@ -471,7 +471,7 @@ function ContactSidebar({
                 onClick={handleRerun}
                 disabled={rerunning}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-bold text-white transition-all disabled:opacity-60 shrink-0"
-                style={{ background: 'linear-gradient(135deg,#c2410c,#ea580c)', boxShadow: '0 3px 10px rgba(194,65,12,0.3)' }}
+                style={{ background: 'linear-gradient(135deg,var(--brand-dark),var(--brand))', boxShadow: '0 3px 10px rgba(194,65,12,0.3)' }}
               >
                 {rerunning
                   ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Running…</>
@@ -529,7 +529,7 @@ function WorkflowRow({ wf, onOpen, onToggle, onDuplicate, onDelete, menuOpen, on
     <div
       onClick={onOpen}
       className={cn(
-        'group flex items-center border-b border-black/[0.04] hover:bg-[#faf8f6] cursor-pointer transition-colors',
+        'group flex items-center border-b border-black/[0.04] hover:bg-[var(--app-bg)] cursor-pointer transition-colors',
         selected && 'bg-orange-50/40'
       )}
     >
@@ -670,7 +670,7 @@ function WorkflowRow({ wf, onOpen, onToggle, onDuplicate, onDelete, menuOpen, on
                 </button>
               )}
               {canManageAutomation && (
-                <button onClick={stop(onRetry)} className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#c2410c] hover:bg-orange-50 transition-colors text-left">
+                <button onClick={stop(onRetry)} className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[var(--brand-dark)] hover:bg-orange-50 transition-colors text-left">
                   <RefreshCw className="w-3.5 h-3.5" /> Retry skipped
                 </button>
               )}
@@ -905,7 +905,7 @@ export default function AutomationPage() {
     } catch { toast.error('Failed to create workflow'); }
   };
 
-  const shadowStyle = { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' };
+  const shadowStyle = { background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' };
 
   return (
     <div className="flex flex-col flex-1 animate-fade-in min-h-0">
@@ -992,7 +992,7 @@ export default function AutomationPage() {
         {/* List */}
         <div className="flex-1 min-w-0 overflow-y-auto">
           {/* Column header */}
-          <div className="flex items-center border-b border-black/[0.06] bg-[#faf8f6] sticky top-0 z-10">
+          <div className="flex items-center border-b border-black/[0.06] bg-[var(--app-bg)] sticky top-0 z-10">
             {/* Select-all checkbox */}
             <div className="w-10 flex items-center justify-center shrink-0 py-2.5">
               <button
@@ -1089,7 +1089,7 @@ export default function AutomationPage() {
             <p className="text-[13px] text-[#7a6b5c] mb-6">A workflow must have a trigger before it can be activated. Open the editor and choose a trigger first.</p>
             <button
               onClick={() => setNoTriggerPopup(false)}
-              className="w-full py-2.5 rounded-xl bg-[#c2410c] hover:bg-[#ea580c] text-white text-[13px] font-bold transition-colors"
+              className="w-full py-2.5 rounded-xl bg-[var(--brand-dark)] hover:bg-[var(--brand)] text-white text-[13px] font-bold transition-colors"
             >
               Got it
             </button>

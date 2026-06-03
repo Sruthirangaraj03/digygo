@@ -107,7 +107,7 @@ function isDateAllowed(et: PublicET, date: Date): boolean {
 const typeIcons: Record<string, React.ElementType> = {
   'Google Meet': Video, 'Zoom': Video, 'Phone Call': PhoneCall, 'In-Person': MapPin,
 };
-const gradStyle  = { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' };
+const gradStyle  = { background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' };
 const gradShadow = { ...gradStyle, boxShadow: '0 4px 14px rgba(234,88,12,0.30)' };
 
 // ── Step indicator ────────────────────────────────────────────────────────────
@@ -137,7 +137,7 @@ function StepBar({ step }: { step: 0 | 1 | 2 }) {
                 }
               </div>
               <span className={cn('text-[12px] font-semibold hidden sm:block',
-                active  ? 'text-[#c2410c]' :
+                active  ? 'text-[var(--brand-dark)]' :
                 done    ? 'text-green-600'  : 'text-[#b09e8d]'
               )}>{label}</span>
             </div>
@@ -244,16 +244,16 @@ export default function PublicBookingPage() {
 
   // ── Loading ────────────────────────────────────────────────────────────────
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-[#faf8f6]">
-      <div className="w-8 h-8 rounded-full border-[3px] border-[#c2410c] border-t-transparent animate-spin" />
+    <div className="min-h-screen flex items-center justify-center bg-[var(--app-bg)]">
+      <div className="w-8 h-8 rounded-full border-[3px] border-[var(--brand-dark)] border-t-transparent animate-spin" />
     </div>
   );
 
   // ── Not found ──────────────────────────────────────────────────────────────
   if (notFound || !et) return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[#faf8f6] gap-4 p-6">
-      <div className="w-16 h-16 rounded-2xl bg-[#f5ede3] flex items-center justify-center">
-        <CalendarDays className="w-8 h-8 text-[#c2410c]" />
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--app-bg)] gap-4 p-6">
+      <div className="w-16 h-16 rounded-2xl bg-[var(--accent-tint)] flex items-center justify-center">
+        <CalendarDays className="w-8 h-8 text-[var(--brand-dark)]" />
       </div>
       <h2 className="text-[20px] font-extrabold text-[#1c1410]">Calendar not found</h2>
       <p className="text-[14px] text-[#7a6b5c] text-center max-w-xs">
@@ -266,7 +266,7 @@ export default function PublicBookingPage() {
 
   // ── Confirmation screen ────────────────────────────────────────────────────
   if (confirmed) return (
-    <div className="min-h-screen bg-[#faf8f6] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[var(--app-bg)] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl border border-black/5 p-10 max-w-md w-full text-center"
         style={{ boxShadow: '0 8px 40px rgba(0,0,0,0.10)' }}>
         <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-5">
@@ -276,10 +276,10 @@ export default function PublicBookingPage() {
         <p className="text-[13px] text-[#7a6b5c] mb-7">
           A confirmation has been recorded. See you soon!
         </p>
-        <div className="bg-[#faf8f6] rounded-2xl p-5 text-left space-y-3 mb-6">
+        <div className="bg-[var(--app-bg)] rounded-2xl p-5 text-left space-y-3 mb-6">
           <div className="flex items-center gap-3 text-[13px] text-[#1c1410]">
             <div className="w-8 h-8 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
-              <CalendarDays className="w-4 h-4 text-[#c2410c]" />
+              <CalendarDays className="w-4 h-4 text-[var(--brand-dark)]" />
             </div>
             <div>
               <p className="font-bold">{selDate ? format(selDate, 'EEEE, MMMM d, yyyy') : ''}</p>
@@ -288,7 +288,7 @@ export default function PublicBookingPage() {
           </div>
           <div className="flex items-center gap-3 text-[13px] text-[#1c1410]">
             <div className="w-8 h-8 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
-              <TypeIcon className="w-4 h-4 text-[#c2410c]" />
+              <TypeIcon className="w-4 h-4 text-[var(--brand-dark)]" />
             </div>
             <p className="font-medium">{et.meeting_type}</p>
           </div>
@@ -311,7 +311,7 @@ export default function PublicBookingPage() {
 
   // ── Main booking page ──────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#fdf9f7] via-white to-[#faf8f6]">
+    <div className="min-h-screen bg-gradient-to-br from-[#fdf9f7] via-white to-[var(--app-bg)]">
 
       {/* Top bar */}
       <header className="bg-white/90 backdrop-blur-sm border-b border-black/[0.06] sticky top-0 z-20"
@@ -355,20 +355,20 @@ export default function PublicBookingPage() {
                 <div className="space-y-2.5">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-xl bg-orange-50 flex items-center justify-center shrink-0">
-                      <Clock className="w-4 h-4 text-[#c2410c]" />
+                      <Clock className="w-4 h-4 text-[var(--brand-dark)]" />
                     </div>
                     <span className="text-[13px] text-[#5c5245] font-medium">{et.duration} minutes</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-xl bg-orange-50 flex items-center justify-center shrink-0">
-                      <TypeIcon className="w-4 h-4 text-[#c2410c]" />
+                      <TypeIcon className="w-4 h-4 text-[var(--brand-dark)]" />
                     </div>
                     <span className="text-[13px] text-[#5c5245] font-medium">{et.meeting_type}</span>
                   </div>
                   {et.meeting_link && (
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-xl bg-orange-50 flex items-center justify-center shrink-0">
-                        <Video className="w-4 h-4 text-[#c2410c]" />
+                        <Video className="w-4 h-4 text-[var(--brand-dark)]" />
                       </div>
                       <span className="text-[13px] text-[#5c5245] font-medium">Meeting link provided</span>
                     </div>
@@ -378,7 +378,7 @@ export default function PublicBookingPage() {
                 {/* Selected slot summary — appears dynamically */}
                 {selDate && selTime && (
                   <div className="pt-4 border-t border-[#f0ebe5]">
-                    <p className="text-[10px] font-extrabold text-[#c2410c] uppercase tracking-widest mb-2.5">
+                    <p className="text-[10px] font-extrabold text-[var(--brand-dark)] uppercase tracking-widest mb-2.5">
                       Your Selection
                     </p>
                     <div className="rounded-xl border border-orange-200 bg-orange-50 p-3.5 space-y-1">
@@ -414,14 +414,14 @@ export default function PublicBookingPage() {
                   {/* Month nav */}
                   <div className="flex items-center justify-between mb-4">
                     <button onClick={() => setCalMonth((m) => subMonths(m, 1))}
-                      className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors">
+                      className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-[var(--accent-tint)] text-[#7a6b5c] transition-colors">
                       <ChevronLeft className="w-4 h-4" />
                     </button>
                     <p className="text-[14px] font-extrabold text-[#1c1410]">
                       {format(calMonth, 'MMMM yyyy')}
                     </p>
                     <button onClick={() => setCalMonth((m) => addMonths(m, 1))}
-                      className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-[#f5ede3] text-[#7a6b5c] transition-colors">
+                      className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-[var(--accent-tint)] text-[#7a6b5c] transition-colors">
                       <ChevronRight className="w-4 h-4" />
                     </button>
                   </div>
@@ -450,9 +450,9 @@ export default function PublicBookingPage() {
                               isSel
                                 ? 'text-white scale-110 shadow-md'
                                 : todayDay && hasSlots
-                                  ? 'ring-2 ring-[#c2410c]/40 text-[#c2410c] font-bold hover:scale-105'
+                                  ? 'ring-2 ring-primary/40 text-[var(--brand-dark)] font-bold hover:scale-105'
                                   : hasSlots
-                                    ? 'text-[#1c1410] hover:bg-[#f5ede3] hover:scale-105 cursor-pointer'
+                                    ? 'text-[#1c1410] hover:bg-[var(--accent-tint)] hover:scale-105 cursor-pointer'
                                     : inMonth
                                       ? 'text-[#d4c4b8] cursor-not-allowed'
                                       : 'text-[#ede5de] cursor-default',
@@ -461,7 +461,7 @@ export default function PublicBookingPage() {
                             {format(day, 'd')}
                           </button>
                           {hasSlots && !isSel && (
-                            <span className="w-1 h-1 rounded-full bg-[#c2410c] mt-0.5 opacity-50" />
+                            <span className="w-1 h-1 rounded-full bg-[var(--brand-dark)] mt-0.5 opacity-50" />
                           )}
                         </div>
                       );
@@ -491,7 +491,7 @@ export default function PublicBookingPage() {
                       style={{ scrollbarWidth: 'thin' }}>
                       {slotsLoading ? (
                         <div className="flex items-center justify-center py-8">
-                          <span className="w-5 h-5 rounded-full border-2 border-[#c2410c] border-t-transparent animate-spin" />
+                          <span className="w-5 h-5 rounded-full border-2 border-[var(--brand-dark)] border-t-transparent animate-spin" />
                         </div>
                       ) : availableSlots.length === 0 ? (
                         <div className="text-center py-6">
@@ -521,7 +521,7 @@ export default function PublicBookingPage() {
                     <div className="px-3 pb-3 pt-2 border-t border-[#f0ebe5]">
                       <button
                         onClick={() => { setSelDate(null); setSelTime(null); }}
-                        className="w-full flex items-center justify-center gap-1.5 text-[11px] text-[#9e8e7e] hover:text-[#c2410c] transition-colors font-medium py-1.5">
+                        className="w-full flex items-center justify-center gap-1.5 text-[11px] text-[#9e8e7e] hover:text-[var(--brand-dark)] transition-colors font-medium py-1.5">
                         <ArrowLeft className="w-3 h-3" /> Change date
                       </button>
                     </div>
@@ -537,7 +537,7 @@ export default function PublicBookingPage() {
                 style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.07)' }}>
 
                 {/* Form header */}
-                <div className="px-6 pt-5 pb-4 border-b border-[#f5ede3] flex items-center justify-between">
+                <div className="px-6 pt-5 pb-4 border-b border-[var(--accent-tint)] flex items-center justify-between">
                   <div>
                     <p className="text-[15px] font-extrabold text-[#1c1410]">Your details</p>
                     <p className="text-[12px] text-[#9e8e7e] mt-0.5">
@@ -546,7 +546,7 @@ export default function PublicBookingPage() {
                   </div>
                   <button
                     onClick={() => setSelTime(null)}
-                    className="flex items-center gap-1.5 text-[12px] text-[#7a6b5c] hover:text-[#c2410c] transition-colors font-medium">
+                    className="flex items-center gap-1.5 text-[12px] text-[#7a6b5c] hover:text-[var(--brand-dark)] transition-colors font-medium">
                     <ArrowLeft className="w-3.5 h-3.5" /> Change time
                   </button>
                 </div>

@@ -185,7 +185,7 @@ function WABAModal({ initial, onClose, onSaved }: { initial?: Template | null; o
       <div className="bg-card rounded-2xl border border-black/5 w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between px-5 py-4 border-b border-black/5 shrink-0">
           <h3 className="font-bold text-[#1c1410]">{initial ? 'Edit WABA Template' : 'Create WABA Template'}</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[#f5ede3]"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[var(--accent-tint)]"><X className="w-4 h-4" /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {/* Name / Category / Language */}
@@ -247,7 +247,7 @@ function WABAModal({ initial, onClose, onSaved }: { initial?: Template | null; o
             </div>
             <div className="space-y-2">
               {buttons.map((btn) => (
-                <div key={btn.id} className="flex gap-2 items-center p-2.5 rounded-xl border border-black/5 bg-[#faf8f6]">
+                <div key={btn.id} className="flex gap-2 items-center p-2.5 rounded-xl border border-black/5 bg-[var(--app-bg)]">
                   <select className="border border-black/5 rounded-lg px-2 py-1.5 text-xs bg-card outline-none shrink-0" value={btn.type} onChange={(e) => upd(btn.id, 'type', e.target.value)}>
                     <option value="QUICK_REPLY">Quick Reply</option>
                     <option value="CALL_TO_ACTION">CTA</option>
@@ -310,7 +310,7 @@ function EmailModal({ initial, onClose, onSaved }: { initial?: Template | null; 
       <div className="bg-card rounded-2xl border border-black/5 w-full max-w-xl shadow-2xl flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between px-5 py-4 border-b border-black/5 shrink-0">
           <h3 className="font-bold text-[#1c1410]">{initial ? 'Edit Email Template' : 'Create Email Template'}</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[#f5ede3]"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[var(--accent-tint)]"><X className="w-4 h-4" /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           <div>
@@ -380,7 +380,7 @@ function SMSModal({ initial, onClose, onSaved }: { initial?: Template | null; on
       <div className="bg-card rounded-2xl border border-black/5 w-full max-w-lg shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-black/5">
           <h3 className="font-bold text-[#1c1410]">{initial ? 'Edit SMS Template' : 'Create SMS Template'}</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[#f5ede3]"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[var(--accent-tint)]"><X className="w-4 h-4" /></button>
         </div>
         <div className="p-5 space-y-4">
           <div>
@@ -446,7 +446,7 @@ function WAPersonalModal({ initial, onClose, onSaved }: { initial?: WaPersonalTe
       <div className="bg-card rounded-2xl border border-black/5 w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between px-5 py-4 border-b border-black/5 shrink-0">
           <h3 className="font-bold text-[#1c1410]">{initial ? 'Edit WA Personal Template' : 'Create WA Personal Template'}</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[#f5ede3]"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[var(--accent-tint)]"><X className="w-4 h-4" /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           <div>
@@ -492,7 +492,7 @@ function WABAPreview({ template, onClose }: { template: Template; onClose: () =>
       <div className="bg-card rounded-2xl border border-black/5 w-full max-w-sm shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-black/5">
           <h3 className="font-bold text-[#1c1410]">Preview</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[#f5ede3]"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[var(--accent-tint)]"><X className="w-4 h-4" /></button>
         </div>
         <div className="p-5">
           <div className="bg-[#e5ddd5] rounded-2xl p-4 min-h-40">
@@ -635,7 +635,7 @@ export default function AutomationTemplatesPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/automation')} className="p-2 rounded-xl hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-[#1c1410] transition-colors shrink-0">
+          <button onClick={() => navigate('/automation')} className="p-2 rounded-xl hover:bg-[var(--accent-tint)] text-[#7a6b5c] hover:text-[#1c1410] transition-colors shrink-0">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
@@ -695,7 +695,7 @@ export default function AutomationTemplatesPage() {
                     <p className="text-[13px] text-[#7a6b5c] mt-1 line-clamp-2 whitespace-pre-line">{t.message}</p>
                   </div>
                   <div className="flex gap-1 shrink-0">
-                    <button onClick={() => { copyToClipboard(t.name); toast.success('Template name copied'); }} className="p-1.5 rounded-md hover:bg-[#f5ede3] text-muted-foreground hover:text-foreground transition-colors" title="Copy name"><Copy className="w-4 h-4" /></button>
+                    <button onClick={() => { copyToClipboard(t.name); toast.success('Template name copied'); }} className="p-1.5 rounded-md hover:bg-[var(--accent-tint)] text-muted-foreground hover:text-foreground transition-colors" title="Copy name"><Copy className="w-4 h-4" /></button>
                     {canManage && <button onClick={() => navigate(`/automation/templates/wa-personal/${t.id}`, { state: { template: t } })} className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-colors" title="Edit"><Pencil className="w-4 h-4" /></button>}
                     {canManage && <button onClick={() => handleWaPersonalDelete(t.id)} className="p-1.5 rounded-md hover:bg-red-50 text-muted-foreground hover:text-destructive transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>}
                   </div>
@@ -762,8 +762,8 @@ export default function AutomationTemplatesPage() {
                       )}
                     </div>
                     <div className="flex gap-1 shrink-0">
-                      {tab === 'waba' && <button onClick={() => setPreview(t)} className="p-1.5 rounded-md hover:bg-[#f5ede3] text-muted-foreground hover:text-foreground transition-colors" title="Preview"><Eye className="w-4 h-4" /></button>}
-                      <button onClick={() => { copyToClipboard(t.name); toast.success('Template name copied'); }} className="p-1.5 rounded-md hover:bg-[#f5ede3] text-muted-foreground hover:text-foreground transition-colors" title="Copy name"><Copy className="w-4 h-4" /></button>
+                      {tab === 'waba' && <button onClick={() => setPreview(t)} className="p-1.5 rounded-md hover:bg-[var(--accent-tint)] text-muted-foreground hover:text-foreground transition-colors" title="Preview"><Eye className="w-4 h-4" /></button>}
+                      <button onClick={() => { copyToClipboard(t.name); toast.success('Template name copied'); }} className="p-1.5 rounded-md hover:bg-[var(--accent-tint)] text-muted-foreground hover:text-foreground transition-colors" title="Copy name"><Copy className="w-4 h-4" /></button>
                       {canManage && <button onClick={() => setEditItem(t)} className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-colors" title="Edit"><Pencil className="w-4 h-4" /></button>}
                       {canManage && <button onClick={() => handleDelete(t.id)} className="p-1.5 rounded-md hover:bg-red-50 text-muted-foreground hover:text-destructive transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>}
                     </div>

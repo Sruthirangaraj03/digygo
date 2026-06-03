@@ -6,6 +6,15 @@
 
 @layer base {
   :root {
+    /* ── Tenant-themeable brand variables (defaults = DigyGo orange) ──
+       These are overridden at runtime by brandingStore for white-label tenants.
+       Hardcoded hex usages across the app were swept to these vars. */
+    --brand: #ea580c;          /* primary brand (mid orange) */
+    --brand-dark: #c2410c;     /* darker shade (text, borders) */
+    --brand-light: #f97316;    /* lighter shade (gradient end) */
+    --accent-tint: #f5ede3;    /* warm hover/selected background */
+    --app-bg: #faf8f6;         /* app/page background */
+
     /* ── Core palette — warm orange brand ── */
     --background: 30 25% 97%;          /* #faf8f6 warm off-white */
     --foreground: 20 20% 10%;          /* #1c1410 warm near-black */

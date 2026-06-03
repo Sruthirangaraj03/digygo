@@ -59,7 +59,7 @@ function PageModal({ initial, onClose, onSave }: {
       <div className="bg-white rounded-2xl border border-black/5 w-full max-w-md shadow-2xl">
         <div className="flex items-center justify-between px-6 py-4 border-b border-black/5">
           <h3 className="font-headline font-bold text-[#1c1410]">{initial ? 'Edit Page' : 'New Landing Page'}</h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors">
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] hover:text-primary transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -82,7 +82,7 @@ function PageModal({ initial, onClose, onSave }: {
               {TEMPLATES.map((t) => (
                 <button key={t} onClick={() => setTemplate(t)}
                   className={cn('w-full flex items-center gap-3 p-3 rounded-xl border text-sm font-medium transition-all text-left',
-                    template === t ? 'border-primary/30 bg-primary/5 text-primary' : 'border-black/5 text-[#7a6b5c] hover:border-primary/20 hover:bg-[#f5ede3] hover:text-primary')}>
+                    template === t ? 'border-primary/30 bg-primary/5 text-primary' : 'border-black/5 text-[#7a6b5c] hover:border-primary/20 hover:bg-[var(--accent-tint)] hover:text-primary')}>
                   <Layout className="w-4 h-4 shrink-0" />
                   {t}
                   {template === t && <Check className="w-4 h-4 ml-auto" />}
@@ -240,7 +240,7 @@ export default function LandingPagesPage() {
                       <p className="text-[10px] text-[#7a6b5c] font-mono truncate mt-0.5">/{page.slug}</p>
                     </div>
                     <Badge className={cn('border-0 text-[10px] font-semibold shrink-0',
-                      page.status === 'published' ? 'bg-emerald-50 text-emerald-700' : 'bg-[#f5ede3] text-[#7a6b5c]')}>
+                      page.status === 'published' ? 'bg-emerald-50 text-emerald-700' : 'bg-[var(--accent-tint)] text-[#7a6b5c]')}>
                       {page.status === 'published' ? 'Live' : 'Draft'}
                     </Badge>
                   </div>
@@ -252,7 +252,7 @@ export default function LandingPagesPage() {
                       { label: 'Leads', value: page.leads, icon: Users },
                       { label: 'Conv.', value: `${conv}%`, icon: null },
                     ].map(({ label, value, icon: Icon }) => (
-                      <div key={label} className="bg-[#faf8f6] rounded-xl p-2.5 text-center">
+                      <div key={label} className="bg-[var(--app-bg)] rounded-xl p-2.5 text-center">
                         <p className="font-headline text-[16px] font-bold text-[#1c1410] leading-none">{value}</p>
                         <p className="text-[10px] text-[#7a6b5c] mt-0.5">{label}</p>
                       </div>
@@ -267,15 +267,15 @@ export default function LandingPagesPage() {
                     </div>
                     <div className="flex gap-0.5">
                       <button onClick={() => navigate('/lead-generation/landing-pages/builder')}
-                        className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors" title="Edit in builder">
+                        className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] hover:text-primary transition-colors" title="Edit in builder">
                         <Paintbrush className="w-3.5 h-3.5" />
                       </button>
                       <button onClick={() => { copyToClipboard(`https://digygocrm.com/p/${page.slug}`); toast.success('URL copied'); }}
-                        className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors" title="Copy URL">
+                        className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] hover:text-primary transition-colors" title="Copy URL">
                         <Copy className="w-3.5 h-3.5" />
                       </button>
                       <button onClick={() => setEditPage(page)}
-                        className="p-1.5 rounded-lg hover:bg-[#f5ede3] text-[#7a6b5c] hover:text-primary transition-colors" title="Edit details">
+                        className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c] hover:text-primary transition-colors" title="Edit details">
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
                       <button onClick={() => deletePage(page.id)}

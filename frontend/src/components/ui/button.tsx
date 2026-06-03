@@ -49,7 +49,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
-        style={isDefault ? { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)', ...style } : style}
+        style={isDefault ? { background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', ...style } : style}
         {...props}
       />
     );

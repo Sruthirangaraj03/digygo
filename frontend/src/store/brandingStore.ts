@@ -23,53 +23,50 @@ function hexToHsl(hex: string): string {
   return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
 }
 
-function applyBrandColor(hex: string): void {
-  if (!hex) return;
-  const hsl = hexToHsl(hex);
+// Adjust a hex color's lightness by delta (-1..1). Used to derive brand-dark/brand-light shades.
+function shade(hex: string, delta: number): string {
+  const clean = hex.replace('#', '');
+  if (clean.length !== 6) return hex;
+  let r = parseInt(clean.slice(0, 2), 16);
+  let g = parseInt(clean.slice(2, 4), 16);
+  let b = parseInt(clean.slice(4, 6), 16);
+  const adj = (c: number) => {
+    if (delta < 0) return Math.max(0, Math.round(c * (1 + delta)));       // darken
+    return Math.min(255, Math.round(c + (255 - c) * delta));             // lighten
+  };
+  r = adj(r); g = adj(g); b = adj(b);
+  return '#' + [r, g, b].map((c) => c.toString(16).padStart(2, '0')).join('');
+}
+
+const DEFAULTS = {
+  brand: '#ea580c', brandDark: '#c2410c', brandLight: '#f97316',
+  accentTint: '#f5ede3', appBg: '#faf8f6', primaryHsl: '21 90% 48%',
+};
+
+// Apply the full theme by setting CSS variables that the whole app reads.
+function applyTheme(opts: { brandColor?: string | null; appBgColor?: string | null; accentColor?: string | null }): void {
   const root = document.documentElement;
-  root.style.setProperty('--primary', hsl);
-  root.style.setProperty('--primary-dark', hsl);
-  root.style.setProperty('--color-primary', hex);
+  const brand = opts.brandColor || DEFAULTS.brand;
+  const brandDark = brand === DEFAULTS.brand ? DEFAULTS.brandDark : shade(brand, -0.18);
+  const brandLight = brand === DEFAULTS.brand ? DEFAULTS.brandLight : shade(brand, 0.12);
+  const appBg = opts.appBgColor || DEFAULTS.appBg;
+  const accentTint = opts.accentColor || DEFAULTS.accentTint;
+
+  root.style.setProperty('--brand', brand);
+  root.style.setProperty('--brand-dark', brandDark);
+  root.style.setProperty('--brand-light', brandLight);
+  root.style.setProperty('--app-bg', appBg);
+  root.style.setProperty('--accent-tint', accentTint);
+  // Tailwind HSL tokens (bg-primary / text-primary / opacity variants)
+  root.style.setProperty('--primary', hexToHsl(brand));
+  root.style.setProperty('--primary-dark', hexToHsl(brandDark));
+  root.style.setProperty('--color-primary', brand);
 }
 
-const THEME_STYLE_ID = 'dg-tenant-theme';
-
-// Inject a stylesheet that remaps the app's hardcoded hex colors to the tenant's theme.
-// Safe + reversible: defaults are untouched, so existing tenants see no change until they pick colors.
-function injectThemeOverrides(opts: { brandColor?: string | null; appBgColor?: string | null; accentColor?: string | null }): void {
-  let el = document.getElementById(THEME_STYLE_ID) as HTMLStyleElement | null;
-  if (!el) { el = document.createElement('style'); el.id = THEME_STYLE_ID; document.head.appendChild(el); }
-
-  const rules: string[] = [];
-  const b = opts.brandColor;
-  const bg = opts.appBgColor;
-  const ac = opts.accentColor;
-
-  // Brand color → remap the hardcoded orange shades (#c2410c / #ea580c / #f97316)
-  if (b && b.toLowerCase() !== '#ea580c') {
-    rules.push(`.bg-\\[\\#c2410c\\],.bg-\\[\\#ea580c\\],.bg-\\[\\#f97316\\]{background-color:${b}!important}`);
-    rules.push(`.text-\\[\\#c2410c\\],.text-\\[\\#ea580c\\],.text-\\[\\#f97316\\]{color:${b}!important}`);
-    rules.push(`.border-\\[\\#c2410c\\],.border-\\[\\#ea580c\\],.border-\\[\\#f97316\\]{border-color:${b}!important}`);
-    // The orange gradient used on primary buttons (login, Add Lead etc.)
-    rules.push(`[style*="linear-gradient(135deg, #c2410c"]{background:${b}!important}`);
-  }
-
-  // App background → remap the cream #faf8f6 page/card backgrounds
-  if (bg && bg.toLowerCase() !== '#faf8f6') {
-    rules.push(`.bg-\\[\\#faf8f6\\]{background-color:${bg}!important}`);
-  }
-
-  // Accent → remap the warm selected/hover beige (#f5ede3) and light primary tint (#fde8d8 / #fff7ed)
-  if (ac) {
-    rules.push(`.bg-\\[\\#f5ede3\\],.hover\\:bg-\\[\\#f5ede3\\]:hover,.bg-\\[\\#fde8d8\\],.bg-\\[\\#fff7ed\\]{background-color:${ac}!important}`);
-  }
-
-  el.textContent = rules.join('\n');
-}
-
-function clearThemeOverrides(): void {
-  const el = document.getElementById(THEME_STYLE_ID);
-  if (el) el.textContent = '';
+function clearTheme(): void {
+  const root = document.documentElement;
+  ['--brand', '--brand-dark', '--brand-light', '--app-bg', '--accent-tint', '--primary', '--primary-dark', '--color-primary']
+    .forEach((v) => root.style.removeProperty(v));
 }
 
 function applyFavicon(url: string | null): void {
@@ -160,10 +157,9 @@ export const useBrandingStore = create<BrandingState>((set) => ({
         accentColor: data.accentColor ?? null,
         loaded: true,
       });
-      applyBrandColor(brandColor);
+      applyTheme({ brandColor, appBgColor: data.appBgColor, accentColor: data.accentColor });
       applyFavicon(data.faviconUrl ?? null);
       applyTitle(data.tabTitle ?? null);
-      injectThemeOverrides({ brandColor, appBgColor: data.appBgColor, accentColor: data.accentColor });
     } catch {
       set({ isCustomDomain: false, loaded: true });
     }
@@ -186,18 +182,13 @@ export const useBrandingStore = create<BrandingState>((set) => ({
       accentColor: d.accentColor ?? null,
       loaded: true,
     });
-    applyBrandColor(brandColor);
+    applyTheme({ brandColor, appBgColor: d.appBgColor, accentColor: d.accentColor });
     applyFavicon(d.faviconUrl ?? null);
     applyTitle(d.tabTitle ?? null);
-    injectThemeOverrides({ brandColor, appBgColor: d.appBgColor, accentColor: d.accentColor });
   },
 
   resetBranding: () => {
-    const root = document.documentElement;
-    root.style.removeProperty('--primary');
-    root.style.removeProperty('--primary-dark');
-    root.style.removeProperty('--color-primary');
-    clearThemeOverrides();
+    clearTheme();
     set({
       isCustomDomain: false, branded: false, tenantName: null, logoUrl: null,
       faviconUrl: null, bannerUrl: null, brandColor: DEFAULT_COLOR,

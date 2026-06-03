@@ -228,7 +228,7 @@ export default function CreateBusinessPage() {
                 type="submit"
                 disabled={loading}
                 className="px-8 py-3 rounded text-white text-[13px] font-bold uppercase tracking-wider transition-all disabled:opacity-60 hover:opacity-90 active:scale-[0.98]"
-                style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}
+                style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}
               >
                 {loading ? 'Creating…' : 'Create Sub Account'}
               </button>

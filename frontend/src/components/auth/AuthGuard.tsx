@@ -20,8 +20,8 @@ export function AuthGuard() {
 
   if (checking) {
     return (
-      <div className="min-h-[100dvh] flex items-center justify-center bg-[#faf8f6]">
-        <div className="w-8 h-8 border-4 border-[#ea580c] border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-[100dvh] flex items-center justify-center bg-[var(--app-bg)]">
+        <div className="w-8 h-8 border-4 border-[var(--brand)] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
