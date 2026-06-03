@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react';
 import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
+import { useBrandingStore } from '@/store/brandingStore';
 
 export function AuthGuard() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentUser     = useAuthStore((s) => s.currentUser);
   const bootstrapFromRefresh = useAuthStore((s) => s.bootstrapFromRefresh);
+  const fetchBranding   = useBrandingStore((s) => s.fetchBranding);
   const [checking, setChecking] = useState(!isAuthenticated);
   const location = useLocation();
 
   useEffect(() => {
+    // Fetch white-label branding in parallel — non-blocking
+    fetchBranding().catch(() => null);
     if (isAuthenticated) { setChecking(false); return; }
     bootstrapFromRefresh().finally(() => setChecking(false));
   }, []);

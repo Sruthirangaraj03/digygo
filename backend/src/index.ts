@@ -44,6 +44,10 @@ import callsRoutes from './routes/calls';
 import googleSheetsRoutes from './routes/google_sheets';
 import { processRecordingDownloads } from './utils/recordingDownloader';
 import { pollGoogleSheets } from './utils/googleSheetsPoller';
+import { resolveDomain } from './middleware/domainResolver';
+import { query as dbQuery } from './db';
+import { sendEmail } from './services/email';
+import { initCorsOrigins, isAllowedOrigin, addAllowedOrigin } from './utils/corsOrigins';
 
 const app        = express();
 const httpServer = createServer(app);
@@ -67,9 +71,21 @@ app.use(helmet({
 }));
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
-const allowedOrigins = new Set(
+// Seed base origins into shared corsOrigins store
+initCorsOrigins(
   [config.frontendUrl, process.env.WEBHOOK_BASE_URL, process.env.EXTRA_ORIGIN].filter(Boolean) as string[]
 );
+
+// Load active custom domains into CORS allowlist on startup
+(async () => {
+  try {
+    const r = await dbQuery(
+      "SELECT custom_domain FROM tenants WHERE domain_status='ssl_active' AND custom_domain IS NOT NULL"
+    );
+    r.rows.forEach((row: any) => addAllowedOrigin(row.custom_domain));
+    if (r.rows.length > 0) console.log(`🌐  Loaded ${r.rows.length} custom domain(s) into CORS allowlist`);
+  } catch { /* DB may not be ready yet */ }
+})();
 
 // Public form submit + public booking endpoints need cross-origin access
 // so they work when the HTML snippet is embedded on any external website.
@@ -89,7 +105,7 @@ app.use((req, res, next) => {
   return cors({
     origin: (origin, cb) => {
       // Allow requests with no origin (mobile apps, curl, server-to-server)
-      if (!origin || allowedOrigins.has(origin)) { cb(null, true); return; }
+      if (!origin || isAllowedOrigin(origin)) { cb(null, true); return; }
       cb(new Error(`CORS: origin ${origin} not allowed`));
     },
     credentials: true,
@@ -125,6 +141,9 @@ const refreshLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many requests, please slow down.' },
 });
+
+// ── Custom domain resolver — runs before all routes ───────────────────────────
+app.use(resolveDomain);
 
 // ── Body parsing & cookies ────────────────────────────────────────────────────
 // Raw body must be captured BEFORE express.json() for HMAC-SHA256 signature verification.
@@ -220,6 +239,35 @@ runMigrations()
 
     restoreAllSessions().catch(() => null);
     console.log('📱  WhatsApp Personal session restore initiated');
+
+    // SSL expiry monitoring — runs nightly (every 24 hours)
+    const checkDomainExpiry = async () => {
+      try {
+        const r = await dbQuery(`
+          SELECT custom_domain, name, domain_ssl_expires_at
+          FROM tenants
+          WHERE domain_status = 'ssl_active'
+            AND domain_ssl_expires_at IS NOT NULL
+            AND domain_ssl_expires_at < NOW() + INTERVAL '14 days'
+        `);
+        for (const tenant of r.rows) {
+          const expiryDate = new Date(tenant.domain_ssl_expires_at).toDateString();
+          await sendEmail({
+            to: process.env.ADMIN_ALERT_EMAIL ?? 'admin@digygo.in',
+            subject: `⚠️ SSL Expiring Soon: ${tenant.custom_domain}`,
+            html: `<p>SSL certificate for <strong>${tenant.name}</strong> (<code>${tenant.custom_domain}</code>) expires on <strong>${expiryDate}</strong>.</p>
+                   <p>Please re-verify from the super admin panel or run <code>certbot renew</code> on the server.</p>`,
+          }).catch(() => null);
+          console.log(`[domain-expiry] Alert sent for ${tenant.custom_domain} (expires ${expiryDate})`);
+        }
+      } catch (err) {
+        console.error('[domain-expiry] check failed:', err);
+      }
+    };
+    setInterval(() => checkDomainExpiry(), 24 * 60 * 60_000);
+    // Run once at startup after a short delay (DB must be ready)
+    setTimeout(() => checkDomainExpiry().catch(() => null), 60_000);
+    console.log('🔐  Domain SSL expiry monitor started (24h interval)');
 
     httpServer.listen(PORT, () => {
       console.log(`\n🚀  DigyGo CRM Backend running on http://localhost:${PORT}`);

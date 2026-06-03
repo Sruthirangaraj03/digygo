@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/authStore';
+import { useBrandingStore } from '@/store/brandingStore';
 
 interface NavItem {
   label: string;
@@ -44,6 +45,7 @@ export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => vo
   const location = useLocation();
   const [expanded, setExpanded] = useState<string[]>(['Lead Generation', 'Automation']);
   const currentUser = useAuthStore((s) => s.currentUser);
+  const { isCustomDomain, tenantName, logoUrl } = useBrandingStore();
   const permissions = useAuthStore((s) => s.permissions);
   const permAll = useAuthStore((s) => s.permAll);
   const isSuperAdmin = currentUser?.role === 'super_admin';
@@ -93,16 +95,22 @@ export function AppSidebar({ open, onClose }: { open: boolean; onClose: () => vo
         open ? 'translate-x-0' : '-translate-x-full'
       )}>
 
-        {/* Logo — square image has ~25% whitespace on each side; crop it with overflow+margin */}
+        {/* Logo — show tenant brand on custom domain, DigyGo logo otherwise */}
         <div
-          className="relative flex justify-center border-b border-black/5 shrink-0 overflow-hidden"
+          className="relative flex justify-center items-center border-b border-black/5 shrink-0 overflow-hidden"
           style={{ height: '80px' }}
         >
-          <img
-            src="/digygo-logo.png"
-            alt="DigyGo"
-            style={{ width: '160px', height: '160px', marginTop: '-36px', flexShrink: 0 }}
-          />
+          {isCustomDomain ? (
+            logoUrl
+              ? <img src={logoUrl} alt={tenantName ?? ''} className="max-h-12 max-w-[160px] object-contain" />
+              : <span className="font-bold text-[15px] text-[#1c1410] px-3 text-center">{tenantName}</span>
+          ) : (
+            <img
+              src="/digygo-logo.png"
+              alt="DigyGo"
+              style={{ width: '160px', height: '160px', marginTop: '-36px', flexShrink: 0 }}
+            />
+          )}
           <button
             onClick={onClose}
             className="absolute right-2 top-1/2 -translate-y-1/2 md:hidden p-1.5 rounded-lg text-[#7a6b5c] hover:bg-[#f5ede3] transition-colors"

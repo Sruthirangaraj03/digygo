@@ -1,11 +1,20 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import * as fs from 'fs';
+import * as dns from 'dns';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { query, pool } from '../db';
 import { config } from '../config';
 import { requireAuth, requireSuperAdmin, AuthRequest, invalidateTenantCache } from '../middleware/auth';
+import { invalidateDomainCache, setCachedDomain } from '../utils/domainCache';
+import { addAllowedOrigin, removeAllowedOrigin } from '../utils/corsOrigins';
+
+const execFileAsync = promisify(execFile);
+const dnsLookup = promisify(dns.resolve4);
 
 const router = Router();
 
@@ -461,7 +470,7 @@ router.get('/tenants', requireAuth, requireSuperAdmin, async (req: AuthRequest, 
 
 // PATCH /api/auth/tenants/:id
 router.patch('/tenants/:id', requireAuth, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
-  const { name, plan, subscription_status, subscription_expires_at, phone, address } = req.body;
+  const { name, plan, subscription_status, subscription_expires_at, phone, address, brand_color, logo_url, reply_to_email } = req.body;
   const updates: string[] = [];
   const params: any[] = [];
   if (name !== undefined)                    { params.push(name);                    updates.push(`name=$${params.length}`); }
@@ -470,6 +479,9 @@ router.patch('/tenants/:id', requireAuth, requireSuperAdmin, async (req: AuthReq
   if (subscription_expires_at !== undefined) { params.push(subscription_expires_at); updates.push(`subscription_expires_at=$${params.length}`); }
   if (phone !== undefined)                   { params.push(phone);                   updates.push(`phone=$${params.length}`); }
   if (address !== undefined)                 { params.push(address);                 updates.push(`address=$${params.length}`); }
+  if (brand_color !== undefined)             { params.push(brand_color || '#c2410c'); updates.push(`brand_color=$${params.length}`); }
+  if (logo_url !== undefined)                { params.push(logo_url || null);         updates.push(`logo_url=$${params.length}`); }
+  if (reply_to_email !== undefined)          { params.push(reply_to_email || null);   updates.push(`reply_to_email=$${params.length}`); }
   if (!updates.length) { res.status(400).json({ error: 'No fields to update' }); return; }
   params.push(req.params.id);
   try {
@@ -561,6 +573,324 @@ router.get('/audit-log', requireAuth, requireSuperAdmin, async (_req: AuthReques
     `);
     res.json(result.rows);
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// ── Domain Management (Super Admin) ──────────────────────────────────────────
+
+const DOMAIN_REGEX = /^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?(\.[a-z]{2,})+$/i;
+const BLOCKED_DOMAINS = new Set(['crm.digygo.in', 'localhost', '127.0.0.1', 'digygo.in']);
+
+function isBlockedDomain(d: string): boolean {
+  if (BLOCKED_DOMAINS.has(d)) return true;
+  if (d.endsWith('.digygo.in')) return true;
+  return false;
+}
+
+// POST /api/auth/tenants/:id/domain — set a custom domain for a tenant
+router.post('/tenants/:id/domain', requireAuth, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
+  let { custom_domain, brand_color, logo_url, reply_to_email } = req.body;
+  if (!custom_domain) { res.status(400).json({ error: 'custom_domain is required' }); return; }
+
+  // Strip protocol prefix if accidentally included
+  custom_domain = custom_domain.replace(/^https?:\/\//i, '').trim().toLowerCase();
+
+  if (!DOMAIN_REGEX.test(custom_domain)) {
+    res.status(400).json({ error: 'Invalid domain format. Example: admin.yourcompany.com' }); return;
+  }
+  if (isBlockedDomain(custom_domain)) {
+    res.status(400).json({ error: 'This domain cannot be used as a custom domain' }); return;
+  }
+
+  try {
+    // Check if another tenant already owns this domain
+    const existing = await query(
+      'SELECT id FROM tenants WHERE custom_domain=$1 AND id != $2 LIMIT 1',
+      [custom_domain, req.params.id]
+    );
+    if (existing.rows[0]) {
+      res.status(409).json({ error: 'This domain is already registered to another account' }); return;
+    }
+
+    // Get old domain to invalidate cache
+    const old = await query('SELECT custom_domain FROM tenants WHERE id=$1', [req.params.id]);
+    const oldDomain = old.rows[0]?.custom_domain;
+    if (oldDomain) {
+      invalidateDomainCache(oldDomain);
+      removeAllowedOrigin(oldDomain);
+    }
+
+    // Build dynamic updates
+    const sets: string[] = ['custom_domain=$1', 'domain_status=$2', 'domain_error=NULL', 'domain_cert_attempts=0'];
+    const params: any[] = [custom_domain, 'dns_pending'];
+    if (brand_color)    { params.push(brand_color);    sets.push(`brand_color=$${params.length}`); }
+    if (logo_url)       { params.push(logo_url);       sets.push(`logo_url=$${params.length}`); }
+    if (reply_to_email) { params.push(reply_to_email); sets.push(`reply_to_email=$${params.length}`); }
+    params.push(req.params.id);
+    await query(`UPDATE tenants SET ${sets.join(',')} WHERE id=$${params.length}`, params);
+
+    // Extract subdomain part for DNS instructions
+    const parts = custom_domain.split('.');
+    const subdomain = parts.length > 2 ? parts.slice(0, -2).join('.') : '@';
+
+    res.json({
+      success: true,
+      domain_status: 'dns_pending',
+      dns_instructions: {
+        type: 'CNAME',
+        name: subdomain,
+        value: 'crm.digygo.in',
+        full_domain: custom_domain,
+        ttl: 3600,
+      },
+    });
+  } catch (err: any) {
+    if (err.code === '23505') { res.status(409).json({ error: 'This domain is already in use' }); return; }
+    console.error('[domain set]', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/auth/tenants/:id/domain/verify — verify DNS + provision SSL
+router.post('/tenants/:id/domain/verify', requireAuth, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
+  const skipCertbot = process.env.SKIP_CERTBOT === 'true';
+
+  try {
+    const tenantRes = await query(
+      'SELECT custom_domain, domain_cert_attempts, domain_last_attempt_at, name, logo_url, brand_color, reply_to_email FROM tenants WHERE id=$1',
+      [req.params.id]
+    );
+    const tenant = tenantRes.rows[0];
+    if (!tenant) { res.status(404).json({ error: 'Tenant not found' }); return; }
+    if (!tenant.custom_domain) { res.status(400).json({ error: 'No custom domain set for this tenant' }); return; }
+
+    const domain = tenant.custom_domain;
+
+    // Rate limit guard — block at 4 attempts (LE hard-blocks after 5)
+    if (!skipCertbot && tenant.domain_cert_attempts >= 4) {
+      const lastAttempt = new Date(tenant.domain_last_attempt_at);
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      if (lastAttempt > weekAgo) {
+        res.status(429).json({
+          error: `Weekly attempt limit reached (${tenant.domain_cert_attempts}/4 used). Let's Encrypt will permanently block this domain after 5 failures. Try again next week.`,
+        }); return;
+      }
+      // Reset counter if a week has passed
+      await query('UPDATE tenants SET domain_cert_attempts=0 WHERE id=$1', [req.params.id]);
+    }
+
+    // Mark as verifying
+    await query(
+      'UPDATE tenants SET domain_status=$1, domain_last_attempt_at=NOW(), domain_cert_attempts=domain_cert_attempts+1 WHERE id=$2',
+      ['verifying', req.params.id]
+    );
+
+    if (skipCertbot) {
+      // Dev mode: skip DNS + certbot, activate directly
+      console.warn(`[domain-verify] SKIP_CERTBOT=true — activating ${domain} without SSL provisioning`);
+      await query(
+        "UPDATE tenants SET domain_status='ssl_active', domain_verified_at=NOW(), domain_error=NULL WHERE id=$1",
+        [req.params.id]
+      );
+      addAllowedOrigin(domain);
+      setCachedDomain(domain, req.params.id, {
+        tenantId: req.params.id,
+        name: tenant.name,
+        logoUrl: tenant.logo_url ?? null,
+        brandColor: tenant.brand_color ?? '#c2410c',
+        replyToEmail: tenant.reply_to_email ?? null,
+        cachedAt: Date.now(),
+      });
+      res.json({ success: true, activated_at: new Date().toISOString(), dev_mode: true });
+      return;
+    }
+
+    // Step 1: DNS verification
+    const serverIp = process.env.SERVER_IP ?? '31.97.227.208';
+    let dnsOk = false;
+    let resolvedIps: string[] = [];
+    try {
+      resolvedIps = await dnsLookup(domain);
+      dnsOk = resolvedIps.includes(serverIp);
+    } catch {
+      // Try CNAME resolution
+      try {
+        const cnames = await new Promise<string[]>((resolve, reject) =>
+          dns.resolveCname(domain, (err, addrs) => err ? reject(err) : resolve(addrs))
+        );
+        dnsOk = cnames.some(c => c.includes('crm.digygo.in'));
+      } catch { /* DNS not found at all */ }
+    }
+
+    if (!dnsOk) {
+      const resolvedStr = resolvedIps.length > 0 ? resolvedIps.join(', ') : 'unresolvable';
+      await query(
+        "UPDATE tenants SET domain_status='failed', domain_error=$1 WHERE id=$2",
+        [`DNS not pointing to server. Resolved to: ${resolvedStr}. Expected: ${serverIp}`, req.params.id]
+      );
+      res.status(400).json({
+        error: `DNS not pointing to server. Resolved to: ${resolvedStr}. Expected: ${serverIp}. Please add a CNAME record: ${domain} → crm.digygo.in`,
+      }); return;
+    }
+
+    // Step 2: Check if cert already exists (avoid hitting LE rate limit)
+    const certPath = `/etc/letsencrypt/live/${domain}/fullchain.pem`;
+    const certExists = fs.existsSync(certPath);
+
+    if (!certExists) {
+      // Step 3: Run certbot certonly --webroot (NEVER --nginx)
+      try {
+        await execFileAsync('certbot', [
+          'certonly', '--webroot',
+          '-w', '/var/www/certbot',
+          '-d', domain,
+          '--non-interactive', '--agree-tos',
+          '-m', process.env.CERTBOT_EMAIL ?? 'admin@digygo.in',
+          '--keep-until-expiring',
+        ]);
+      } catch (err: any) {
+        const errMsg = err.stderr ?? err.message ?? 'certbot failed';
+        await query(
+          "UPDATE tenants SET domain_status='failed', domain_error=$1 WHERE id=$2",
+          [errMsg.slice(0, 500), req.params.id]
+        );
+        res.status(500).json({ error: `SSL provisioning failed: ${errMsg.slice(0, 200)}` }); return;
+      }
+    }
+
+    // Step 4: Parse SSL expiry date
+    let sslExpiry: Date | null = null;
+    try {
+      const { stdout } = await execFileAsync('openssl', [
+        'x509', '-enddate', '-noout', '-in', certPath,
+      ]);
+      const match = stdout.match(/notAfter=(.*)/);
+      if (match) sslExpiry = new Date(match[1].trim());
+    } catch { /* non-fatal */ }
+
+    // Step 5: Write per-domain nginx include file
+    const nginxConf = `/etc/nginx/custom-domains/${domain}.conf`;
+    const nginxContent = `server {
+    listen 443 ssl;
+    server_name ${domain};
+
+    ssl_certificate     /etc/letsencrypt/live/${domain}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${domain}/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    root  /var/www/digygocrm/frontend/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass         http://127.0.0.1:4000;
+        proxy_http_version 1.1;
+    }
+
+    location /socket.io/ {
+        proxy_pass         http://127.0.0.1:4000;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade    $http_upgrade;
+        proxy_set_header   Connection "upgrade";
+    }
+}
+`;
+    try {
+      fs.writeFileSync(nginxConf, nginxContent, 'utf8');
+    } catch (err: any) {
+      console.warn(`[domain-verify] Could not write nginx config: ${err.message}`);
+    }
+
+    // Step 6: Backup + test + reload nginx
+    try {
+      await execFileAsync('cp', ['/etc/nginx/nginx.conf', '/etc/nginx/nginx.conf.bak']);
+      await execFileAsync('nginx', ['-t']);
+      await execFileAsync('nginx', ['-s', 'reload']);
+    } catch (err: any) {
+      console.warn(`[domain-verify] nginx reload warning: ${err.message}`);
+      // Non-fatal if nginx isn't available (local dev) — cert is provisioned, reload will happen on next deploy
+    }
+
+    // Step 7: Activate
+    await query(
+      "UPDATE tenants SET domain_status='ssl_active', domain_verified_at=NOW(), domain_ssl_expires_at=$1, domain_error=NULL WHERE id=$2",
+      [sslExpiry?.toISOString() ?? null, req.params.id]
+    );
+    addAllowedOrigin(domain);
+    setCachedDomain(domain, req.params.id, {
+      tenantId: req.params.id,
+      name: tenant.name,
+      logoUrl: tenant.logo_url ?? null,
+      brandColor: tenant.brand_color ?? '#c2410c',
+      replyToEmail: tenant.reply_to_email ?? null,
+      cachedAt: Date.now(),
+    });
+
+    res.json({
+      success: true,
+      activated_at: new Date().toISOString(),
+      ssl_expires_at: sslExpiry?.toISOString() ?? null,
+    });
+  } catch (err) {
+    console.error('[domain verify]', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/auth/tenants/:id/domain — remove custom domain
+router.delete('/tenants/:id/domain', requireAuth, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const t = await query('SELECT custom_domain FROM tenants WHERE id=$1', [req.params.id]);
+    const domain = t.rows[0]?.custom_domain;
+
+    if (domain) {
+      // Remove nginx include file
+      const nginxConf = `/etc/nginx/custom-domains/${domain}.conf`;
+      try {
+        if (fs.existsSync(nginxConf)) {
+          fs.unlinkSync(nginxConf);
+          await execFileAsync('cp', ['/etc/nginx/nginx.conf', '/etc/nginx/nginx.conf.bak']).catch(() => null);
+          const { stdout: testOut } = await execFileAsync('nginx', ['-t']).catch(() => ({ stdout: '' }));
+          if (!testOut.includes('failed')) {
+            await execFileAsync('nginx', ['-s', 'reload']).catch(() => null);
+          }
+        }
+      } catch { /* non-fatal */ }
+
+      invalidateDomainCache(domain);
+      removeAllowedOrigin(domain);
+    }
+
+    await query(
+      'UPDATE tenants SET custom_domain=NULL, domain_status=\'none\', domain_error=NULL, domain_verified_at=NULL, domain_ssl_expires_at=NULL, domain_cert_attempts=0 WHERE id=$1',
+      [req.params.id]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[domain delete]', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/auth/tenants/:id/domain — get domain status for a tenant
+router.get('/tenants/:id/domain', requireAuth, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const r = await query(
+      'SELECT custom_domain, domain_status, domain_error, domain_verified_at, domain_ssl_expires_at, domain_cert_attempts, domain_last_attempt_at, brand_color, logo_url, reply_to_email FROM tenants WHERE id=$1',
+      [req.params.id]
+    );
+    if (!r.rows[0]) { res.status(404).json({ error: 'Tenant not found' }); return; }
+    res.json(r.rows[0]);
+  } catch { res.status(500).json({ error: 'Server error' }); }
 });
 
 export default router;

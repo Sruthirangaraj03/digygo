@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Plus, RefreshCw, Search, LogIn, Pencil, Mail, MoreVertical,
   CheckCircle2, XCircle, Building2, Users, TrendingUp, X, ChevronDown,
+  Globe, AlertTriangle, Copy, Trash2,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
@@ -41,6 +42,265 @@ const PLAN_LABEL: Record<string, string> = {
   pro:        'Premium User',
   enterprise: 'Enterprise',
 };
+
+// ── Domain Management Modal ───────────────────────────────────────────────────
+
+interface DomainInfo {
+  custom_domain: string | null;
+  domain_status: string;
+  domain_error: string | null;
+  domain_verified_at: string | null;
+  domain_ssl_expires_at: string | null;
+  domain_cert_attempts: number;
+  domain_last_attempt_at: string | null;
+  brand_color: string | null;
+  logo_url: string | null;
+  reply_to_email: string | null;
+}
+
+function DomainModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void }) {
+  const [info, setInfo] = useState<DomainInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [domainInput, setDomainInput] = useState('');
+  const [logoInput, setLogoInput] = useState('');
+  const [colorInput, setColorInput] = useState('#c2410c');
+  const [replyToInput, setReplyToInput] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchInfo = useCallback(async () => {
+    try {
+      const data = await api.get<DomainInfo>(`/api/auth/tenants/${tenant.id}/domain`);
+      setInfo(data);
+      setDomainInput(data.custom_domain ?? '');
+      setLogoInput(data.logo_url ?? '');
+      setColorInput(data.brand_color ?? '#c2410c');
+      setReplyToInput(data.reply_to_email ?? '');
+    } catch { /* ignore */ } finally { setLoading(false); }
+  }, [tenant.id]);
+
+  useEffect(() => { fetchInfo(); }, [fetchInfo]);
+
+  // Poll every 3s while verifying
+  useEffect(() => {
+    if (info?.domain_status === 'verifying') {
+      pollRef.current = setInterval(() => fetchInfo(), 3000);
+    } else {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    }
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [info?.domain_status, fetchInfo]);
+
+  const handleSetDomain = async () => {
+    if (!domainInput.trim()) return;
+    setSaving(true);
+    try {
+      await api.post(`/api/auth/tenants/${tenant.id}/domain`, {
+        custom_domain: domainInput.trim(),
+        logo_url: logoInput.trim() || undefined,
+        brand_color: colorInput,
+        reply_to_email: replyToInput.trim() || undefined,
+      });
+      toast.success('Domain saved');
+      await fetchInfo();
+    } catch (err: any) { toast.error(err.message ?? 'Failed to set domain'); }
+    finally { setSaving(false); }
+  };
+
+  const handleSaveBranding = async () => {
+    setSaving(true);
+    try {
+      await api.patch(`/api/auth/tenants/${tenant.id}`, {
+        logo_url: logoInput.trim() || null,
+        brand_color: colorInput,
+        reply_to_email: replyToInput.trim() || null,
+      });
+      toast.success('Branding saved');
+    } catch (err: any) { toast.error(err.message ?? 'Failed to save branding'); }
+    finally { setSaving(false); }
+  };
+
+  const handleVerify = async () => {
+    setVerifying(true);
+    try {
+      await api.post(`/api/auth/tenants/${tenant.id}/domain/verify`, {});
+      toast.success('Domain activated successfully!');
+      await fetchInfo();
+    } catch (err: any) { toast.error(err.message ?? 'Verification failed'); await fetchInfo(); }
+    finally { setVerifying(false); }
+  };
+
+  const handleRemove = async () => {
+    if (!confirm(`Remove domain ${info?.custom_domain}? The domain will stop working immediately.`)) return;
+    setRemoving(true);
+    try {
+      await api.delete(`/api/auth/tenants/${tenant.id}/domain`);
+      toast.success('Domain removed');
+      await fetchInfo();
+    } catch (err: any) { toast.error(err.message ?? 'Failed to remove domain'); }
+    finally { setRemoving(false); }
+  };
+
+  const status = info?.domain_status ?? 'none';
+  const attemptsLeft = Math.max(0, 4 - (info?.domain_cert_attempts ?? 0));
+  const subdomain = info?.custom_domain
+    ? info.custom_domain.split('.').length > 2
+      ? info.custom_domain.split('.').slice(0, -2).join('.')
+      : '@'
+    : 'admin';
+
+  const inp = 'w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-[#1c1410] outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 bg-white';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="font-bold text-[#1c1410] flex items-center gap-2">
+              <Globe className="w-4 h-4 text-primary" /> Custom Domain
+            </h3>
+            <p className="text-[11px] text-[#7a6b5c] mt-0.5">{tenant.name}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X className="w-4 h-4" /></button>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <div className="p-5 space-y-5">
+
+            {/* Status badge */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-[#7a6b5c]">Status:</span>
+              {status === 'none' && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">No domain set</span>}
+              {status === 'dns_pending' && <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">⏳ DNS Pending</span>}
+              {status === 'verifying' && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 animate-pulse">🔵 Verifying SSL...</span>}
+              {status === 'ssl_active' && <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">✅ Active</span>}
+              {status === 'failed' && <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">❌ Failed</span>}
+              {info?.domain_verified_at && status === 'ssl_active' && (
+                <span className="text-[10px] text-[#b09e8d]">since {new Date(info.domain_verified_at).toLocaleDateString()}</span>
+              )}
+            </div>
+
+            {/* Error message */}
+            {status === 'failed' && info?.domain_error && (
+              <div className="flex items-start gap-2 p-3 bg-red-50 rounded-lg border border-red-200">
+                <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-red-700 font-mono break-all">{info.domain_error}</p>
+              </div>
+            )}
+
+            {/* Attempt counter warning */}
+            {(info?.domain_cert_attempts ?? 0) >= 3 && status !== 'ssl_active' && (
+              <div className="flex items-start gap-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-amber-700">
+                  {info?.domain_cert_attempts}/4 verification attempts used this week.
+                  Let's Encrypt permanently blocks after 5 failures.
+                  {attemptsLeft === 0 && ' Limit reached — try again next Monday.'}
+                </p>
+              </div>
+            )}
+
+            {/* Domain input */}
+            <div>
+              <label className="text-xs font-semibold text-[#1c1410] mb-1 block">Custom Domain</label>
+              <div className="flex gap-2">
+                <input
+                  value={domainInput}
+                  onChange={(e) => setDomainInput(e.target.value)}
+                  placeholder="admin.yourcompany.com"
+                  className={`${inp} flex-1`}
+                />
+                <button onClick={handleSetDomain} disabled={saving || !domainInput.trim()}
+                  className="px-3 py-2 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary/90 transition-colors disabled:opacity-50 shrink-0">
+                  {saving ? '…' : 'Save'}
+                </button>
+              </div>
+            </div>
+
+            {/* DNS instructions */}
+            {(status === 'dns_pending' || status === 'failed') && info?.custom_domain && (
+              <div className="p-3 bg-[#faf8f6] rounded-lg border border-[#e8ddd4] space-y-2">
+                <p className="text-xs font-semibold text-[#1c1410]">DNS Setup Instructions</p>
+                <p className="text-[11px] text-[#7a6b5c]">Add this record in your domain's DNS settings:</p>
+                <div className="grid grid-cols-3 gap-1 text-[11px] font-mono bg-white rounded-lg border border-gray-100 p-2">
+                  <span className="text-gray-400">Type</span>
+                  <span className="text-gray-400">Name</span>
+                  <span className="text-gray-400">Value</span>
+                  <span className="font-bold">CNAME</span>
+                  <span className="font-bold">{subdomain}</span>
+                  <span className="font-bold">crm.digygo.in</span>
+                </div>
+                <button onClick={() => { navigator.clipboard.writeText('crm.digygo.in'); toast.success('Copied!'); }}
+                  className="flex items-center gap-1 text-[11px] text-primary hover:text-primary/80">
+                  <Copy className="w-3 h-3" /> Copy value
+                </button>
+              </div>
+            )}
+
+            {/* Verify button */}
+            {(status === 'dns_pending' || status === 'failed') && (
+              <button
+                onClick={handleVerify}
+                disabled={verifying || attemptsLeft === 0}
+                className="w-full h-10 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {verifying ? (
+                  <><div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Checking DNS & provisioning SSL...</>
+                ) : attemptsLeft === 0 ? 'Attempt limit reached' : 'Verify & Activate SSL'}
+              </button>
+            )}
+
+            {/* Remove domain button */}
+            {info?.custom_domain && status !== 'none' && (
+              <button onClick={handleRemove} disabled={removing}
+                className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-700 transition-colors">
+                <Trash2 className="w-3.5 h-3.5" />
+                {removing ? 'Removing...' : 'Remove domain'}
+              </button>
+            )}
+
+            {/* Branding section */}
+            <div className="border-t border-gray-100 pt-4 space-y-3">
+              <p className="text-xs font-bold text-[#1c1410]">White-Label Branding</p>
+              <div>
+                <label className="text-xs font-semibold text-[#7a6b5c] mb-1 block">Logo URL <span className="font-normal">(hosted image URL)</span></label>
+                <input value={logoInput} onChange={(e) => setLogoInput(e.target.value)}
+                  placeholder="https://cdn.yourcompany.com/logo.png" className={inp} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-[#7a6b5c] mb-1 block">Brand Color</label>
+                  <div className="flex gap-2 items-center">
+                    <input type="color" value={colorInput} onChange={(e) => setColorInput(e.target.value)}
+                      className="w-9 h-9 rounded-lg border border-gray-200 cursor-pointer p-0.5" />
+                    <input value={colorInput} onChange={(e) => setColorInput(e.target.value)}
+                      placeholder="#c2410c" className={`${inp} flex-1`} />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-[#7a6b5c] mb-1 block">Reply-To Email</label>
+                  <input value={replyToInput} onChange={(e) => setReplyToInput(e.target.value)}
+                    placeholder="info@yourcompany.com" className={inp} />
+                </div>
+              </div>
+              <button onClick={handleSaveBranding} disabled={saving}
+                className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary/90 transition-colors disabled:opacity-60">
+                {saving ? 'Saving…' : 'Save Branding'}
+              </button>
+            </div>
+
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ── Edit Tenant Modal ──────────────────────────────────────────────────────────
 
@@ -132,7 +392,7 @@ function EditTenantModal({ tenant, onClose, onSaved }: { tenant: Tenant; onClose
 
 // ── Row Actions Dropdown ────────────────────────────────────────────────────────
 
-function RowMenu({ tenant, onEdit, onRefresh }: { tenant: Tenant; onEdit: () => void; onRefresh: () => void }) {
+function RowMenu({ tenant, onEdit, onDomain, onRefresh }: { tenant: Tenant; onEdit: () => void; onDomain: () => void; onRefresh: () => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -168,6 +428,10 @@ function RowMenu({ tenant, onEdit, onRefresh }: { tenant: Tenant; onEdit: () => 
             className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50 text-[#1c1410]">
             <Pencil className="w-3.5 h-3.5 text-gray-400" /> Edit Details
           </button>
+          <button onClick={() => { setOpen(false); onDomain(); }}
+            className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50 text-[#1c1410]">
+            <Globe className="w-3.5 h-3.5 text-gray-400" /> Custom Domain
+          </button>
           <button onClick={() => {
             setOpen(false);
             window.location.href = `mailto:${tenant.admin_email ?? tenant.email}`;
@@ -200,6 +464,7 @@ export default function SuperAdminPage() {
   const [filterPlan, setFilterPlan] = useState('');
   const [filterSub, setFilterSub] = useState('');
   const [editTenant, setEditTenant] = useState<Tenant | null>(null);
+  const [domainTenant, setDomainTenant] = useState<Tenant | null>(null);
   const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
 
   const fetchTenants = useCallback(async () => {
@@ -475,7 +740,7 @@ export default function SuperAdminPage() {
                           <Mail className="w-3.5 h-3.5" />
                         </button>
                         {/* More */}
-                        <RowMenu tenant={t} onEdit={() => setEditTenant(t)} onRefresh={fetchTenants} />
+                        <RowMenu tenant={t} onEdit={() => setEditTenant(t)} onDomain={() => setDomainTenant(t)} onRefresh={fetchTenants} />
                       </div>
                     </td>
                   </tr>
@@ -499,6 +764,11 @@ export default function SuperAdminPage() {
       {/* Edit Modal */}
       {editTenant && (
         <EditTenantModal tenant={editTenant} onClose={() => setEditTenant(null)} onSaved={fetchTenants} />
+      )}
+
+      {/* Domain Modal */}
+      {domainTenant && (
+        <DomainModal tenant={domainTenant} onClose={() => setDomainTenant(null)} />
       )}
     </div>
   );

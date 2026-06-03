@@ -18,6 +18,36 @@ const bookingLimiter = rateLimit({
 
 const router = Router();
 
+// GET /api/public/branding?domain=admin.thangapanam.com
+// Returns white-label branding for a custom domain — no auth required
+router.get('/branding', async (req: Request, res: Response) => {
+  const domain = (req.query.domain as string ?? '').trim().toLowerCase();
+  if (!domain) { res.status(400).json({ error: 'domain query param required' }); return; }
+
+  // Skip certbot check in local dev mode
+  const skipCertbot = process.env.SKIP_CERTBOT === 'true';
+  const statusFilter = skipCertbot
+    ? "domain_status IN ('ssl_active','dns_pending')"
+    : "domain_status = 'ssl_active'";
+
+  try {
+    const r = await query(
+      `SELECT id, name, logo_url, brand_color, reply_to_email
+       FROM tenants WHERE custom_domain=$1 AND ${statusFilter} LIMIT 1`,
+      [domain]
+    );
+    if (!r.rows[0]) { res.status(404).json({ error: 'Domain not found' }); return; }
+    const t = r.rows[0];
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.json({
+      name:        t.name,
+      logoUrl:     t.logo_url ?? null,
+      brandColor:  t.brand_color ?? '#c2410c',
+      replyToEmail: t.reply_to_email ?? null,
+    });
+  } catch { res.status(500).json({ error: 'Server error' }); }
+});
+
 // GET /api/public/forms/:slug — return form definition for public render (no auth)
 router.get('/forms/:slug', async (req: Request, res: Response) => {
   try {

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Eye, EyeOff, ArrowRight, Mail } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
+import { useBrandingStore } from '@/store/brandingStore';
 import { toast } from 'sonner';
 
 export default function LoginPage() {
@@ -14,6 +15,11 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const login = useAuthStore((s) => s.login);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const { isCustomDomain, tenantName, logoUrl, brandColor, loaded, fetchBranding } = useBrandingStore();
+
+  useEffect(() => {
+    fetchBranding().catch(() => null);
+  }, []);
 
   if (isAuthenticated) return <Navigate to="/dashboard" replace />;
 
@@ -46,8 +52,18 @@ export default function LoginPage() {
       {/* Content */}
       <div className="w-full max-w-md px-5 flex flex-col items-center relative z-10 pt-4 pb-0 mt-[-6vh]">
 
-        {/* Logo */}
-        <img src="/digygo-logo.png" alt="DigyGo CRM" className="w-44 h-auto object-contain drop-shadow-md mb-0" />
+        {/* Logo — show tenant logo/name on custom domain, DigyGo logo otherwise */}
+        {isCustomDomain ? (
+          loaded ? (
+            logoUrl
+              ? <img src={logoUrl} alt={tenantName ?? ''} className="h-14 max-w-[220px] object-contain drop-shadow-md mb-0" />
+              : <span className="text-2xl font-bold text-[#1c1410] mb-2">{tenantName}</span>
+          ) : (
+            <div className="w-44 h-12 bg-gray-200 rounded-lg animate-pulse mb-0" />
+          )
+        ) : (
+          <img src="/digygo-logo.png" alt="DigyGo CRM" className="w-44 h-auto object-contain drop-shadow-md mb-0" />
+        )}
 
         {/* Form card */}
         <main className="w-full">
@@ -55,7 +71,9 @@ export default function LoginPage() {
             {/* Heading inside card */}
             <div className="text-center mb-4">
               <h1 className="font-headline text-xl font-bold tracking-tight text-[#1c1410]">Welcome back</h1>
-              <p className="text-[#5c5245] mt-1 text-[13px] leading-relaxed">Sign in to your DigyGo CRM account</p>
+              <p className="text-[#5c5245] mt-1 text-[13px] leading-relaxed">
+                Sign in to your {isCustomDomain && tenantName ? tenantName : 'DigyGo CRM'} account
+              </p>
             </div>
             <form onSubmit={handleLogin} className="space-y-4">
 
@@ -117,8 +135,11 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full h-[54px] rounded-xl text-white text-[16px] font-bold flex items-center justify-center gap-2 active:scale-[0.97] transition-all disabled:opacity-70 shadow-lg shadow-primary/20"
-                style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }}
+                className="w-full h-[54px] rounded-xl text-white text-[16px] font-bold flex items-center justify-center gap-2 active:scale-[0.97] transition-all disabled:opacity-70 shadow-lg"
+                style={isCustomDomain && brandColor !== '#c2410c'
+                  ? { background: brandColor }
+                  : { background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 55%, #f97316 100%)' }
+                }
               >
                 <span>{loading ? 'Signing in…' : 'Sign In'}</span>
                 {!loading && <ArrowRight size={20} />}
@@ -128,10 +149,12 @@ export default function LoginPage() {
           </div>
         </main>
 
-        {/* Footer */}
-        <footer className="mt-3 text-center">
-          <p className="text-[11px] text-[#b09e8d]">Powered by DigyGo CRM © 2026</p>
-        </footer>
+        {/* Footer — hidden on custom domains (full white-label) */}
+        {!isCustomDomain && (
+          <footer className="mt-3 text-center">
+            <p className="text-[11px] text-[#b09e8d]">Powered by DigyGo CRM © 2026</p>
+          </footer>
+        )}
       </div>
     </div>
   );

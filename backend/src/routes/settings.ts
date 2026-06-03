@@ -6,6 +6,21 @@ import { checkPermission, clearUserPermCache } from '../middleware/permissions';
 import { checkUsage, incrementUsage, decrementUsage } from '../middleware/plan';
 import { emitToUser } from '../socket';
 
+// Helper: resolve the correct frontend URL for a tenant (custom domain > default)
+export async function getTenantFrontendUrl(tenantId: string): Promise<string> {
+  try {
+    const r = await query(
+      "SELECT custom_domain, domain_status FROM tenants WHERE id=$1 LIMIT 1",
+      [tenantId]
+    );
+    const t = r.rows[0];
+    if (t?.domain_status === 'ssl_active' && t?.custom_domain) {
+      return `https://${t.custom_domain}`;
+    }
+  } catch { /* non-fatal */ }
+  return process.env.FRONTEND_URL ?? 'https://crm.digygo.in';
+}
+
 // Canonical full-access permissions — all keys true except the two that default off.
 export const FULL_PERMISSIONS: Record<string, boolean> = {
   'dashboard:total_leads': true, 'dashboard:active_staff': true,
@@ -180,8 +195,11 @@ router.post('/staff', checkPermission('staff:manage'), checkUsage('staff'), asyn
     );
 
     if (send_invite && invite_token) {
-      const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:5173';
-      setImmediate(() => sendInviteEmail(email, invite_token!, frontendUrl));
+      const tenantId = req.user!.tenantId!;
+      setImmediate(async () => {
+        const frontendUrl = await getTenantFrontendUrl(tenantId);
+        sendInviteEmail(email, invite_token!, frontendUrl);
+      });
     }
     res.status(201).json({ id: user.id, name: user.name, email: user.email, role: user.role });
     setImmediate(() => incrementUsage(req.user!.tenantId!, 'staff').catch(() => null));
@@ -202,8 +220,12 @@ router.post('/staff/:id/resend-invite', checkPermission('staff:manage'), async (
       [invite_token, invite_expires_at, req.params.id, req.user!.tenantId]
     );
     if (!result.rows[0]) { res.status(404).json({ error: 'User not found' }); return; }
-    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:5173';
-    setImmediate(() => sendInviteEmail(result.rows[0].email, invite_token, frontendUrl));
+    const tenantId = req.user!.tenantId!;
+    const emailAddr = result.rows[0].email;
+    setImmediate(async () => {
+      const frontendUrl = await getTenantFrontendUrl(tenantId);
+      sendInviteEmail(emailAddr, invite_token, frontendUrl);
+    });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
