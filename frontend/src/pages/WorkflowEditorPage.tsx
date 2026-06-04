@@ -4279,9 +4279,6 @@ export default function WorkflowEditorPage() {
   // Keep ref in sync so beforeunload always has latest workflow
   useEffect(() => { workflowRef.current = workflow; }, [workflow]);
 
-  // Mirror dirty state into a ref so the unmount cleanup can read the latest value.
-  useEffect(() => { dirtyRef.current = isDirty; }, [isDirty]);
-
   // On unmount: clear timers AND flush a final save if there are unsaved changes
   // (covers in-app navigation away within the autosave debounce window).
   useEffect(() => () => {
@@ -4430,6 +4427,8 @@ export default function WorkflowEditorPage() {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error' | 'conflict'>('idle');
   const [isDirty, setIsDirty] = useState(false);
   const dirtyRef = useRef(false);
+  // Mirror dirty state into a ref so the unmount cleanup can read the latest value.
+  useEffect(() => { dirtyRef.current = isDirty; }, [isDirty]);
   const isDirtyFirstRender = useRef(true);
   const [loadingWF, setLoadingWF] = useState(!passedWorkflow && !!id && id !== 'new');
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
