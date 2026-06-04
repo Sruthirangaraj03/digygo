@@ -5,6 +5,7 @@ import { upsertContact } from './contacts';
 import { sendNewLeadNotification } from './notifications';
 import { emitToTenant } from '../socket';
 import { fetchPublicUrl, csvUrl, parseCsv, rowKey } from '../routes/google_sheets';
+import { backfillCustomFields } from './customFields';
 
 async function processConfig(config: any): Promise<void> {
   let allRows: string[][];
@@ -24,20 +25,22 @@ async function processConfig(config: any): Promise<void> {
 
   if (dataRows.length === 0) return;
 
-  const mapping: Record<string, string> = typeof config.column_mapping === 'object'
+  const mapping: Record<string, any> = typeof config.column_mapping === 'object'
     ? config.column_mapping : {};
   const tenantId = config.tenant_id as string;
+  // Custom-field mapping: { slug: sheetColumnHeader }
+  const customMap: Record<string, string> = (mapping.custom && typeof mapping.custom === 'object') ? mapping.custom : {};
 
   const colIndex: Record<string, number> = {};
   headers.forEach((h: string, i: number) => { colIndex[h] = i; });
 
-  const getCell = (row: string[], crmField: string): string => {
-    const sheetCol = mapping[crmField];
-    if (!sheetCol) return '';
-    const idx = colIndex[sheetCol];
+  const getByHeader = (row: string[], header: string): string => {
+    if (!header) return '';
+    const idx = colIndex[header];
     if (idx === undefined) return '';
     return (row[idx] ?? '').trim();
   };
+  const getCell = (row: string[], crmField: string): string => getByHeader(row, mapping[crmField]);
 
   let processedCount = 0;
   for (const row of dataRows) {
@@ -109,6 +112,21 @@ async function processConfig(config: any): Promise<void> {
         sendNewLeadNotification(tenantId, lead, null).catch(() => null);
       }
 
+      // Extra mapped columns → custom fields (slug → value).
+      const customData: Record<string, string> = {};
+      for (const [slug, header] of Object.entries(customMap)) {
+        const v = getByHeader(row, header);
+        if (slug && v) customData[slug] = v;
+      }
+      if (Object.keys(customData).length) {
+        await query(
+          `UPDATE leads SET custom_fields = COALESCE(custom_fields,'{}')::jsonb || $1::jsonb, updated_at=NOW()
+           WHERE id=$2 AND tenant_id=$3`,
+          [JSON.stringify(customData), lead.id, tenantId]
+        ).catch(() => null);
+        lead.custom_fields = { ...(lead.custom_fields ?? {}), ...customData };
+      }
+
       // Link the imported-row record to the resulting lead.
       await query(
         'UPDATE google_sheets_imported_rows SET lead_id=$1 WHERE config_id=$2 AND row_key=$3',
@@ -117,6 +135,9 @@ async function processConfig(config: any): Promise<void> {
 
       setImmediate(() => {
         upsertContact(tenantId, lead.name, lead.email, lead.phone, lead.id).catch(() => null);
+        if (Object.keys(customData).length) {
+          backfillCustomFields(lead.id, tenantId, customData).catch(() => null);
+        }
         triggerWorkflows('sheets_row_added', lead, tenantId, '', {
           triggerContext: { configId: config.id },
         }).catch(() => null);

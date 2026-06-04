@@ -110,6 +110,34 @@ export function rowKey(phone: string, email: string, row: string[]): string {
   return `r:${crypto.createHash('sha1').update(row.join('')).digest('hex')}`;
 }
 
+// Convert a column header into a custom-field slug (matches customFields conventions)
+export function slugify(s: string): string {
+  const base = (s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 100);
+  return base || 'field';
+}
+
+// Create custom-field definitions for any sheet columns the user mapped to a new
+// custom field. Idempotent — existing slugs are left untouched.
+async function ensureCustomFields(
+  tenantId: string,
+  fields: Array<{ name?: string; slug?: string; type?: string }>,
+): Promise<void> {
+  for (const f of fields) {
+    const slug = (f.slug || slugify(f.name ?? '')).slice(0, 100);
+    if (!slug) continue;
+    const name = (f.name || slug).slice(0, 255);
+    try {
+      await query(
+        `INSERT INTO custom_fields (tenant_id, name, type, slug, required)
+         VALUES ($1,$2,$3,$4,false) ON CONFLICT (tenant_id, slug) DO NOTHING`,
+        [tenantId, name, f.type || 'Single Line', slug],
+      );
+    } catch (err: any) {
+      console.error('[google_sheets] ensureCustomFields', slug, err.message);
+    }
+  }
+}
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 // GET /api/integrations/sheets/status
@@ -156,7 +184,7 @@ router.post('/preview', requireAuth, requireTenant, checkPermission('integration
 
 // POST /api/integrations/sheets/configs — save a new sheet config
 router.post('/configs', requireAuth, requireTenant, checkPermission('integrations:manage'), async (req: AuthRequest, res: Response) => {
-  const { spreadsheet_url, spreadsheet_id, gid, spreadsheet_name, sheet_name, column_mapping } = req.body;
+  const { spreadsheet_url, spreadsheet_id, gid, spreadsheet_name, sheet_name, column_mapping, create_fields } = req.body;
   if (!spreadsheet_url?.trim() || !spreadsheet_id?.trim()) {
     res.status(400).json({ error: 'spreadsheet_url and spreadsheet_id required' });
     return;
@@ -165,7 +193,12 @@ router.post('/configs', requireAuth, requireTenant, checkPermission('integration
   const tenantId = req.user!.tenantId!;
   const sid = spreadsheet_id.trim();
   const gidVal = (gid ?? '0').toString();
-  const mapping: Record<string, string> = (column_mapping && typeof column_mapping === 'object') ? column_mapping : {};
+  const mapping: Record<string, any> = (column_mapping && typeof column_mapping === 'object') ? column_mapping : {};
+
+  // Create any new custom fields the user mapped sheet columns to.
+  if (Array.isArray(create_fields) && create_fields.length) {
+    await ensureCustomFields(tenantId, create_fields);
+  }
 
   try {
     // Reject connecting the same spreadsheet + tab twice (would double-process rows).
@@ -252,9 +285,14 @@ router.post('/configs', requireAuth, requireTenant, checkPermission('integration
 
 // PATCH /api/integrations/sheets/configs/:id
 router.patch('/configs/:id', requireAuth, requireTenant, checkPermission('integrations:manage'), async (req: AuthRequest, res: Response) => {
-  const { column_mapping, is_active, spreadsheet_name } = req.body;
+  const { column_mapping, is_active, spreadsheet_name, create_fields } = req.body;
   const fields: string[] = [];
   const params: any[] = [];
+
+  // Create any new custom fields referenced by an edited mapping.
+  if (Array.isArray(create_fields) && create_fields.length) {
+    await ensureCustomFields(req.user!.tenantId!, create_fields);
+  }
 
   if (column_mapping !== undefined)  { params.push(JSON.stringify(column_mapping)); fields.push(`column_mapping=$${params.length}`); }
   if (is_active !== undefined)       { params.push(is_active);                      fields.push(`is_active=$${params.length}`); }

@@ -530,13 +530,6 @@ function GoogleSheetsIcon() {
 
 // ── Google Sheets modal ───────────────────────────────────────────────────────
 
-const CRM_FIELDS = [
-  { key: 'name',   label: 'Lead Name' },
-  { key: 'phone',  label: 'Phone' },
-  { key: 'email',  label: 'Email' },
-  { key: 'source', label: 'Source' },
-];
-
 function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
   onClose: () => void;
   onSaved: () => void;
@@ -552,21 +545,54 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
   const [spreadsheetId, setSpreadsheetId] = useState('');
   const [gid, setGid]         = useState('');
   const [name, setName]       = useState('');
-  const [mapping, setMapping] = useState<Record<string, string>>({});
+  // Per-column destination: '' (ignore) | 'core:name|phone|email|source' | 'cf:<slug>' | 'new'
+  const [colDest, setColDest] = useState<Record<string, string>>({});
+  const [customFields, setCustomFields] = useState<Array<{ name: string; slug: string }>>([]);
   const [saving, setSaving]   = useState(false);
+
+  const slugify = (s: string) =>
+    (s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 100) || 'field';
+
+  // Guess destinations: core fields by header name, then existing custom fields.
+  const buildAutoMap = (hdrs: string[], cfs: Array<{ name: string; slug: string }>): Record<string, string> => {
+    const out: Record<string, string> = {};
+    const usedCore = new Set<string>();
+    const coreSyn: Array<[string, RegExp]> = [
+      ['core:name',  /^(full ?name|lead ?name|name|customer|contact name)$/i],
+      ['core:email', /e-?mail/i],
+      ['core:phone', /(phone|mobile|whats ?app|contact ?number|^number$)/i],
+      ['core:source',/source/i],
+    ];
+    for (const h of hdrs) {
+      let dest = '';
+      for (const [d, re] of coreSyn) {
+        if (!usedCore.has(d) && re.test(h.trim())) { dest = d; usedCore.add(d); break; }
+      }
+      if (!dest) {
+        const cf = cfs.find((c) => c.slug === slugify(h) || c.name.toLowerCase() === h.trim().toLowerCase());
+        if (cf) dest = `cf:${cf.slug}`;
+      }
+      out[h] = dest;
+    }
+    return out;
+  };
 
   const loadColumns = async () => {
     if (!url.trim()) { toast.error('Paste your Google Sheets URL first'); return; }
     setLoading(true);
     try {
-      const data = await api.post<{ headers: string[]; spreadsheetId: string; gid: string; title?: string | null }>(
-        '/api/integrations/sheets/preview', { url: url.trim() }
-      );
+      const [data, cfs] = await Promise.all([
+        api.post<{ headers: string[]; spreadsheetId: string; gid: string; title?: string | null }>(
+          '/api/integrations/sheets/preview', { url: url.trim() }
+        ),
+        api.get<Array<{ name: string; slug: string }>>('/api/fields/custom').catch(() => []),
+      ]);
       setHeaders(data.headers);
       setSpreadsheetId(data.spreadsheetId);
       setGid(data.gid);
       setName(data.title ?? '');
-      setMapping({});
+      setCustomFields(cfs ?? []);
+      setColDest(buildAutoMap(data.headers, cfs ?? []));
     } catch (err: any) {
       toast.error(err.message ?? 'Failed to load sheet columns');
     } finally {
@@ -574,9 +600,51 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
     }
   };
 
+  // Set a column's destination; a core field can only be used by one column.
+  const setDest = (header: string, dest: string) => {
+    setColDest((prev) => {
+      const next = { ...prev, [header]: dest };
+      if (dest.startsWith('core:')) {
+        for (const k of Object.keys(next)) if (k !== header && next[k] === dest) next[k] = '';
+      }
+      return next;
+    });
+  };
+
+  const captureRest = () => {
+    setColDest((prev) => {
+      const next = { ...prev };
+      for (const h of headers) if (!next[h]) next[h] = 'new';
+      return next;
+    });
+  };
+
+  const resetAddState = () => {
+    setUrl(''); setHeaders([]); setName(''); setColDest({}); setCustomFields([]);
+  };
+
   const saveConfig = async () => {
-    if (!mapping.name && !mapping.phone && !mapping.email) {
-      toast.error('Map at least one field (Name, Phone, or Email)');
+    const colMap: Record<string, string> = { name: '', phone: '', email: '', source: '' };
+    const custom: Record<string, string> = {};
+    const createFields: Array<{ name: string; slug: string }> = [];
+    const taken = new Set<string>();
+    for (const h of headers) {
+      const d = colDest[h] || '';
+      if (d.startsWith('core:')) {
+        colMap[d.slice(5)] = h;
+      } else if (d.startsWith('cf:')) {
+        const slug = d.slice(3);
+        custom[slug] = h; taken.add(slug);
+      } else if (d === 'new') {
+        let slug = slugify(h); let base = slug; let i = 2;
+        while (taken.has(slug)) slug = `${base}_${i++}`;
+        taken.add(slug);
+        custom[slug] = h;
+        createFields.push({ name: h.trim() || slug, slug });
+      }
+    }
+    if (!colMap.name && !colMap.phone && !colMap.email) {
+      toast.error('Map at least one of Lead Name, Phone, or Email');
       return;
     }
     setSaving(true);
@@ -586,11 +654,12 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
         spreadsheet_id:  spreadsheetId,
         gid,
         spreadsheet_name: name.trim() || undefined,
-        column_mapping:  mapping,
+        column_mapping:  { ...colMap, custom },
+        create_fields:   createFields,
       });
       setConfigs((prev) => [result, ...prev]);
       toast.success('Sheet connected! New rows will be synced every 5 minutes.');
-      setUrl(''); setHeaders([]); setMapping({}); setName('');
+      resetAddState();
       setView('list');
       onSaved();
     } catch (err: any) {
@@ -650,7 +719,7 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <p className="text-[12px] text-[#7a6b5c]">{configs.length} sheet{configs.length !== 1 ? 's' : ''} connected</p>
-                <Button size="sm" variant="outline" onClick={() => { setView('add'); setUrl(''); setHeaders([]); setMapping({}); }}>
+                <Button size="sm" variant="outline" onClick={() => { resetAddState(); setView('add'); }}>
                   <Plus className="w-3.5 h-3.5 mr-1" />Add Sheet
                 </Button>
               </div>
@@ -711,25 +780,50 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
                     />
                     <p className="text-[11px] text-[#9e8e7e] mt-1">Shown in your connected-sheets list. Auto-filled from the spreadsheet title — edit if you like.</p>
                   </div>
-                  <p className="text-[12px] font-semibold text-[#1c1410]">Map columns to CRM fields:</p>
-                  {CRM_FIELDS.map((f) => (
-                    <div key={f.key} className="grid grid-cols-2 gap-3 items-center">
-                      <p className="text-[12px] font-semibold text-[#5c5245]">{f.label}</p>
-                      <select
-                        className="text-[12px] border border-border rounded-lg px-3 py-2 bg-white outline-none focus:border-primary/50"
-                        value={mapping[f.key] ?? ''}
-                        onChange={(e) => setMapping((m) => {
-                          const next = { ...m };
-                          if (e.target.value) next[f.key] = e.target.value;
-                          else delete next[f.key];
-                          return next;
-                        })}
-                      >
-                        <option value="">— not mapped —</option>
-                        {headers.map((h) => <option key={h} value={h}>{h}</option>)}
-                      </select>
-                    </div>
-                  ))}
+                  <div className="flex items-center justify-between">
+                    <p className="text-[12px] font-semibold text-[#1c1410]">Where should each column go?</p>
+                    <button
+                      type="button"
+                      onClick={captureRest}
+                      className="text-[11px] font-semibold text-primary hover:underline"
+                    >
+                      + Capture rest as custom fields
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {headers.map((h) => {
+                      const d = colDest[h] ?? '';
+                      return (
+                        <div key={h} className="grid grid-cols-2 gap-3 items-center">
+                          <p className="text-[12px] font-semibold text-[#5c5245] truncate" title={h}>{h}</p>
+                          <select
+                            className="text-[12px] border border-border rounded-lg px-3 py-2 bg-white outline-none focus:border-primary/50"
+                            value={d}
+                            onChange={(e) => setDest(h, e.target.value)}
+                          >
+                            <option value="">— Don't import —</option>
+                            <optgroup label="Core fields">
+                              <option value="core:name">Lead Name</option>
+                              <option value="core:phone">Phone</option>
+                              <option value="core:email">Email</option>
+                              <option value="core:source">Source</option>
+                            </optgroup>
+                            {customFields.length > 0 && (
+                              <optgroup label="Custom fields">
+                                {customFields.map((cf) => (
+                                  <option key={cf.slug} value={`cf:${cf.slug}`}>{cf.name}</option>
+                                ))}
+                              </optgroup>
+                            )}
+                            <option value="new">➕ New custom field</option>
+                          </select>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-[#9e8e7e]">
+                    Columns set to a custom field are saved on each lead and usable as <code className="text-[#7a6b5c]">{'{slug}'}</code> in automations. "New custom field" creates it automatically.
+                  </p>
                 </div>
               )}
             </div>
