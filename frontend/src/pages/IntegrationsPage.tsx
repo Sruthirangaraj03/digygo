@@ -548,6 +548,7 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
   // Per-column destination: '' (ignore) | 'core:name|phone|email|source' | 'cf:<slug>' | 'new'
   const [colDest, setColDest] = useState<Record<string, string>>({});
   const [customFields, setCustomFields] = useState<Array<{ name: string; slug: string }>>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving]   = useState(false);
 
   const slugify = (s: string) =>
@@ -577,27 +578,59 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
     return out;
   };
 
-  const loadColumns = async () => {
-    if (!url.trim()) { toast.error('Paste your Google Sheets URL first'); return; }
+  // Rebuild per-column destinations from a saved column_mapping (for editing).
+  const restoreFromMapping = (hdrs: string[], cm: any): Record<string, string> => {
+    const m = cm || {};
+    const custom = (m.custom && typeof m.custom === 'object') ? m.custom : {};
+    const headerToSlug: Record<string, string> = {};
+    for (const [slug, hdr] of Object.entries(custom)) headerToSlug[hdr as string] = slug;
+    const out: Record<string, string> = {};
+    for (const h of hdrs) {
+      if (h === m.name) out[h] = 'core:name';
+      else if (h === m.phone) out[h] = 'core:phone';
+      else if (h === m.email) out[h] = 'core:email';
+      else if (h === m.source) out[h] = 'core:source';
+      else if (headerToSlug[h]) out[h] = `cf:${headerToSlug[h]}`;
+      else out[h] = '';
+    }
+    return out;
+  };
+
+  const loadColumns = async (overrideUrl?: string, restoreFrom?: any) => {
+    const u = (overrideUrl ?? url).trim();
+    if (!u) { toast.error('Paste your Google Sheets URL first'); return; }
     setLoading(true);
     try {
       const [data, cfs] = await Promise.all([
         api.post<{ headers: string[]; spreadsheetId: string; gid: string; title?: string | null }>(
-          '/api/integrations/sheets/preview', { url: url.trim() }
+          '/api/integrations/sheets/preview', { url: u }
         ),
         api.get<Array<{ name: string; slug: string }>>('/api/fields/custom').catch(() => []),
       ]);
       setHeaders(data.headers);
       setSpreadsheetId(data.spreadsheetId);
       setGid(data.gid);
-      setName(data.title ?? '');
       setCustomFields(cfs ?? []);
-      setColDest(buildAutoMap(data.headers, cfs ?? []));
+      if (restoreFrom) {
+        setColDest(restoreFromMapping(data.headers, restoreFrom));
+      } else {
+        setName(data.title ?? '');
+        setColDest(buildAutoMap(data.headers, cfs ?? []));
+      }
     } catch (err: any) {
       toast.error(err.message ?? 'Failed to load sheet columns');
     } finally {
       setLoading(false);
     }
+  };
+
+  const openEdit = (config: any) => {
+    resetAddState();
+    setEditingId(config.id);
+    setUrl(config.spreadsheet_url ?? '');
+    setName(config.spreadsheet_name ?? '');
+    setView('add');
+    loadColumns(config.spreadsheet_url ?? '', config.column_mapping ?? {});
   };
 
   // Set a column's destination; a core field can only be used by one column.
@@ -620,7 +653,7 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
   };
 
   const resetAddState = () => {
-    setUrl(''); setHeaders([]); setName(''); setColDest({}); setCustomFields([]);
+    setUrl(''); setHeaders([]); setName(''); setColDest({}); setCustomFields([]); setEditingId(null);
   };
 
   const saveConfig = async () => {
@@ -649,16 +682,26 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
     }
     setSaving(true);
     try {
-      const result = await api.post<any>('/api/integrations/sheets/configs', {
-        spreadsheet_url: url.trim(),
-        spreadsheet_id:  spreadsheetId,
-        gid,
-        spreadsheet_name: name.trim() || undefined,
-        column_mapping:  { ...colMap, custom },
-        create_fields:   createFields,
-      });
-      setConfigs((prev) => [result, ...prev]);
-      toast.success('Sheet connected! New rows will be synced every 5 minutes.');
+      if (editingId) {
+        const result = await api.patch<any>(`/api/integrations/sheets/configs/${editingId}`, {
+          spreadsheet_name: name.trim() || undefined,
+          column_mapping:  { ...colMap, custom },
+          create_fields:   createFields,
+        });
+        setConfigs((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...result } : c)));
+        toast.success('Sheet updated');
+      } else {
+        const result = await api.post<any>('/api/integrations/sheets/configs', {
+          spreadsheet_url: url.trim(),
+          spreadsheet_id:  spreadsheetId,
+          gid,
+          spreadsheet_name: name.trim() || undefined,
+          column_mapping:  { ...colMap, custom },
+          create_fields:   createFields,
+        });
+        setConfigs((prev) => [result, ...prev]);
+        toast.success('Sheet connected! New rows will be synced every 5 minutes.');
+      }
       resetAddState();
       setView('list');
       onSaved();
@@ -679,20 +722,6 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
     }
   };
 
-  const renameConfig = async (id: string, current: string) => {
-    const next = window.prompt('Rename this sheet', current);
-    if (next === null) return;
-    const trimmed = next.trim();
-    if (!trimmed || trimmed === current) return;
-    try {
-      const updated = await api.patch<any>(`/api/integrations/sheets/configs/${id}`, { spreadsheet_name: trimmed });
-      setConfigs((prev) => prev.map((c) => (c.id === id ? { ...c, spreadsheet_name: updated.spreadsheet_name } : c)));
-      toast.success('Sheet renamed');
-    } catch {
-      toast.error('Failed to rename sheet');
-    }
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }}>
       <div className="bg-white rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
@@ -706,7 +735,7 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
               </button>
             )}
             <p className="text-[15px] font-bold text-[#1c1410]">
-              {view === 'list' ? 'Google Sheets' : 'Connect a Sheet'}
+              {view === 'list' ? 'Google Sheets' : (editingId ? 'Edit Sheet' : 'Connect a Sheet')}
             </p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--accent-tint)] text-[#7a6b5c]"><X size={15} /></button>
@@ -733,7 +762,7 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
                       </p>
                       <p className="text-[11px] text-[#9e8e7e]">Active · new rows sync every 5 min</p>
                     </div>
-                    <button onClick={() => renameConfig(c.id, c.spreadsheet_name ?? c.spreadsheet_id)} className="text-[#9e8e7e] hover:text-primary transition-colors p-1" title="Rename">
+                    <button onClick={() => openEdit(c)} className="text-[#9e8e7e] hover:text-primary transition-colors p-1" title="Edit mapping">
                       <Pencil className="w-4 h-4" />
                     </button>
                     <button onClick={() => deleteConfig(c.id)} className="text-[#9e8e7e] hover:text-red-500 transition-colors p-1" title="Remove">
@@ -747,27 +776,37 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
 
           {view === 'add' && (
             <div className="space-y-4">
-              <div className="bg-[#f5f0eb] rounded-xl p-3 space-y-1">
-                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#5c5245]">Before you paste</p>
-                <p className="text-[11px] text-[#7a6b5c] leading-relaxed">
-                  Open your Google Sheet → Share → set to <strong>"Anyone with the link can view"</strong>. Then copy the URL from your browser address bar.
-                </p>
-              </div>
+              {!editingId && (
+                <>
+                  <div className="bg-[#f5f0eb] rounded-xl p-3 space-y-1">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#5c5245]">Before you paste</p>
+                    <p className="text-[11px] text-[#7a6b5c] leading-relaxed">
+                      Open your Google Sheet → Share → set to <strong>"Anyone with the link can view"</strong>. Then copy the URL from your browser address bar.
+                    </p>
+                  </div>
 
-              <div>
-                <label className={labelCls}>Google Sheets URL *</label>
-                <div className="flex gap-2">
-                  <Input
-                    value={url}
-                    onChange={(e) => { setUrl(e.target.value); setHeaders([]); }}
-                    placeholder="https://docs.google.com/spreadsheets/d/..."
-                    className="flex-1"
-                  />
-                  <Button variant="outline" onClick={loadColumns} disabled={loading || !url.trim()} className="shrink-0">
-                    {loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : 'Load Columns'}
-                  </Button>
+                  <div>
+                    <label className={labelCls}>Google Sheets URL *</label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={url}
+                        onChange={(e) => { setUrl(e.target.value); setHeaders([]); }}
+                        placeholder="https://docs.google.com/spreadsheets/d/..."
+                        className="flex-1"
+                      />
+                      <Button variant="outline" onClick={() => loadColumns()} disabled={loading || !url.trim()} className="shrink-0">
+                        {loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : 'Load Columns'}
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {editingId && loading && (
+                <div className="flex items-center gap-2 text-[12px] text-[#7a6b5c] py-2">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Loading current columns & mapping…
                 </div>
-              </div>
+              )}
 
               {headers.length > 0 && (
                 <div className="space-y-3">
@@ -835,7 +874,7 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
           <Button variant="outline" onClick={onClose}>Close</Button>
           {view === 'add' && headers.length > 0 && (
             <Button onClick={saveConfig} disabled={saving}>
-              {saving ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />Saving…</> : <><Check className="w-3.5 h-3.5 mr-1.5" />Save Sheet</>}
+              {saving ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />Saving…</> : <><Check className="w-3.5 h-3.5 mr-1.5" />{editingId ? 'Save Changes' : 'Save Sheet'}</>}
             </Button>
           )}
         </div>
