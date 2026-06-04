@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import CreateCustomFieldModal from '@/components/CreateCustomFieldModal';
 
 // ── Brand icons ────────────────────────────────────────────────────────────────
 
@@ -549,7 +550,15 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
   const [colDest, setColDest] = useState<Record<string, string>>({});
   const [customFields, setCustomFields] = useState<Array<{ name: string; slug: string }>>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [creatingHeader, setCreatingHeader] = useState<string | null>(null);
   const [saving, setSaving]   = useState(false);
+
+  // Called after the rich field-creator persists a new custom field.
+  const handleFieldCreated = (f: { name: string; slug: string }) => {
+    setCustomFields((prev) => (prev.some((c) => c.slug === f.slug) ? prev : [...prev, { name: f.name, slug: f.slug }]));
+    if (creatingHeader) setDest(creatingHeader, `cf:${f.slug}`);
+    setCreatingHeader(null);
+  };
 
   const slugify = (s: string) =>
     (s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 100) || 'field';
@@ -838,7 +847,10 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
                           <select
                             className="text-[12px] border border-border rounded-lg px-3 py-2 bg-white outline-none focus:border-primary/50"
                             value={d}
-                            onChange={(e) => setDest(h, e.target.value)}
+                            onChange={(e) => {
+                              if (e.target.value === 'new') { setCreatingHeader(h); return; }
+                              setDest(h, e.target.value);
+                            }}
                           >
                             <option value="">— Don't import —</option>
                             <optgroup label="Core fields">
@@ -854,7 +866,7 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
                                 ))}
                               </optgroup>
                             )}
-                            <option value="new">➕ New custom field</option>
+                            <option value="new">➕ New custom field…</option>
                           </select>
                         </div>
                       );
@@ -879,6 +891,14 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
           )}
         </div>
       </div>
+
+      {creatingHeader !== null && (
+        <CreateCustomFieldModal
+          initialName={creatingHeader}
+          onClose={() => setCreatingHeader(null)}
+          onCreate={handleFieldCreated}
+        />
+      )}
     </div>
   );
 }
