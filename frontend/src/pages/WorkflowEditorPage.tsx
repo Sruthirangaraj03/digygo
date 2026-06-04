@@ -4354,6 +4354,13 @@ export default function WorkflowEditorPage() {
         options: cf.options ?? undefined, orderIndex: cf.order_index ?? 0,
       })));
     }).catch(() => {});
+    // Value tokens (Fields → Values) — the editor runs outside AppLayout, so load
+    // them here too; otherwise the Custom Values "Values" tab is empty on a direct load.
+    api.get<any[]>('/api/fields/values').then((rows) => {
+      useCrmStore.setState({
+        valueTokens: (rows ?? []).map((v: any) => ({ id: v.id, name: v.name, replace_with: v.replace_with })),
+      });
+    }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(workflow.nodes[0]?.id ?? null);
