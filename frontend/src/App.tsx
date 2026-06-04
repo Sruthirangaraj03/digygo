@@ -40,7 +40,6 @@ import ActivatePage from "./pages/ActivatePage";
 import PublicFormPage from "./pages/PublicFormPage";
 import SuperAdminPage from "./pages/SuperAdminPage";
 import CreateBusinessPage from "./pages/CreateBusinessPage";
-import ImpersonationBanner from "./components/ImpersonationBanner";
 import FollowUpsPage from "./pages/FollowUpsPage";
 import CalendarPage from "./pages/CalendarPage";
 import CalendarEditPage from "./pages/CalendarEditPage";
@@ -57,7 +56,6 @@ const App = () => (
     <TooltipProvider>
       <Sonner />
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <ImpersonationBanner />
         <Routes>
           {/* Public routes */}
           <Route path="/login" element={<LoginPage />} />

@@ -13,7 +13,7 @@ export function AppLayout() {
   const addNotification = useCrmStore((s) => s.addNotification);
   const refreshNotifications = useCrmStore((s) => s.refreshNotifications);
   const setWaPersonalStatus = useCrmStore((s) => s.setWaPersonalStatus);
-  const { refreshPermissions, isImpersonating } = useAuthStore();
+  const { refreshPermissions } = useAuthStore();
   const location = useLocation();
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -80,8 +80,7 @@ export function AppLayout() {
   }, []);
 
   return (
-    // pt-10 (40px) reserves space for the fixed ImpersonationBanner when active
-    <div className={`h-[100dvh] flex w-full bg-[var(--app-bg)] overflow-hidden${isImpersonating ? ' pt-10' : ''}`}>
+    <div className="h-[100dvh] flex w-full bg-[var(--app-bg)] overflow-hidden">
       {/* Sidebar — desktop only */}
       <div className="hidden md:flex">
         <AppSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />

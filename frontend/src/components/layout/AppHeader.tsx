@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Bell, X, LogOut, Settings, User, Unplug, UserPlus, UserCheck, ArrowRight, Clock, MessageCircle, CalendarCheck, Zap, Info } from 'lucide-react';
+import { Bell, X, LogOut, Settings, User, Unplug, UserPlus, UserCheck, ArrowRight, ArrowLeft, Clock, MessageCircle, CalendarCheck, Zap, Info } from 'lucide-react';
 import { useLocation, Link, useNavigate } from 'react-router-dom';
 import { useCrmStore } from '@/store/crmStore';
 import { useAuthStore } from '@/store/authStore';
@@ -92,7 +92,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
   const [showProfile, setShowProfile] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const { notifications, markAllNotificationsRead, markNotificationRead, removeNotification, clearAllNotifications } = useCrmStore();
-  const { currentUser, logout, isImpersonating } = useAuthStore();
+  const { currentUser, logout, isImpersonating, exitImpersonation } = useAuthStore();
   const { companyName } = useCompanyStore();
   const { branded, tenantName, logoUrl } = useBrandingStore();
 
@@ -216,6 +216,19 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
 
         {/* Right — bell + profile, always visible */}
         <div className="flex items-center gap-2 md:gap-3 shrink-0">
+
+          {/* Back to Admin — only while impersonating a tenant */}
+          {isImpersonating && (
+            <button
+              onClick={() => { exitImpersonation(); navigate('/admin'); }}
+              title="Exit impersonation — back to Super Admin"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold text-white shrink-0 hover:-translate-y-px transition-transform"
+              style={{ background: 'linear-gradient(90deg, var(--brand-dark), var(--brand))' }}
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Back to Admin</span>
+            </button>
+          )}
 
           {/* Bell */}
           <div className="relative">
