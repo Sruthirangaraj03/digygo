@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, X, RefreshCw, Check, Mail, ExternalLink, Unplug, Eye, EyeOff, QrCode, Wifi, WifiOff, BarChart2, Plus, Trash2, ChevronLeft } from 'lucide-react';
+import { ArrowLeft, X, RefreshCw, Check, Mail, ExternalLink, Unplug, Eye, EyeOff, QrCode, Wifi, WifiOff, BarChart2, Plus, Trash2, ChevronLeft, Pencil } from 'lucide-react';
 import { getSocket } from '@/lib/socket';
 import { useCrmStore } from '@/store/crmStore';
 import { useAuthStore } from '@/store/authStore';
@@ -551,6 +551,7 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
   const [headers, setHeaders] = useState<string[]>([]);
   const [spreadsheetId, setSpreadsheetId] = useState('');
   const [gid, setGid]         = useState('');
+  const [name, setName]       = useState('');
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [saving, setSaving]   = useState(false);
 
@@ -558,12 +559,13 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
     if (!url.trim()) { toast.error('Paste your Google Sheets URL first'); return; }
     setLoading(true);
     try {
-      const data = await api.post<{ headers: string[]; spreadsheetId: string; gid: string }>(
+      const data = await api.post<{ headers: string[]; spreadsheetId: string; gid: string; title?: string | null }>(
         '/api/integrations/sheets/preview', { url: url.trim() }
       );
       setHeaders(data.headers);
       setSpreadsheetId(data.spreadsheetId);
       setGid(data.gid);
+      setName(data.title ?? '');
       setMapping({});
     } catch (err: any) {
       toast.error(err.message ?? 'Failed to load sheet columns');
@@ -583,15 +585,16 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
         spreadsheet_url: url.trim(),
         spreadsheet_id:  spreadsheetId,
         gid,
+        spreadsheet_name: name.trim() || undefined,
         column_mapping:  mapping,
       });
       setConfigs((prev) => [result, ...prev]);
       toast.success('Sheet connected! New rows will be synced every 5 minutes.');
-      setUrl(''); setHeaders([]); setMapping({});
+      setUrl(''); setHeaders([]); setMapping({}); setName('');
       setView('list');
       onSaved();
-    } catch {
-      toast.error('Failed to save sheet config');
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Failed to save sheet config');
     } finally {
       setSaving(false);
     }
@@ -604,6 +607,20 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
       toast.success('Sheet removed');
     } catch {
       toast.error('Failed to remove sheet');
+    }
+  };
+
+  const renameConfig = async (id: string, current: string) => {
+    const next = window.prompt('Rename this sheet', current);
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === current) return;
+    try {
+      const updated = await api.patch<any>(`/api/integrations/sheets/configs/${id}`, { spreadsheet_name: trimmed });
+      setConfigs((prev) => prev.map((c) => (c.id === id ? { ...c, spreadsheet_name: updated.spreadsheet_name } : c)));
+      toast.success('Sheet renamed');
+    } catch {
+      toast.error('Failed to rename sheet');
     }
   };
 
@@ -641,10 +658,16 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
                 {configs.map((c) => (
                   <div key={c.id} className="flex items-center gap-3 bg-[var(--app-bg)] rounded-xl border border-black/5 px-4 py-3">
                     <div className="flex-1 min-w-0">
-                      <p className="text-[13px] font-semibold text-[#1c1410] truncate">{c.spreadsheet_name ?? c.spreadsheet_id}</p>
-                      <p className="text-[11px] text-[#9e8e7e]">Synced up to row {c.last_row_synced}</p>
+                      <p className="text-[13px] font-semibold text-[#1c1410] truncate">
+                        {c.spreadsheet_name ?? c.spreadsheet_id}
+                        {c.sheet_name ? <span className="text-[#9e8e7e] font-normal"> › {c.sheet_name}</span> : null}
+                      </p>
+                      <p className="text-[11px] text-[#9e8e7e]">Active · new rows sync every 5 min</p>
                     </div>
-                    <button onClick={() => deleteConfig(c.id)} className="text-[#9e8e7e] hover:text-red-500 transition-colors p-1">
+                    <button onClick={() => renameConfig(c.id, c.spreadsheet_name ?? c.spreadsheet_id)} className="text-[#9e8e7e] hover:text-primary transition-colors p-1" title="Rename">
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => deleteConfig(c.id)} className="text-[#9e8e7e] hover:text-red-500 transition-colors p-1" title="Remove">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -679,6 +702,15 @@ function GoogleSheetsModal({ onClose, onSaved, configs: initialConfigs }: {
 
               {headers.length > 0 && (
                 <div className="space-y-3">
+                  <div>
+                    <label className={labelCls}>Sheet name</label>
+                    <Input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="e.g. Website Leads"
+                    />
+                    <p className="text-[11px] text-[#9e8e7e] mt-1">Shown in your connected-sheets list. Auto-filled from the spreadsheet title — edit if you like.</p>
+                  </div>
                   <p className="text-[12px] font-semibold text-[#1c1410]">Map columns to CRM fields:</p>
                   {CRM_FIELDS.map((f) => (
                     <div key={f.key} className="grid grid-cols-2 gap-3 items-center">

@@ -84,6 +84,7 @@ const MIGRATIONS = [
   'migration_082_tenant_branding.sql',
   'migration_083_theme_colors.sql',
   'migration_084_two_factor.sql',
+  'migration_085_google_sheets_imported_rows.sql',
 ];
 
 // Split SQL file into individual statements and execute each one separately.

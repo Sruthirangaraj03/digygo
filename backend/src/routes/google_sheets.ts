@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import https from 'https';
 import http from 'http';
+import crypto from 'crypto';
 import { query } from '../db';
 import { requireAuth, requireTenant, AuthRequest } from '../middleware/auth';
 import { checkPermission } from '../middleware/permissions';
@@ -53,6 +54,20 @@ export function csvUrl(spreadsheetId: string, gid: string): string {
   return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}`;
 }
 
+// Fetch the human-readable spreadsheet title from the public edit page <title>.
+// Returns null if it can't be determined (caller falls back to the ID).
+export async function fetchSheetTitle(spreadsheetId: string): Promise<string | null> {
+  try {
+    const html = await fetchPublicUrl(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`);
+    const m = html.match(/<title>([^<]*)<\/title>/i);
+    if (!m) return null;
+    const t = m[1].trim().replace(/\s*-\s*Google Sheets\s*$/i, '').trim();
+    return t || null;
+  } catch {
+    return null;
+  }
+}
+
 // Parse a single CSV line (handles quoted fields)
 export function parseCsvLine(line: string): string[] {
   const result: string[] = [];
@@ -77,6 +92,22 @@ export function parseCsvLine(line: string): string[] {
 // Parse CSV string into rows
 export function parseCsv(csv: string): string[][] {
   return csv.split('\n').map(parseCsvLine).filter((r) => r.some((c) => c.length > 0));
+}
+
+// Normalize a phone number to its digits only (for stable identity matching)
+export function normalizePhone(p: string): string {
+  return (p || '').replace(/\D/g, '');
+}
+
+// Stable identity key for a sheet row. Prefers phone, then email, then a hash of
+// the whole row. Used for content-based dedup so deleting/reordering rows in the
+// sheet never causes lost or duplicated leads.
+export function rowKey(phone: string, email: string, row: string[]): string {
+  const np = normalizePhone(phone);
+  if (np) return `p:${np}`;
+  const e = (email || '').trim().toLowerCase();
+  if (e) return `e:${e}`;
+  return `r:${crypto.createHash('sha1').update(row.join('')).digest('hex')}`;
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -116,7 +147,8 @@ router.post('/preview', requireAuth, requireTenant, checkPermission('integration
       res.status(400).json({ error: 'Sheet appears to be empty.' });
       return;
     }
-    res.json({ headers: rows[0], spreadsheetId: parsed.spreadsheetId, gid: parsed.gid, rowCount: rows.length });
+    const title = await fetchSheetTitle(parsed.spreadsheetId);
+    res.json({ headers: rows[0], spreadsheetId: parsed.spreadsheetId, gid: parsed.gid, rowCount: rows.length, title });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -130,31 +162,88 @@ router.post('/configs', requireAuth, requireTenant, checkPermission('integration
     return;
   }
 
+  const tenantId = req.user!.tenantId!;
+  const sid = spreadsheet_id.trim();
+  const gidVal = (gid ?? '0').toString();
+  const mapping: Record<string, string> = (column_mapping && typeof column_mapping === 'object') ? column_mapping : {};
+
   try {
-    // Determine current row count so we only pick up NEW rows from this point
-    let lastRow = 1;
-    try {
-      const csv = await fetchPublicUrl(csvUrl(spreadsheet_id.trim(), gid ?? '0'));
-      const rows = parseCsv(csv);
-      lastRow = Math.max(1, rows.length); // skip all existing rows
-    } catch {}
+    // Reject connecting the same spreadsheet + tab twice (would double-process rows).
+    const dup = await query(
+      'SELECT id FROM google_sheets_configs WHERE tenant_id=$1 AND spreadsheet_id=$2 AND gid=$3 AND is_active=TRUE LIMIT 1',
+      [tenantId, sid, gidVal]
+    );
+    if (dup.rows[0]) {
+      res.status(409).json({ error: 'This sheet (and tab) is already connected.' });
+      return;
+    }
 
     const result = await query(
       `INSERT INTO google_sheets_configs
          (tenant_id, spreadsheet_url, spreadsheet_id, gid, spreadsheet_name, sheet_name, column_mapping, last_row_synced)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [
-        req.user!.tenantId,
+        tenantId,
         spreadsheet_url.trim(),
-        spreadsheet_id.trim(),
-        gid ?? '0',
-        (spreadsheet_name ?? '').trim() || spreadsheet_id.trim(),
+        sid,
+        gidVal,
+        (spreadsheet_name ?? '').trim() || sid,
         (sheet_name ?? '').trim() || 'Sheet1',
-        JSON.stringify(column_mapping ?? {}),
-        lastRow,
+        JSON.stringify(mapping),
+        0,
       ]
     );
-    res.status(201).json(result.rows[0]);
+    const cfg = result.rows[0];
+
+    // Pre-seed all existing rows as already-imported, so only rows added AFTER
+    // connecting will sync. Mirrors the previous "skip existing rows" behavior,
+    // but using content-based keys instead of a fragile row count.
+    try {
+      const csv = await fetchPublicUrl(csvUrl(sid, gidVal));
+      const rows = parseCsv(csv);
+      if (rows.length > 1) {
+        const headers = rows[0];
+        const colIndex: Record<string, number> = {};
+        headers.forEach((h, i) => { colIndex[h] = i; });
+        const cell = (row: string[], field: string): string => {
+          const col = mapping[field];
+          if (!col) return '';
+          const idx = colIndex[col];
+          return idx === undefined ? '' : (row[idx] ?? '').trim();
+        };
+
+        const keys: string[] = [];
+        const seen = new Set<string>();
+        for (const row of rows.slice(1)) {
+          if (!row || row.every((c) => !c)) continue;
+          const k = rowKey(cell(row, 'phone'), cell(row, 'email'), row);
+          if (seen.has(k)) continue;
+          seen.add(k);
+          keys.push(k);
+        }
+
+        // Chunked bulk insert (stay well under the Postgres parameter limit).
+        for (let i = 0; i < keys.length; i += 500) {
+          const batch = keys.slice(i, i + 500);
+          const params: any[] = [];
+          const values = batch.map((k) => {
+            params.push(cfg.id, k);
+            return `($${params.length - 1},$${params.length})`;
+          });
+          await query(
+            `INSERT INTO google_sheets_imported_rows (config_id, row_key)
+             VALUES ${values.join(',')} ON CONFLICT (config_id, row_key) DO NOTHING`,
+            params
+          );
+        }
+        await query('UPDATE google_sheets_configs SET last_row_synced=$1 WHERE id=$2', [rows.length, cfg.id]);
+        cfg.last_row_synced = rows.length;
+      }
+    } catch (seedErr: any) {
+      console.error('[google_sheets] pre-seed error:', seedErr.message);
+    }
+
+    res.status(201).json(cfg);
   } catch (err: any) {
     console.error('[google_sheets] configs POST error:', err.message);
     res.status(500).json({ error: 'Server error' });

@@ -1,9 +1,10 @@
+import crypto from 'crypto';
 import { query } from '../db';
 import { triggerWorkflows } from '../routes/workflows';
 import { upsertContact } from './contacts';
 import { sendNewLeadNotification } from './notifications';
 import { emitToTenant } from '../socket';
-import { fetchPublicUrl, csvUrl, parseCsv } from '../routes/google_sheets';
+import { fetchPublicUrl, csvUrl, parseCsv, rowKey } from '../routes/google_sheets';
 
 async function processConfig(config: any): Promise<void> {
   let allRows: string[][];
@@ -18,10 +19,10 @@ async function processConfig(config: any): Promise<void> {
   if (allRows.length === 0) return;
 
   const headers = allRows[0];
-  // last_row_synced tracks total rows (including header) already processed
-  const newRows = allRows.slice(config.last_row_synced);
+  // Always skip the header row; identity-based dedup decides what's actually new.
+  const dataRows = allRows.slice(1);
 
-  if (newRows.length === 0) return;
+  if (dataRows.length === 0) return;
 
   const mapping: Record<string, string> = typeof config.column_mapping === 'object'
     ? config.column_mapping : {};
@@ -39,7 +40,7 @@ async function processConfig(config: any): Promise<void> {
   };
 
   let processedCount = 0;
-  for (const row of newRows) {
+  for (const row of dataRows) {
     if (!row || row.every((c) => !c)) continue;
 
     const name   = getCell(row, 'name');
@@ -48,6 +49,24 @@ async function processConfig(config: any): Promise<void> {
     const source = getCell(row, 'source') || `Google Sheets: ${config.spreadsheet_name ?? config.spreadsheet_id}`;
 
     if (!name && !phone && !email) continue;
+
+    // Content-based dedup: claim this row's identity key first. If it's already
+    // recorded for this config, the row was imported before — skip it. This is
+    // immune to row deletion, reordering, or the poller re-running.
+    const key = rowKey(phone, email, row);
+    let claimed = false;
+    try {
+      const claim = await query(
+        `INSERT INTO google_sheets_imported_rows (config_id, row_key)
+         VALUES ($1, $2) ON CONFLICT (config_id, row_key) DO NOTHING RETURNING id`,
+        [config.id, key]
+      );
+      claimed = claim.rows.length > 0;
+    } catch (err: any) {
+      console.error(`[sheets poller] dedup claim error (config ${config.id}):`, err.message);
+      continue;
+    }
+    if (!claimed) continue;
 
     try {
       let existingLead: any = null;
@@ -90,6 +109,12 @@ async function processConfig(config: any): Promise<void> {
         sendNewLeadNotification(tenantId, lead, null).catch(() => null);
       }
 
+      // Link the imported-row record to the resulting lead.
+      await query(
+        'UPDATE google_sheets_imported_rows SET lead_id=$1 WHERE config_id=$2 AND row_key=$3',
+        [lead.id, config.id, key]
+      ).catch(() => null);
+
       setImmediate(() => {
         upsertContact(tenantId, lead.name, lead.email, lead.phone, lead.id).catch(() => null);
         triggerWorkflows('sheets_row_added', lead, tenantId, '', {
@@ -100,9 +125,15 @@ async function processConfig(config: any): Promise<void> {
       processedCount++;
     } catch (err: any) {
       console.error(`[sheets poller] Lead upsert error (config ${config.id}):`, err.message);
+      // Release the claim so this row is retried on the next poll.
+      await query(
+        'DELETE FROM google_sheets_imported_rows WHERE config_id=$1 AND row_key=$2 AND lead_id IS NULL',
+        [config.id, key]
+      ).catch(() => null);
     }
   }
 
+  // Informational only — reflects total rows currently in the sheet (no longer a cursor).
   await query(
     'UPDATE google_sheets_configs SET last_row_synced=$1, updated_at=NOW() WHERE id=$2',
     [allRows.length, config.id]
