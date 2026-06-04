@@ -289,6 +289,18 @@ function NodeIconRenderer({ actionType }: { actionType: string }) {
   return <Icon className="w-4 h-4" />;
 }
 
+// Relative "time ago" label for the save indicator.
+function relativeSince(ts: number): string {
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 10) return 'just now';
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
 // ── Shared field row ───────────────────────────────────────────────────────────
 function FieldRow({ label, required, hint, children }: { label: string; required?: boolean; hint?: string; children: React.ReactNode }) {
   return (
@@ -4254,6 +4266,12 @@ export default function WorkflowEditorPage() {
     if (retryTimer.current) clearTimeout(retryTimer.current);
   }, []);
 
+  // Re-render every 20s so the "Saved X ago" label stays current.
+  useEffect(() => {
+    const t = setInterval(() => forceTick((n) => n + 1), 20_000);
+    return () => clearInterval(t);
+  }, []);
+
   // Flush save on page unload (covers F5 within the debounce window)
   useEffect(() => {
     const flush = () => {
@@ -4374,7 +4392,8 @@ export default function WorkflowEditorPage() {
   const [changeActionMode, setChangeActionMode] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [lastSaved, setLastSaved] = useState('just now');
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [, forceTick] = useState(0);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [isDirty, setIsDirty] = useState(false);
   const isDirtyFirstRender = useRef(true);
@@ -4402,7 +4421,7 @@ export default function WorkflowEditorPage() {
         allow_reentry: wf.allowReentry,
       });
       setSaveStatus('saved');
-      setLastSaved('just now');
+      setSavedAt(Date.now());
       setIsDirty(false);
       return true;
     } catch {
@@ -4751,7 +4770,7 @@ export default function WorkflowEditorPage() {
             </button>
           ) : (
             <span className="text-[10px] text-[#b09e8d] flex items-center gap-1 mr-1">
-              <Clock className="w-3 h-3" />{isDirty ? 'Unsaved changes' : `Saved ${lastSaved}`}
+              <Clock className="w-3 h-3" />{isDirty ? 'Unsaved changes' : (savedAt ? `Saved ${relativeSince(savedAt)}` : 'Not saved yet')}
             </span>
           )}
           <Button variant="outline" size="sm" onClick={() => navigate(`/automation/analytics/${workflow.id}`)} className="h-8 text-[12px] border-black/[0.1]">
