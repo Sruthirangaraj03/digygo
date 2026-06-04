@@ -1478,19 +1478,29 @@ export async function executeNodes(
             }
           }
 
-          // Write district/state + any named meta fields back to the lead's custom fields.
-          const patch: Record<string, string> = { ...metaFields };
-          if (district) patch.district = district;
-          if (state) patch.state = state;
-          if (lead.id && Object.keys(patch).length) {
+          // Legacy district/state → custom_fields JSONB only (UNCHANGED behavior).
+          if (lead.id && district) {
+            const dsPatch: Record<string, string> = { district };
+            if (state) dsPatch.state = state;
             await query(
-              `UPDATE leads SET custom_fields=COALESCE(custom_fields,'{}'::jsonb) || $1::jsonb, updated_at=NOW() WHERE id=$2 AND tenant_id=$3`,
-              [JSON.stringify(patch), lead.id, tenantId]
+              `UPDATE leads SET custom_fields=custom_fields || $1::jsonb, updated_at=NOW() WHERE id=$2 AND tenant_id=$3`,
+              [JSON.stringify(dsPatch), lead.id, tenantId]
             ).catch(() => null);
             if (!lead.custom_fields) lead.custom_fields = {};
-            Object.assign(lead.custom_fields, patch);
-            // Persist to lead_field_values so the values show on the lead + exports.
-            setImmediate(() => backfillCustomFields(lead.id!, tenantId, patch).catch(() => null));
+            lead.custom_fields['district'] = district;
+            if (state) lead.custom_fields['state'] = state;
+          }
+
+          // NEW: named meta fields → custom_fields JSONB + lead_field_values.
+          // Only runs when a set actually has meta, so existing routing sets are untouched.
+          if (lead.id && Object.keys(metaFields).length) {
+            await query(
+              `UPDATE leads SET custom_fields=COALESCE(custom_fields,'{}'::jsonb) || $1::jsonb, updated_at=NOW() WHERE id=$2 AND tenant_id=$3`,
+              [JSON.stringify(metaFields), lead.id, tenantId]
+            ).catch(() => null);
+            if (!lead.custom_fields) lead.custom_fields = {};
+            Object.assign(lead.custom_fields, metaFields);
+            setImmediate(() => backfillCustomFields(lead.id!, tenantId, metaFields).catch(() => null));
           }
 
           // Move lead to mapped pipeline (first stage)

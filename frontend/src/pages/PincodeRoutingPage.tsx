@@ -218,6 +218,10 @@ export default function PincodeRoutingPage() {
         match_value:   String(r[mapValue] ?? '').trim(),
         pipeline_name: String(r[mapPipeline] ?? '').trim() || null,
         meta,
+        // Backward-compat: if mapped to a district/state field, also fill the legacy
+        // columns so existing features (e.g. auto-tag by district) keep working.
+        district: meta.district ?? null,
+        state: meta.state ?? null,
       };
     }).filter((r) => r.match_value);
 
