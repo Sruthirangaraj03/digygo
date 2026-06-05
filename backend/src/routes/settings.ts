@@ -68,6 +68,20 @@ const CUSTOM_DEFAULT_PERMISSIONS: Record<string, boolean> = {
   'calls:view_all': false, 'calls:view_own': true,
 };
 
+// Reserved key (inside the permissions JSON) recording the admin's explicit choice
+// of access type. It is NEVER a permission — the resolver only reads specific
+// permission keys (permissions->>$key), so this is ignored by access checks.
+const ACCESS_KEY = '_access_type';
+
+// Server-side "is this full access?" — compares stored perms to the canonical
+// FULL_PERMISSIONS (the source of truth lives here), so the frontend never has to
+// guess and key-set drift cannot cause a wrong answer. Used only as a fallback for
+// legacy rows saved before the explicit marker existed.
+function isFullPerms(p: Record<string, any> | null | undefined): boolean {
+  if (!p) return false;
+  return Object.keys(FULL_PERMISSIONS).every((k) => (p[k] ?? false) === FULL_PERMISSIONS[k]);
+}
+
 async function sendInviteEmail(to: string, token: string, tenantId: string) {
   try {
     const frontendUrl = await getTenantFrontendUrl(tenantId);
@@ -247,7 +261,9 @@ router.post('/staff', checkPermission('staff:manage'), checkUsage('staff'), asyn
     const user = result.rows[0];
 
     // Auto-create user_permissions so the user can log in immediately
-    const perms = full_access ? FULL_PERMISSIONS : CUSTOM_DEFAULT_PERMISSIONS;
+    const perms = full_access
+      ? { ...FULL_PERMISSIONS, [ACCESS_KEY]: 'full' }
+      : { ...CUSTOM_DEFAULT_PERMISSIONS, [ACCESS_KEY]: 'custom' };
     await query(
       `INSERT INTO user_permissions (user_id, tenant_id, permissions)
        VALUES ($1, $2, $3)
@@ -394,8 +410,18 @@ router.get('/staff/:id/permissions', checkPermission('staff:view'), async (req: 
       [req.params.id, req.user!.tenantId]
     );
     if (!userRow.rows[0]) { res.status(404).json({ error: 'User not found' }); return; }
-    const perms = userRow.rows[0].permissions ?? FULL_PERMISSIONS;
-    res.json({ permissions: perms, has_custom: !!userRow.rows[0].permissions });
+    const stored = userRow.rows[0].permissions as Record<string, any> | null;
+    if (stored) {
+      const { [ACCESS_KEY]: storedType, ...clean } = stored;
+      const accessType = (storedType === 'full' || storedType === 'custom')
+        ? storedType
+        : (isFullPerms(clean) ? 'full' : 'custom'); // fallback for legacy rows
+      res.json({ permissions: clean, access_type: accessType, has_custom: true });
+    } else {
+      // No row = no access (the resolver returns false for every key). Reflect that
+      // honestly as an empty custom config instead of a misleading "full access".
+      res.json({ permissions: {}, access_type: 'custom', has_custom: false });
+    }
   } catch { res.status(500).json({ error: 'Server error' }); }
 });
 
@@ -408,9 +434,12 @@ router.put('/staff/:id/permissions', checkPermission('staff:manage'), async (req
 
   // Enforce mutual exclusion: only_assigned and leads:view_all cannot both be true.
   const sanitized = { ...permissions };
+  delete (sanitized as any)[ACCESS_KEY]; // never trust an incoming marker
   if (sanitized['leads:only_assigned'] && sanitized['leads:view_all']) {
     sanitized['leads:view_all'] = false;
   }
+  // This endpoint is the explicit "Custom" save.
+  (sanitized as any)[ACCESS_KEY] = 'custom';
 
   try {
     const check = await query(
@@ -455,7 +484,7 @@ router.delete('/staff/:id/permissions', checkPermission('staff:manage'), async (
       `INSERT INTO user_permissions (user_id, tenant_id, permissions)
        VALUES ($1, $2, $3)
        ON CONFLICT (user_id) DO UPDATE SET permissions=$3, updated_at=NOW()`,
-      [req.params.id, req.user!.tenantId, JSON.stringify(FULL_PERMISSIONS)]
+      [req.params.id, req.user!.tenantId, JSON.stringify({ ...FULL_PERMISSIONS, [ACCESS_KEY]: 'full' })]
     );
     clearUserPermCache(req.params.id, req.user!.tenantId);
     emitToUser(req.params.id, 'permissions_updated', {});

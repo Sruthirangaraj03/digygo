@@ -452,30 +452,33 @@ function PermissionsModal({ member, onClose }: { member: StaffMember; onClose: (
 
   React.useEffect(() => {
     setLoading(true);
-    api.get<{ permissions: Record<string, boolean> }>(`/api/settings/staff/${member.id}/permissions`)
+    api.get<{ permissions: Record<string, boolean>; access_type?: 'full' | 'custom' }>(`/api/settings/staff/${member.id}/permissions`)
       .then((data) => {
         const perms = { ...blankPerms(), ...(data.permissions ?? {}) };
         setPermissions(perms);
-        setAccessType(isFullAccessPerms(perms) ? 'full' : 'custom');
+        // Trust the server's explicit access type; fall back to value-based detection
+        // only for legacy responses without the field.
+        setAccessType(data.access_type ?? (isFullAccessPerms(perms) ? 'full' : 'custom'));
       })
       .catch(() => { setPermissions(blankPerms()); setAccessType('custom'); })
       .finally(() => setLoading(false));
-  }, [member.id, member.role]);
+  }, [member.id]);
 
   const handleGrantFullAccess = async () => {
     setSaving(true);
     try {
       await api.delete(`/api/settings/staff/${member.id}/permissions`);
-      const data = await api.get<{ permissions: Record<string, boolean> }>(`/api/settings/staff/${member.id}/permissions`);
+      const data = await api.get<{ permissions: Record<string, boolean>; access_type?: 'full' | 'custom' }>(`/api/settings/staff/${member.id}/permissions`);
       const perms = { ...blankPerms(), ...(data.permissions ?? {}) };
       setPermissions(perms);
-      setAccessType('full');
+      setAccessType(data.access_type ?? 'full');
       toast.success('Full access granted');
     } catch { toast.error('Failed to update permissions'); }
     finally { setSaving(false); }
   };
 
   const togglePerm = (key: string) => {
+    setAccessType('custom'); // any manual edit means custom access
     setPermissions((prev) => {
       const next = { ...prev, [key]: !prev[key] };
       // Mutual exclusion: only_assigned and leads:view_all cannot both be true.
@@ -597,6 +600,7 @@ function PermissionsModal({ member, onClose }: { member: StaffMember; onClose: (
                   </button>
                   <button type="button"
                     onClick={() => {
+                      setAccessType('custom');
                       const all = getAllPermKeys().every((k) => permissions[k]);
                       setPermissions(Object.fromEntries(getAllPermKeys().map((k) => [k, !all])));
                     }}
@@ -604,6 +608,7 @@ function PermissionsModal({ member, onClose }: { member: StaffMember; onClose: (
                     <PermCheckbox
                       checked={getAllPermKeys().every((k) => permissions[k])}
                       onChange={() => {
+                        setAccessType('custom');
                         const all = getAllPermKeys().every((k) => permissions[k]);
                         setPermissions(Object.fromEntries(getAllPermKeys().map((k) => [k, !all])));
                       }}
@@ -618,6 +623,7 @@ function PermissionsModal({ member, onClose }: { member: StaffMember; onClose: (
                 const groupKeys  = getGroupKeys(group);
                 const allEnabled = groupKeys.length > 0 && groupKeys.every((k) => permissions[k]);
                 const toggleAll  = () => {
+                  setAccessType('custom');
                   const val = !allEnabled;
                   setPermissions((prev) => ({ ...prev, ...Object.fromEntries(groupKeys.map((k) => [k, val])) }));
                 };
