@@ -4451,73 +4451,104 @@ export default function WorkflowEditorPage() {
   // can reject a stale overwrite (multi-tab safety).
   const baseUpdatedAtRef = useRef<string | null>(passedWorkflow ? null : null);
   const saveBroadcast = useRef<BroadcastChannel | null>(null);
+  const savingRef = useRef(false);     // a PATCH is currently in flight
+  const saveAgainRef = useRef(false);  // edits arrived during the in-flight save → save once more
 
-  // Single source of truth for saving. Reads the latest workflow from the ref,
-  // surfaces status, clears the dirty flag on success, and retries on failure
-  // (covers transient errors + 401 token-refresh) instead of failing silently.
-  // Reload the workflow from the server, replacing local state. Used after a
-  // version conflict so a stale tab adopts the latest instead of clobbering it.
+  // Apply a server workflow object to local state (shared by load / reload / conflict-resolve).
+  const applyServerWorkflow = (r: any) => {
+    justLoadedFromApi.current = true;
+    baseUpdatedAtRef.current = r?.updated_at ?? null;
+    setWorkflow({
+      id: r.id, name: r.name, description: r.description ?? '',
+      allowReentry: r.allow_reentry ?? false,
+      totalContacts: r.total_contacts ?? 0, completed: r.completed ?? 0,
+      completedNodes: (r.nodes ?? []).filter((n: any) => n.type !== 'trigger').length,
+      lastUpdated: new Date(r.updated_at).toLocaleDateString(),
+      status: r.status as 'active' | 'inactive',
+      nodes: Array.isArray(r.nodes) ? r.nodes : (typeof r.nodes === 'string' ? JSON.parse(r.nodes) : []),
+      apiToken: r.api_token ?? '',
+    });
+    setIsDirty(false);
+  };
+
+  // Reload from server (only when there are no local edits to lose).
   const reloadFromServer = async () => {
     const wf = workflowRef.current;
     if (!wf.id || wf.id === 'new') return;
     try {
       const r = await api.get<any>(`/api/workflows/${wf.id}`);
-      justLoadedFromApi.current = true;
-      baseUpdatedAtRef.current = r.updated_at ?? null;
-      setWorkflow({
-        id: r.id, name: r.name, description: r.description ?? '',
-        allowReentry: r.allow_reentry ?? false,
-        totalContacts: r.total_contacts ?? 0, completed: r.completed ?? 0,
-        completedNodes: (r.nodes ?? []).filter((n: any) => n.type !== 'trigger').length,
-        lastUpdated: new Date(r.updated_at).toLocaleDateString(),
-        status: r.status as 'active' | 'inactive',
-        nodes: Array.isArray(r.nodes) ? r.nodes : (typeof r.nodes === 'string' ? JSON.parse(r.nodes) : []),
-        apiToken: r.api_token ?? '',
-      });
-      setIsDirty(false);
+      applyServerWorkflow(r);
       setSaveStatus('saved');
       setSavedAt(Date.now());
     } catch { /* leave as-is */ }
   };
 
-  // Single source of truth for saving. Sends the base version so the server can
-  // reject a stale overwrite (multi-tab safety). On success updates the base
-  // version; on conflict reloads (never clobbers); on transient error retries.
+  // Serialized, edit-preserving save. Only one PATCH in flight at a time; edits
+  // during a save queue a follow-up; a genuine 409 re-bases and re-saves local
+  // edits (never wipes them) — only reloading when there is nothing unsaved.
   const persist = async (opts?: { silent?: boolean }): Promise<boolean> => {
     const wf = workflowRef.current;
     if (!wf.id || wf.id === 'new') return false;
+
+    // Serialize: if a save is already running, ask it to run once more afterwards.
+    if (savingRef.current) { saveAgainRef.current = true; return false; }
+    savingRef.current = true;
     if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = null; }
     setSaveStatus('saving');
+
+    let ok = false;
     try {
-      const saved = await api.patch<any>(`/api/workflows/${wf.id}`, {
-        name: wf.name,
-        description: wf.description,
-        nodes: wf.nodes,
-        status: wf.status,
-        allow_reentry: wf.allowReentry,
+      const cur = workflowRef.current; // always send the freshest snapshot
+      const saved = await api.patch<any>(`/api/workflows/${cur.id}`, {
+        name: cur.name,
+        description: cur.description,
+        nodes: cur.nodes,
+        status: cur.status,
+        allow_reentry: cur.allowReentry,
         base_updated_at: baseUpdatedAtRef.current,
       });
       baseUpdatedAtRef.current = saved?.updated_at ?? baseUpdatedAtRef.current;
-      saveBroadcast.current?.postMessage({ id: wf.id, updated_at: baseUpdatedAtRef.current });
+      saveBroadcast.current?.postMessage({ id: cur.id, updated_at: baseUpdatedAtRef.current });
       setSaveStatus('saved');
       setSavedAt(Date.now());
       setIsDirty(false);
-      return true;
+      ok = true;
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        // Another tab/session has a newer version — DO NOT overwrite. Reload it.
-        setSaveStatus('conflict');
-        // Stay quiet for background autosave conflicts; only tell the user on an
-        // explicit manual Save so two open tabs don't spam toasts.
-        if (!opts?.silent) toast.error('This automation was changed in another tab — reloaded the latest version to avoid overwriting it.');
-        await reloadFromServer();
-        return false;
+        // Another tab/session changed it. Resolve without losing local work.
+        try {
+          const latest = await api.get<any>(`/api/workflows/${wf.id}`);
+          if (dirtyRef.current) {
+            // We have unsaved edits — KEEP them: adopt the new base and re-save so
+            // the active editor's work wins instead of being wiped.
+            baseUpdatedAtRef.current = latest?.updated_at ?? baseUpdatedAtRef.current;
+            saveAgainRef.current = true;
+            if (!opts?.silent) toast.message('Synced to the latest version — your changes are kept.');
+            setSaveStatus('saving');
+          } else {
+            // Nothing local to lose — adopt the server version.
+            applyServerWorkflow(latest);
+            setSaveStatus('saved');
+            setSavedAt(Date.now());
+          }
+        } catch {
+          setSaveStatus('error');
+        }
+      } else {
+        setSaveStatus('error');
+        // Transient failure / token refresh — retry shortly.
+        retryTimer.current = setTimeout(() => { persist({ silent: true }); }, 5000);
       }
-      setSaveStatus('error');
-      // Keep retrying so a transient failure / expired-token refresh doesn't lose edits.
-      retryTimer.current = setTimeout(() => { persist(); }, 5000);
-      return false;
+    } finally {
+      savingRef.current = false;
     }
+
+    // Edits arrived during this save (or a 409 re-base needs persisting) → save once more.
+    if (saveAgainRef.current) {
+      saveAgainRef.current = false;
+      return persist({ silent: true });
+    }
+    return ok;
   };
   // Cross-tab sync: when another tab saves this workflow, a clean tab adopts the
   // latest immediately; a dirty tab is flagged (its next save will 409 + reload).
