@@ -122,7 +122,7 @@ function AddLeadModal({ onClose }: { onClose: () => void }) {
         leadQuality: form.leadQuality || undefined,
         createdAt: created.created_at ?? now, lastActivity: created.created_at ?? now,
       });
-      toast.success('Opportunity added');
+      toast.success('Lead added');
       onClose();
     } catch (err: any) {
       toast.error(err.message ?? 'Failed to add lead');
@@ -131,54 +131,40 @@ function AddLeadModal({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2.5 text-[13px] text-[#1c1410] outline-none focus:border-gray-400 placeholder:text-gray-300';
+  const inputCls = 'w-full bg-[#faf8f6] border border-black/10 rounded-xl px-3.5 py-2.5 text-[13px] text-[#1c1410] outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 focus:bg-white transition-all placeholder:text-[#b09e8d]';
   const lbl = (text: string, required = false) => (
-    <label className="text-[12px] text-[#7a6b5c] mb-1 block">{text}{required && <span className="text-red-400 ml-0.5">*</span>}</label>
+    <label className="text-[12px] font-semibold text-[#7a6b5c] mb-1.5 block">{text}{required && <span className="text-primary ml-0.5">*</span>}</label>
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] border border-black/5">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h3 className="text-[16px] font-bold text-[#1c1410]">+ Add opportunity</h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"><X className="w-4 h-4" /></button>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-black/5 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0"><Plus className="w-4 h-4 text-primary" /></div>
+            <h3 className="text-[16px] font-bold text-[#1c1410]">Add Lead</h3>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-gray-100 text-[#7a6b5c] flex items-center justify-center transition-colors"><X className="w-4 h-4" /></button>
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-          {/* Opportunity pill */}
-          <div>
-            <button className="px-4 py-1.5 rounded-lg text-[13px] font-bold text-white" style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}>
-              Opportunity
-            </button>
-          </div>
-
-          <h4 className="text-[16px] font-bold text-[#1c1410]">Contact Info</h4>
-
+        <div className="flex-1 overflow-y-auto px-6 py-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4">
-            <div>
-              {lbl('Opportunity Name', true)}
-              <input className={inputCls} placeholder="Add Opportunity Name" value={`${form.firstName} ${form.lastName}`.trim()} onChange={(e) => { const [f, ...l] = e.target.value.split(' '); setForm({ ...form, firstName: f, lastName: l.join(' ') }); }} />
-            </div>
-            <div>
+            <div className="sm:col-span-2">
               {lbl('Contact Name', true)}
-              <input className={inputCls} placeholder="Contact Name" value={`${form.firstName} ${form.lastName}`.trim()} readOnly />
+              <input className={inputCls} placeholder="e.g. Priya Sharma" value={`${form.firstName} ${form.lastName}`.trim()} onChange={(e) => { const [f, ...l] = e.target.value.split(' '); setForm({ ...form, firstName: f, lastName: l.join(' ') }); }} />
             </div>
             <div>
-              {lbl('Email')}
-              <input className={inputCls} type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-            </div>
-            <div>
-              {lbl('Phone')}
-              <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2.5 focus-within:border-gray-400">
-                <span className="text-[13px] shrink-0">🇮🇳 +91</span>
-                <input className="flex-1 text-[13px] text-[#1c1410] outline-none bg-transparent placeholder:text-gray-300" placeholder="81234 56789" value={form.phone.replace('+91 ', '')} onChange={(e) => setForm({ ...form, phone: '+91 ' + e.target.value })} />
+              {lbl('Phone', true)}
+              <div className="flex items-center gap-2 bg-[#faf8f6] border border-black/10 rounded-xl px-3.5 py-2.5 focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10 focus-within:bg-white transition-all">
+                <span className="text-[13px] font-semibold text-[#7a6b5c] shrink-0">🇮🇳 +91</span>
+                <input className="flex-1 min-w-0 text-[13px] text-[#1c1410] outline-none bg-transparent placeholder:text-[#b09e8d]" placeholder="81234 56789" value={form.phone.replace('+91 ', '')} onChange={(e) => setForm({ ...form, phone: '+91 ' + e.target.value })} />
               </div>
             </div>
             <div>
-              {lbl('City')}
-              <input className={inputCls} placeholder="City" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+              {lbl('Email')}
+              <input className={inputCls} type="email" placeholder="name@example.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
             </div>
             <div>
               {lbl('Pipeline', true)}
@@ -197,51 +183,53 @@ function AddLeadModal({ onClose }: { onClose: () => void }) {
               </select>
             </div>
             <div>
-              {lbl('Created At')}
-              <input className={inputCls} type="datetime-local" defaultValue={format(new Date(now), "yyyy-MM-dd'T'HH:mm")} readOnly />
-            </div>
-            <div>
-              {lbl('Tags')}
-              <div className="border border-gray-200 rounded-lg px-3 py-2 focus-within:border-gray-400 transition-all">
-                <div className="flex flex-wrap gap-1 mb-1">
-                  {form.tags.map((t) => (
-                    <span key={t} className="text-[11px] bg-primary/10 text-primary px-2 py-0.5 rounded-md flex items-center gap-1">
-                      {t}<button onClick={() => setForm({ ...form, tags: form.tags.filter((x) => x !== t) })} className="hover:text-red-500">×</button>
-                    </span>
-                  ))}
-                </div>
-                <input
-                  className="w-full text-[13px] outline-none bg-transparent placeholder:text-gray-300"
-                  placeholder="Write & hit enter to add tags"
-                  value={form.tagInput}
-                  onChange={(e) => setForm({ ...form, tagInput: e.target.value })}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && form.tagInput.trim()) { setForm({ ...form, tags: [...form.tags, form.tagInput.trim()], tagInput: '' }); }}}
-                />
-              </div>
-            </div>
-            <div>
-              {lbl('Lead Value')}
-              <input className={inputCls} type="number" placeholder="0" value={form.dealValue || ''} onChange={(e) => setForm({ ...form, dealValue: Number(e.target.value) })} />
+              {lbl('City')}
+              <input className={inputCls} placeholder="City" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
             </div>
             <div>
               {lbl('Lead Quality')}
               <select className={inputCls} value={form.leadQuality} onChange={(e) => setForm({ ...form, leadQuality: e.target.value })}>
-                <option value="">Select quality...</option>
+                <option value="">Select quality…</option>
                 <option value="Hot">Hot</option>
                 <option value="Warm">Warm</option>
                 <option value="Cold">Cold</option>
                 <option value="Unqualified">Unqualified</option>
               </select>
             </div>
+            <div>
+              {lbl('Lead Value')}
+              <input className={inputCls} type="number" placeholder="0" value={form.dealValue || ''} onChange={(e) => setForm({ ...form, dealValue: Number(e.target.value) })} />
+            </div>
+            <div className="sm:col-span-2">
+              {lbl('Tags')}
+              <div className="bg-[#faf8f6] border border-black/10 rounded-xl px-3.5 py-2.5 focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10 focus-within:bg-white transition-all">
+                {form.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-1.5">
+                    {form.tags.map((t) => (
+                      <span key={t} className="text-[11px] font-medium bg-primary/10 text-primary px-2 py-0.5 rounded-md flex items-center gap-1">
+                        {t}<button onClick={() => setForm({ ...form, tags: form.tags.filter((x) => x !== t) })} className="hover:text-red-500">×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <input
+                  className="w-full text-[13px] outline-none bg-transparent placeholder:text-[#b09e8d]"
+                  placeholder="Type a tag and press Enter"
+                  value={form.tagInput}
+                  onChange={(e) => setForm({ ...form, tagInput: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && form.tagInput.trim()) { e.preventDefault(); setForm({ ...form, tags: [...form.tags, form.tagInput.trim()], tagInput: '' }); }}}
+                />
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100">
-          <p className="text-[11px] text-gray-400">Created On: {format(new Date(now), 'dd/MM/yyyy HH:mm aa').toUpperCase()}</p>
-          <div className="flex gap-2">
-            <button onClick={onClose} className="px-5 py-2 rounded-xl text-[13px] font-bold text-white bg-red-500 hover:bg-red-600 transition-colors">CANCEL</button>
-            <button onClick={handleSave} disabled={saving} className="px-5 py-2 rounded-xl text-[13px] font-bold text-white transition-all hover:-translate-y-0.5 disabled:opacity-60" style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}>{saving ? 'Saving…' : 'SAVE'}</button>
+        <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-black/5 shrink-0">
+          <p className="hidden sm:block text-[11px] text-[#b09e8d]">Created {format(new Date(now), 'dd MMM yyyy, hh:mm aa')}</p>
+          <div className="flex gap-2 w-full sm:w-auto">
+            <button onClick={onClose} className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-[13px] font-semibold text-[#7a6b5c] bg-white border border-black/10 hover:bg-gray-50 active:scale-95 transition-all">Cancel</button>
+            <button onClick={handleSave} disabled={saving} className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-[13px] font-bold text-white bg-primary hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-60">{saving ? 'Saving…' : 'Save Lead'}</button>
           </div>
         </div>
       </div>
