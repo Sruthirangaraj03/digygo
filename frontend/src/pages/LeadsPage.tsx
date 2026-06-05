@@ -2190,6 +2190,18 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showCustomFields, setShowCustomFields] = useState(false);
   const [showEditFields,   setShowEditFields]   = useState(false);
+  const [cfStatus, setCfStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+
+  // Load persisted custom field values — tracks status so we can tell
+  // "still loading" / "failed to load" apart from "genuinely empty".
+  const loadFields = useCallback(() => {
+    setCfStatus('loading');
+    api.get<any[]>(`/api/leads/${lead.id}/fields`).then((rows) => {
+      const customFields = rows.map((r) => ({ label: r.field_name ?? r.slug, value: r.value, fieldId: r.field_id }));
+      updateLead(lead.id, { customFields });
+      setCfStatus('loaded');
+    }).catch((e) => { console.warn('[lead fields] load failed', e); setCfStatus('error'); });
+  }, [lead.id, updateLead]);
 
   useEffect(() => {
     api.get<any[]>(`/api/leads/${lead.id}/notes`).then(setLeadNotes).catch(() => null);
@@ -2199,11 +2211,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
     api.get<any[]>(`/api/leads/${lead.id}/activities`).then((data) =>
       setLeadActivities(data.map((a) => ({ id: a.id, leadId: lead.id, type: a.type, title: a.title, detail: a.detail, timestamp: a.created_at, createdBy: a.created_by_name ?? a.created_by })))
     ).catch(() => null);
-    // Load persisted custom field values
-    api.get<any[]>(`/api/leads/${lead.id}/fields`).then((rows) => {
-      const customFields = rows.map((r) => ({ label: r.field_name ?? r.slug, value: r.value, fieldId: r.field_id }));
-      updateLead(lead.id, { customFields });
-    }).catch(() => null);
+    loadFields();
     api.get<any[]>(`/api/calls/lead/${lead.id}`).then(setLeadCalls).catch(() => null);
   }, [lead.id]);
 
@@ -2497,6 +2505,10 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
                           </span>
                         </div>
                       ))
+                    ) : cfStatus === 'loading' ? (
+                      <p className="text-[12px] text-[#7a6b5c] pl-1 italic">Loading field values…</p>
+                    ) : cfStatus === 'error' ? (
+                      <button onClick={loadFields} className="text-[12px] text-red-500 pl-1 italic hover:underline">Couldn't load fields — tap to retry</button>
                     ) : (
                       <p className="text-[12px] text-[#7a6b5c] pl-1 italic">No field values yet — click Edit Fields to add</p>
                     )}
@@ -2901,6 +2913,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
         onClose={() => setShowEditFields(false)}
         onSaved={(fields) => {
           updateLead(lead.id, { customFields: fields });
+          setCfStatus('loaded');
           setShowCustomFields(true);
         }}
       />
@@ -3923,7 +3936,7 @@ function mapApiLeadsToStore(rows: any[], stageMap: Record<string, string>): Lead
       value: 0,
       probability: 0,
       nextFollowUp: null,
-      customFields: {},
+      customFields: [],
     } as Lead;
   });
 }
@@ -4043,7 +4056,7 @@ export default function LeadsPage() {
         createdAt: l.created_at ?? new Date().toISOString(),
         lastActivity: l.updated_at ?? l.created_at ?? new Date().toISOString(),
         businessName: '', city: '', notes: l.notes ?? '',
-        dealValue: Number(l.deal_value ?? 0), value: 0, probability: 0, nextFollowUp: null, customFields: {},
+        dealValue: Number(l.deal_value ?? 0), value: 0, probability: 0, nextFollowUp: null, customFields: [],
       } as Lead);
     }).catch(() => null);
   }, [location.state]);

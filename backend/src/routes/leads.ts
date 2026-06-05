@@ -767,6 +767,11 @@ router.get('/:id/activities', async (req: AuthRequest, res: Response) => {
 
 // ── Per-lead custom field values ───────────────────────────────────────────────
 
+// Internal keys kept in leads.custom_fields JSONB that must NOT surface as "Additional Fields"
+const RESERVED_FIELD_KEYS = new Set(['lead_quality', 'ai_agent_id']);
+const prettifySlug = (slug: string) =>
+  slug.split(/[_\-]+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
 // GET /api/leads/:id/fields
 router.get('/:id/fields', async (req: AuthRequest, res: Response) => {
   const { tenantId } = req.user!;
@@ -866,7 +871,7 @@ router.get('/:id/fields', async (req: AuthRequest, res: Response) => {
       for (const [rawKey, val] of Object.entries(jsonb)) {
         if (!val) continue;
         const slug = cleanFieldKey(rawKey);
-        if (slug && !existingSlugs.has(slug)) toFill[slug] = String(val);
+        if (slug && !RESERVED_FIELD_KEYS.has(slug) && !existingSlugs.has(slug)) toFill[slug] = String(val);
       }
       if (Object.keys(toFill).length > 0) {
         await backfillCustomFields(leadId, tenantId!, toFill);
@@ -876,7 +881,25 @@ router.get('/:id/fields', async (req: AuthRequest, res: Response) => {
       console.error('[jsonb fields merge]', e);
     }
 
-    res.json(rows);
+    // Final response: hide reserved/internal keys, and GUARANTEE any JSONB value is shown
+    // even if the backfill insert above did not land (transient error, race, etc.).
+    const finalRows = rows.filter((r: any) => !RESERVED_FIELD_KEYS.has(r.slug));
+    try {
+      const leadRow2 = await query(`SELECT custom_fields FROM leads WHERE id=$1 AND tenant_id=$2`, [leadId, tenantId]);
+      const jsonb2: Record<string, any> = leadRow2.rows[0]?.custom_fields ?? {};
+      const present = new Set(finalRows.map((r: any) => r.slug));
+      for (const [rawKey, val] of Object.entries(jsonb2)) {
+        if (val === null || val === undefined || val === '') continue;
+        const slug = cleanFieldKey(rawKey);
+        if (!slug || RESERVED_FIELD_KEYS.has(slug) || present.has(slug)) continue;
+        finalRows.push({ field_name: prettifySlug(slug), slug, value: String(val), field_id: null });
+        present.add(slug);
+      }
+    } catch (e) {
+      console.error('[jsonb direct merge]', e);
+    }
+
+    res.json(finalRows);
   } catch (err) {
     console.error('[GET /:id/fields]', err);
     res.status(500).json({ error: 'Server error' });
