@@ -18,7 +18,11 @@ router.get('/', checkPermission('contacts:read'), async (req: AuthRequest, res: 
 
     let onlyAssigned = false;
     if (!isSuperAdmin) {
-      try { onlyAssigned = await hasPermission(userId, 'leads:only_assigned', tenantId); } catch { onlyAssigned = true; }
+      let isOwner = false;
+      try { isOwner = (await query('SELECT is_owner FROM users WHERE id=$1 AND ($2::uuid IS NULL OR tenant_id=$2::uuid)', [userId, tenantId])).rows[0]?.is_owner === true; } catch { isOwner = false; }
+      if (!isOwner) {
+        try { onlyAssigned = await hasPermission(userId, 'leads:only_assigned', tenantId); } catch { onlyAssigned = true; }
+      }
     }
 
     const params: any[] = [tenantId];

@@ -40,13 +40,23 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   if (isSuperAdmin) {
     viewAll = true;
   } else {
-    let onlyAssigned = false;
-    try { onlyAssigned = await hasPermission(userId, 'leads:only_assigned', tenantId); } catch { onlyAssigned = true; }
+    // Owners always see all tenant data (they may have no user_permissions row,
+    // in which case hasPermission would wrongly resolve view_all=false). Check
+    // is_owner before falling back to the permission table.
+    let isOwner = false;
+    try { isOwner = (await query('SELECT is_owner FROM users WHERE id=$1 AND ($2::uuid IS NULL OR tenant_id=$2::uuid)', [userId, tenantId])).rows[0]?.is_owner === true; } catch { isOwner = false; }
 
-    if (onlyAssigned) {
-      viewAll = false;
+    if (isOwner) {
+      viewAll = true;
     } else {
-      try { viewAll = await hasPermission(userId, 'leads:view_all', tenantId); } catch { viewAll = false; }
+      let onlyAssigned = false;
+      try { onlyAssigned = await hasPermission(userId, 'leads:only_assigned', tenantId); } catch { onlyAssigned = true; }
+
+      if (onlyAssigned) {
+        viewAll = false;
+      } else {
+        try { viewAll = await hasPermission(userId, 'leads:view_all', tenantId); } catch { viewAll = false; }
+      }
     }
   }
 
