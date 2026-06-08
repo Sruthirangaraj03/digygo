@@ -125,23 +125,27 @@ router.delete('/:id', checkPermission('pipeline:manage'), async (req: AuthReques
   const { id } = req.params;
   const tenantId = req.user!.tenantId;
   try {
-    // Unlink all FK references before deleting (none of these have ON DELETE CASCADE)
+    // Unlink everything referencing this pipeline OR ANY of its stages before deleting.
+    // Deleting the pipeline cascade-deletes pipeline_stages, but leads/forms/opportunities
+    // have stage_id FKs with ON DELETE NO ACTION — and a row can hold one of this pipeline's
+    // stage_ids even when its pipeline_id is null/different (orphaned by a stage move/import).
+    // Matching only on pipeline_id (the old bug) left those orphans behind → FK 500.
+    const stagesSub = `(SELECT id FROM pipeline_stages WHERE pipeline_id=$1)`;
+    // leads — critical, must succeed (also bumps updated_at)
     await query(
       `UPDATE leads SET pipeline_id=NULL, stage_id=NULL, updated_at=NOW()
-       WHERE pipeline_id=$1 AND tenant_id=$2`,
+       WHERE tenant_id=$2 AND (pipeline_id=$1 OR stage_id IN ${stagesSub})`,
       [id, tenantId]
     );
-    await query(
-      `UPDATE custom_forms SET pipeline_id=NULL, stage_id=NULL
-       WHERE pipeline_id=$1 AND tenant_id=$2`,
-      [id, tenantId]
-    ).catch(() => null);
-    await query(
-      `UPDATE meta_forms SET pipeline_id=NULL, stage_id=NULL
-       WHERE pipeline_id=$1 AND tenant_id=$2`,
-      [id, tenantId]
-    ).catch(() => null);
-    await query('DELETE FROM pipelines WHERE id=$1 AND tenant_id=$2', [id, tenantId]);
+    // forms + opportunities — best-effort (table/column may not exist in older schemas)
+    for (const tbl of ['custom_forms', 'meta_forms', 'opportunities']) {
+      await query(
+        `UPDATE ${tbl} SET pipeline_id=NULL, stage_id=NULL
+         WHERE tenant_id=$2 AND (pipeline_id=$1 OR stage_id IN ${stagesSub})`,
+        [id, tenantId]
+      ).catch(() => null);
+    }
+    await query('DELETE FROM pipelines WHERE id=$1 AND tenant_id=$2', [id, tenantId]); // cascades to pipeline_stages
     res.json({ success: true });
   } catch (err: any) {
     console.error('[pipeline delete]', err.message);
