@@ -2223,6 +2223,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
   const [playingCallId, setPlayingCallId] = useState<string | null>(null);
   const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
   const [editNote, setEditNote] = useState<{ id: string; title: string; content: string } | null>(null);
+  const [editFu, setEditFu] = useState<{ id: string; title: string; notes: string; dueAt: string } | null>(null);
 
   const { calendarEvents, updateLead, deleteLead, addActivity, pipelines, tags: storeTags, staff, bookingLinks, addCalendarEvent } = useCrmStore();
   const waPersonalStatus = useCrmStore((s) => s.waPersonalStatus);
@@ -2388,8 +2389,9 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
   type TimelineEntry = { id: string; type: LeadActivity['type']; title: string; detail?: string; timestamp: string; createdBy?: string };
   const timeline: TimelineEntry[] = [
     { id: 'created', type: 'created', title: `Joined · ${pipelineName}`, detail: getSourceLabel(lead), timestamp: lead.createdAt },
-    ...leadActivities.filter((a) => a.type !== 'note').map((a) => ({ id: a.id, type: a.type, title: cleanActivityTitle(a.title), detail: a.detail, timestamp: a.timestamp, createdBy: a.createdBy })),
+    ...leadActivities.filter((a) => a.type !== 'note' && a.type !== 'followup').map((a) => ({ id: a.id, type: a.type, title: cleanActivityTitle(a.title), detail: a.detail, timestamp: a.timestamp, createdBy: a.createdBy })),
     ...leadNotes.map((n) => ({ id: `note-${n.id}`, type: 'note' as const, title: n.title || 'Note', detail: n.content, timestamp: n.created_at, createdBy: n.created_by_name ?? n.created_by })),
+    ...leadFollowUps.map((f) => ({ id: `fu-${f.id}`, type: 'followup' as const, title: f.note || 'Follow-up', detail: `Due: ${format(new Date(f.dueAt), 'dd MMM yyyy, h:mm a')}${f.completed ? ' · Done' : ''}${f.description ? `\n${f.description}` : ''}`, timestamp: f.createdAt || f.dueAt, createdBy: undefined as string | undefined })),
     ...leadAppointments.map((a) => ({
       id: `appt-${a.id}`, type: 'appointment' as const,
       title: (a.title ?? '').split(' - ')[0],
@@ -2848,6 +2850,8 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
                   const { Icon, bg, color } = iconForType(entry.type);
                   const isNote = entry.type === 'note' && entry.id.startsWith('note-');
                   const noteId = isNote ? entry.id.slice(5) : '';
+                  const isFu = entry.type === 'followup' && entry.id.startsWith('fu-');
+                  const fuId = isFu ? entry.id.slice(3) : '';
                   return (
                     <div key={entry.id} className="flex gap-3">
                       <div className={cn('w-9 h-9 rounded-full flex items-center justify-center shrink-0', bg, color)}>
@@ -2859,6 +2863,10 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
                           {isNote && canEditLead && (
                             <button onClick={() => setEditNote({ id: noteId, title: entry.title === 'Note' ? '' : entry.title, content: entry.detail ?? '' })}
                               className="p-1 rounded text-[#7a6b5c] hover:bg-[var(--accent-tint)] hover:text-primary shrink-0" title="Edit note"><Pencil className="w-3.5 h-3.5" /></button>
+                          )}
+                          {isFu && canEditLead && (
+                            <button onClick={() => { const f = leadFollowUps.find((x) => x.id === fuId); if (f) setEditFu({ id: f.id, title: f.note || '', notes: f.description || '', dueAt: format(new Date(f.dueAt), "yyyy-MM-dd'T'HH:mm") }); }}
+                              className="p-1 rounded text-[#7a6b5c] hover:bg-[var(--accent-tint)] hover:text-primary shrink-0" title="Edit follow-up"><Pencil className="w-3.5 h-3.5" /></button>
                           )}
                         </div>
                         {entry.detail && <p className="text-[12px] text-[#7a6b5c] mt-0.5 break-words whitespace-pre-wrap">{entry.detail}</p>}
@@ -2886,6 +2894,16 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
             editItem={{ kind: 'note', id: editNote.id, title: editNote.title, notes: editNote.content }}
             onUpdated={(u) => setLeadNotes((prev) => prev.map((n) => n.id === u.id ? { ...n, title: u.title, content: u.content } : n))}
             onClose={() => setEditNote(null)}
+          />
+        )}
+
+        {/* Edit Follow-up — reuses the same modal as Add */}
+        {editFu && (
+          <FollowUpModal
+            leadId={lead.id}
+            editItem={{ kind: 'followup', id: editFu.id, title: editFu.title, notes: editFu.notes, dueAt: editFu.dueAt }}
+            onUpdated={(u) => setLeadFollowUps((prev) => prev.map((f) => f.id === u.id ? { ...f, note: u.title, description: u.description, dueAt: u.dueAt } : f))}
+            onClose={() => setEditFu(null)}
           />
         )}
 
