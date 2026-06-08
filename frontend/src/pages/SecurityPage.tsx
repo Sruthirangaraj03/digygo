@@ -62,11 +62,11 @@ export default function SecurityPage() {
                 <ShieldCheck className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="font-semibold text-[#1c1410] text-[14px]">Two-Factor Login PIN</h2>
+                <h2 className="font-semibold text-[#1c1410] text-[14px]">Login PIN / OTP</h2>
                 <p className="text-[12px] text-[#7a6b5c] mt-1 max-w-md">
-                  When enabled, after their password every team member enters a 4-digit PIN — either the PIN
-                  you set for them in Staff, or a one-time PIN they request by email. They can remember their
-                  device for 30 days. Requires email delivery to be working for the emailed-PIN option.
+                  When enabled, team members can sign in with just their email and a 4-digit PIN — either the
+                  PIN you set for them in Staff, or a one-time PIN they request by email — instead of a password
+                  (their password still works too). Requires email delivery for the emailed-PIN option.
                 </p>
               </div>
             </div>

@@ -12,16 +12,10 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [otpStep, setOtpStep] = useState(false);
-  const [otp, setOtp] = useState('');
-  const [rememberDevice, setRememberDevice] = useState(true);
-  const [challenge, setChallenge] = useState('');
-  const [hasSetPin, setHasSetPin] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const navigate = useNavigate();
   const login = useAuthStore((s) => s.login);
-  const requestPin = useAuthStore((s) => s.requestPin);
-  const verifyPin = useAuthStore((s) => s.verifyPin);
+  const requestOtp = useAuthStore((s) => s.requestOtp);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const { isCustomDomain, tenantName, logoUrl, brandColor, bannerUrl, loginBgColor, loaded, fetchBranding } = useBrandingStore();
 
@@ -29,7 +23,7 @@ export default function LoginPage() {
     fetchBranding().catch(() => null);
   }, []);
 
-  // "Get PIN by email" resend cooldown timer
+  // "Get OTP by email" resend cooldown timer
   useEffect(() => {
     if (resendCooldown <= 0) return;
     const t = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
@@ -38,49 +32,30 @@ export default function LoginPage() {
 
   if (isAuthenticated) return <Navigate to="/dashboard" replace />;
 
+  // The password field is a single "secret": the account password, an admin-set PIN,
+  // or a one-time PIN requested by email — any of them logs the user in.
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) { setError('Please fill in all fields'); return; }
+    if (!email || !password) { setError('Enter your email and your password or PIN'); return; }
     setLoading(true);
     await new Promise((r) => setTimeout(r, 400)); // brief animation
     const result = await login(email, password);
     setLoading(false);
-    if (result.pinRequired) {
-      setChallenge(result.challenge ?? '');
-      setHasSetPin(!!result.hasSetPin);
-      setOtpStep(true);
-      setError('');
-    } else if (result.ok) {
+    if (result.ok) {
       toast.success('Welcome back!');
       navigate('/dashboard');
     } else {
-      setError('Invalid email or password');
+      setError('Invalid email or password/PIN');
     }
   };
 
-  const handleGetPin = async () => {
-    if (resendCooldown > 0 || !challenge) return;
-    const r = await requestPin(challenge);
-    if (r.ok) {
-      toast.success(`PIN sent to ${email}`);
-      setResendCooldown(45);
-    } else {
-      setError(r.error ?? 'Could not send PIN');
-    }
-  };
-
-  const handleVerifyPin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (otp.trim().length !== 4) { setError('Enter your 4-digit PIN'); return; }
-    setLoading(true);
-    const r = await verifyPin(challenge, otp.trim(), rememberDevice);
-    setLoading(false);
-    if (r.ok) {
-      toast.success('Welcome back!');
-      navigate('/dashboard');
-    } else {
-      setError(r.error ?? 'Incorrect PIN');
-    }
+  const handleGetOtp = async () => {
+    if (resendCooldown > 0) return;
+    if (!email) { setError('Enter your email first'); return; }
+    setError('');
+    await requestOtp(email);
+    toast.success(`If an account exists for ${email}, a PIN has been emailed`);
+    setResendCooldown(45);
   };
 
   return (
@@ -124,45 +99,12 @@ export default function LoginPage() {
           <div className="bg-white rounded-2xl p-5 border border-black/5" style={{ boxShadow: '0 8px 32px -4px rgba(0,0,0,0.06)' }}>
             {/* Heading inside card */}
             <div className="text-center mb-4">
-              <h1 className="font-headline text-xl font-bold tracking-tight text-[#1c1410]">{otpStep ? 'Enter your PIN' : 'Welcome back'}</h1>
+              <h1 className="font-headline text-xl font-bold tracking-tight text-[#1c1410]">Welcome back</h1>
               <p className="text-[#5c5245] mt-1 text-[13px] leading-relaxed">
-                {otpStep
-                  ? 'Enter the PIN your admin gave you, or get a one-time PIN by email.'
-                  : `Sign in to your ${isCustomDomain && tenantName ? tenantName : 'DigyGo CRM'} account`}
+                {`Sign in to your ${isCustomDomain && tenantName ? tenantName : 'DigyGo CRM'} account`}
               </p>
             </div>
 
-            {otpStep ? (
-              <form onSubmit={handleVerifyPin} className="space-y-4">
-                <input
-                  inputMode="numeric"
-                  autoFocus
-                  maxLength={4}
-                  value={otp}
-                  onChange={(e) => { setOtp(e.target.value.replace(/\D/g, '').slice(0, 4)); setError(''); }}
-                  placeholder="••••"
-                  className="w-full text-center tracking-[0.5em] text-2xl font-bold h-[54px] rounded-xl border border-[#e8ddd4] outline-none focus:border-primary"
-                />
-                <button type="button" onClick={handleGetPin} disabled={resendCooldown > 0}
-                  className="w-full text-center text-[13px] font-semibold text-primary hover:text-[var(--brand-dark)] disabled:text-[#b09e8d] disabled:cursor-not-allowed">
-                  {resendCooldown > 0 ? `Resend PIN in ${resendCooldown}s` : 'Get PIN by email'}
-                </button>
-                <label className="flex items-center gap-2 text-[13px] text-[#5c5245] cursor-pointer">
-                  <input type="checkbox" checked={rememberDevice} onChange={(e) => setRememberDevice(e.target.checked)} />
-                  Remember this device for 30 days
-                </label>
-                {error && (
-                  <div className="px-3 py-2.5 bg-[#ffdad6] rounded-xl"><p className="text-sm text-[#ba1a1a] font-medium">{error}</p></div>
-                )}
-                <button type="submit" disabled={loading}
-                  className="w-full h-[54px] rounded-xl text-white text-[16px] font-bold flex items-center justify-center gap-2 active:scale-[0.97] transition-all disabled:opacity-70 shadow-lg"
-                  style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)' }}>
-                  {loading ? 'Verifying…' : 'Verify & Continue'}
-                </button>
-                <button type="button" onClick={() => { setOtpStep(false); setOtp(''); setError(''); setChallenge(''); }}
-                  className="w-full text-center text-[12px] text-[#7a6b5c] hover:text-primary">← Back to login</button>
-              </form>
-            ) : (
             <form onSubmit={handleLogin} className="space-y-4">
 
               {/* Email */}
@@ -191,7 +133,7 @@ export default function LoginPage() {
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between ml-1">
                   <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-[#5c5245]" htmlFor="password">
-                    Password
+                    Password or PIN
                   </label>
                   <a href="/forgot-password" className="text-[11px] font-semibold text-primary hover:underline">Forgot password?</a>
                 </div>
@@ -199,7 +141,7 @@ export default function LoginPage() {
                   <Input
                     id="password"
                     type={showPassword ? 'text' : 'password'}
-                    placeholder="••••••••"
+                    placeholder="Password, PIN, or one-time code"
                     value={password}
                     onChange={(e) => { setPassword(e.target.value); setError(''); }}
                     required
@@ -213,6 +155,11 @@ export default function LoginPage() {
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
+                {/* Passwordless: email a one-time PIN to type above */}
+                <button type="button" onClick={handleGetOtp} disabled={resendCooldown > 0}
+                  className="text-[11px] font-semibold text-primary hover:underline disabled:text-[#b09e8d] disabled:no-underline disabled:cursor-not-allowed ml-1">
+                  {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : 'Get OTP by email'}
+                </button>
               </div>
 
               {/* Error */}
@@ -237,7 +184,6 @@ export default function LoginPage() {
               </button>
 
             </form>
-            )}
           </div>
         </main>
 
