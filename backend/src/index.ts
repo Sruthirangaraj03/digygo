@@ -274,6 +274,61 @@ runMigrations()
     setTimeout(() => checkDomainExpiry().catch(() => null), 60_000);
     console.log('🔐  Domain SSL expiry monitor started (24h interval)');
 
+    // Subscription reminders — nightly. Emails the owner + admin@digygo.in at
+    // 7 / 3 / 1 days before expiry, on the expiry day, and daily while overdue.
+    // In-memory de-dupe (tenant:bucket:date) prevents double-sends within a process/day.
+    const reminderSent = new Set<string>();
+    const checkSubscriptionExpiry = async () => {
+      try {
+        const r = await dbQuery(`
+          SELECT t.id, t.name, t.subscription_expires_at AS exp, t.billing_cycle, t.plan_price,
+                 (SELECT email FROM users u WHERE u.tenant_id=t.id AND u.is_owner=TRUE AND u.is_active=TRUE LIMIT 1) AS owner_email
+          FROM tenants t
+          WHERE t.is_active = TRUE
+            AND t.subscription_status <> 'suspended'
+            AND t.subscription_expires_at IS NOT NULL
+            AND t.subscription_expires_at < NOW() + INTERVAL '8 days'
+        `);
+        const adminTo = process.env.ADMIN_ALERT_EMAIL ?? 'admin@digygo.in';
+        const today = new Date().toISOString().slice(0, 10);
+        for (const t of r.rows) {
+          const ms = new Date(t.exp).getTime() - Date.now();
+          const daysLeft = Math.ceil(ms / 86_400_000);
+          const overdue = ms <= 0;
+          // Only the milestone days (pre-expiry) or any overdue day
+          if (!overdue && ![7, 3, 1, 0].includes(daysLeft)) continue;
+          const bucket = overdue ? 'overdue' : `d${daysLeft}`;
+          const key = `${t.id}:${bucket}:${today}`;
+          if (reminderSent.has(key)) continue;
+          reminderSent.add(key);
+
+          const when = new Date(t.exp).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+          const cycle = t.billing_cycle === 'yearly' ? 'Yearly' : 'Monthly';
+          const amount = t.plan_price != null ? ` (₹${t.plan_price})` : '';
+          const subject = overdue
+            ? `⚠️ Subscription expired: ${t.name}`
+            : daysLeft === 0
+              ? `Subscription expires today: ${t.name}`
+              : `Subscription renews in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}: ${t.name}`;
+          const body = `<p><strong>${t.name}</strong> — ${cycle} plan${amount}.</p>
+            <p>${overdue
+              ? `The subscription <strong>expired on ${when}</strong>. The CRM is locked, but leads and automations are still running — renew to restore access.`
+              : `The subscription is due on <strong>${when}</strong>.`}</p>
+            <p>Renew from the DigyGo super-admin panel.</p>`;
+
+          for (const to of [t.owner_email, adminTo].filter(Boolean)) {
+            await sendEmail({ to, subject, html: body }).catch(() => null);
+          }
+          console.log(`[sub-reminder] ${bucket} sent for ${t.name} (exp ${when})`);
+        }
+      } catch (err) {
+        console.error('[sub-reminder] check failed:', err);
+      }
+    };
+    setInterval(() => checkSubscriptionExpiry(), 24 * 60 * 60_000);
+    setTimeout(() => checkSubscriptionExpiry().catch(() => null), 75_000);
+    console.log('💳  Subscription reminder worker started (24h interval)');
+
     httpServer.listen(PORT, () => {
       console.log(`\n🚀  DigyGo CRM Backend running on http://localhost:${PORT}`);
       console.log(`📊  Health: http://localhost:${PORT}/health`);
