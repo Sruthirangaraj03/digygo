@@ -1076,18 +1076,46 @@ function NoteModal({ leadId, onClose, onCreated }: { leadId: string; onClose: ()
 }
 
 // ─── Follow-Up Modal ───────────────────────────────────────────────────────────
-function FollowUpModal({ leadId, onClose, onCreated, onNoteCreated }: { leadId: string; onClose: () => void; onCreated?: (fu: any) => void; onNoteCreated?: (note: any) => void }) {
+function FollowUpModal({ leadId, onClose, onCreated, onNoteCreated, editItem, onUpdated }: {
+  leadId: string; onClose: () => void; onCreated?: (fu: any) => void; onNoteCreated?: (note: any) => void;
+  editItem?: { kind: 'note' | 'followup'; id: string; title?: string; notes?: string; dueAt?: string };
+  onUpdated?: (item: any) => void;
+}) {
   const { addFollowUp } = useCrmStore();
   const currentUser = useAuthStore((s) => s.currentUser);
-  const [isNote, setIsNote] = useState(false);
-  const [title, setTitle] = useState('');
-  const [notes, setNotes] = useState('');
-  const [dueAt, setDueAt] = useState('');
+  const isEdit = !!editItem;
+  const [isNote, setIsNote] = useState(editItem?.kind === 'note');
+  const [title, setTitle] = useState(editItem?.title ?? '');
+  const [notes, setNotes] = useState(editItem?.notes ?? '');
+  const [dueAt, setDueAt] = useState(editItem?.dueAt ?? '');
   const [saving, setSaving] = useState(false);
   const inputCls = 'w-full border border-gray-200 rounded-xl px-4 py-2.5 text-[13px] text-[#1c1410] outline-none focus:border-primary/40 placeholder:text-gray-300';
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // ── EDIT existing note / follow-up (PATCH) ──
+    if (isEdit && editItem) {
+      if (editItem.kind === 'note') {
+        const content = notes.trim() || title.trim();
+        if (!content) { toast.error('Note content is required'); return; }
+        setSaving(true);
+        try {
+          await api.patch(`/api/leads/${leadId}/notes/${editItem.id}`, { title: title.trim() || undefined, content });
+          onUpdated?.({ id: editItem.id, title: title.trim(), content });
+          toast.success('Note updated'); onClose();
+        } catch (err: any) { toast.error(err.message ?? 'Failed to update note'); } finally { setSaving(false); }
+        return;
+      }
+      if (!title.trim()) { toast.error('Title is required'); return; }
+      setSaving(true);
+      try {
+        const due = dueAt ? new Date(dueAt).toISOString() : undefined;
+        await api.patch(`/api/leads/${leadId}/followups/${editItem.id}`, { title: title.trim(), description: notes.trim(), due_at: due });
+        onUpdated?.({ id: editItem.id, title: title.trim(), description: notes.trim(), dueAt: due });
+        toast.success('Follow-up updated'); onClose();
+      } catch (err: any) { toast.error(err.message ?? 'Failed to update follow-up'); } finally { setSaving(false); }
+      return;
+    }
     if (isNote) {
       const content = notes.trim() || title.trim();
       if (!content) { toast.error('Note content is required'); return; }
@@ -1139,20 +1167,22 @@ function FollowUpModal({ leadId, onClose, onCreated, onNoteCreated }: { leadId: 
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-black/5">
-          <h3 className="font-headline font-bold text-[#1c1410] text-[17px]">{isNote ? 'Add Note' : 'Set Follow-Up'}</h3>
+          <h3 className="font-headline font-bold text-[#1c1410] text-[17px]">{isEdit ? (isNote ? 'Edit Note' : 'Edit Follow-Up') : (isNote ? 'Add Note' : 'Set Follow-Up')}</h3>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-[#7a6b5c]"><X className="w-4 h-4" /></button>
         </div>
         <form onSubmit={submit} className="px-6 py-5 space-y-4">
-          {/* Note toggle */}
-          <label className="flex items-center gap-2.5 cursor-pointer select-none w-fit">
-            <input
-              type="checkbox"
-              checked={isNote}
-              onChange={(e) => setIsNote(e.target.checked)}
-              className="w-4 h-4 rounded accent-primary cursor-pointer"
-            />
-            <span className="text-[13px] font-medium text-[#6b4f30]">Save as note instead of follow-up</span>
-          </label>
+          {/* Note toggle — hidden in edit mode (can't convert a note↔follow-up) */}
+          {!isEdit && (
+            <label className="flex items-center gap-2.5 cursor-pointer select-none w-fit">
+              <input
+                type="checkbox"
+                checked={isNote}
+                onChange={(e) => setIsNote(e.target.checked)}
+                className="w-4 h-4 rounded accent-primary cursor-pointer"
+              />
+              <span className="text-[13px] font-medium text-[#6b4f30]">Save as note instead of follow-up</span>
+            </label>
+          )}
 
           <div>
             <label className="text-[12px] font-semibold text-[#1c1410] mb-1.5 block">
@@ -1175,7 +1205,7 @@ function FollowUpModal({ leadId, onClose, onCreated, onNoteCreated }: { leadId: 
           <div className="flex items-center justify-end gap-3 pt-1">
             <button type="button" onClick={onClose} className="px-5 py-2 rounded-xl text-[13px] font-semibold text-[#7a6b5c] hover:bg-gray-100 transition-colors">Cancel</button>
             <button type="submit" disabled={saving} className="px-6 py-2 rounded-xl text-[13px] font-bold text-white hover:-translate-y-0.5 transition-all disabled:opacity-60" style={{ background: 'linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, var(--brand-light) 100%)', boxShadow: '0 4px 14px rgba(234,88,12,0.3)' }}>
-              {saving ? 'Saving…' : isNote ? 'Save Note' : 'Schedule'}
+              {saving ? 'Saving…' : isEdit ? 'Save Changes' : isNote ? 'Save Note' : 'Schedule'}
             </button>
           </div>
         </form>
@@ -1331,31 +1361,11 @@ function EditLeadModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
   const [leadCalls, setLeadCalls] = useState<any[]>([]);
   const [playingCallId, setPlayingCallId] = useState<string | null>(null);
   const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
-  const [editingFuId, setEditingFuId] = useState<string | null>(null);
-  const [editFuTitle, setEditFuTitle] = useState('');
-  const [editFuDue, setEditFuDue] = useState('');
-
-  const saveFuEdit = async (fuId: string) => {
-    if (!editFuTitle.trim() || !editFuDue) return;
-    const due = new Date(editFuDue).toISOString();
-    try {
-      await api.patch(`/api/leads/${lead.id}/followups/${fuId}`, { title: editFuTitle.trim(), due_at: due });
-      setLeadFollowUps((prev) => prev.map((f) => f.id === fuId ? { ...f, note: editFuTitle.trim(), dueAt: due } : f));
-      setEditingFuId(null);
-      toast.success('Follow-up updated');
-    } catch { toast.error('Failed to update follow-up'); }
-  };
-  const deleteFu = async (fuId: string) => {
-    try {
-      await api.delete(`/api/leads/${lead.id}/followups/${fuId}`);
-      setLeadFollowUps((prev) => prev.filter((f) => f.id !== fuId));
-      toast.success('Follow-up deleted');
-    } catch { toast.error('Failed to delete follow-up'); }
-  };
+  const [editFu, setEditFu] = useState<{ id: string; title: string; notes: string; dueAt: string } | null>(null);
   useEffect(() => {
     api.get<any[]>(`/api/leads/${lead.id}/notes`).then(setLeadNotes).catch(() => null);
     api.get<any[]>(`/api/leads/${lead.id}/followups`).then((data) =>
-      setLeadFollowUps(data.map((f) => ({ id: f.id, leadId: lead.id, dueAt: f.due_at, note: f.title, completed: f.completed, assignedTo: f.assigned_to, createdAt: f.created_at })))
+      setLeadFollowUps(data.map((f) => ({ id: f.id, leadId: lead.id, dueAt: f.due_at, note: f.title, description: f.description, completed: f.completed, assignedTo: f.assigned_to, createdAt: f.created_at })))
     ).catch(() => null);
     api.get<any[]>(`/api/calls/lead/${lead.id}`).then(setLeadCalls).catch(() => null);
   }, [lead.id]);
@@ -1618,7 +1628,7 @@ function EditLeadModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
                               <p className="text-[13px] font-semibold text-[#1c1410] truncate">{f.note || 'Follow-up'}</p>
                               <div className="flex items-center gap-1 shrink-0">
                                 <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full', badge.cls)}>{badge.label}</span>
-                                <button onClick={() => { setEditingFuId(f.id); setEditFuTitle(f.note || ''); setEditFuDue(format(new Date(f.dueAt), "yyyy-MM-dd'T'HH:mm")); }}
+                                <button onClick={() => setEditFu({ id: f.id, title: f.note || '', notes: f.description || '', dueAt: format(new Date(f.dueAt), "yyyy-MM-dd'T'HH:mm") })}
                                   className="p-1 rounded text-[#7a6b5c] hover:bg-white hover:text-primary" title="Edit follow-up"><Pencil className="w-3.5 h-3.5" /></button>
                               </div>
                             </div>
@@ -1633,33 +1643,14 @@ function EditLeadModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
             </div>
           )}
 
-          {/* Edit Follow-up modal (centered) */}
-          {editingFuId && (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setEditingFuId(null)}>
-              <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                  <h3 className="font-bold text-[#1c1410]">Edit Follow-up</h3>
-                  <button onClick={() => setEditingFuId(null)} className="p-1.5 rounded-lg hover:bg-gray-100"><X className="w-4 h-4" /></button>
-                </div>
-                <div className="p-5 space-y-3">
-                  <div>
-                    <label className="text-xs font-semibold text-[#1c1410] mb-1 block">Title</label>
-                    <input value={editFuTitle} onChange={(e) => setEditFuTitle(e.target.value)} autoFocus
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[13px] text-[#1c1410] outline-none focus:border-primary/40" placeholder="Follow-up title" />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-[#1c1410] mb-1 block">Follow-up date &amp; time</label>
-                    <input type="datetime-local" value={editFuDue} onChange={(e) => setEditFuDue(e.target.value)}
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[13px] text-[#1c1410] outline-none focus:border-primary/40" />
-                  </div>
-                </div>
-                <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-100">
-                  <button onClick={() => setEditingFuId(null)} className="px-4 py-2 rounded-lg text-sm text-gray-600 bg-gray-100 hover:bg-gray-200">Cancel</button>
-                  <button onClick={() => editingFuId && saveFuEdit(editingFuId)} disabled={!editFuTitle.trim() || !editFuDue}
-                    className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary/90 disabled:opacity-50">Save Changes</button>
-                </div>
-              </div>
-            </div>
+          {/* Edit Follow-up — reuses the same modal as Add */}
+          {editFu && (
+            <FollowUpModal
+              leadId={lead.id}
+              editItem={{ kind: 'followup', id: editFu.id, title: editFu.title, notes: editFu.notes, dueAt: editFu.dueAt }}
+              onUpdated={(u) => setLeadFollowUps((prev) => prev.map((f) => f.id === u.id ? { ...f, note: u.title, description: u.description, dueAt: u.dueAt } : f))}
+              onClose={() => setEditFu(null)}
+            />
           )}
 
 
@@ -2231,26 +2222,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
   const [leadCalls, setLeadCalls] = useState<any[]>([]);
   const [playingCallId, setPlayingCallId] = useState<string | null>(null);
   const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
-  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
-  const [editNoteText, setEditNoteText] = useState('');
-
-  const saveNoteEdit = async (noteId: string) => {
-    const content = editNoteText.trim();
-    if (!content) return;
-    try {
-      await api.patch(`/api/leads/${lead.id}/notes/${noteId}`, { content });
-      setLeadNotes((prev) => prev.map((n) => n.id === noteId ? { ...n, content } : n));
-      setEditingNoteId(null);
-      toast.success('Note updated');
-    } catch { toast.error('Failed to update note'); }
-  };
-  const deleteNoteEntry = async (noteId: string) => {
-    try {
-      await api.delete(`/api/leads/${lead.id}/notes/${noteId}`);
-      setLeadNotes((prev) => prev.filter((n) => n.id !== noteId));
-      toast.success('Note deleted');
-    } catch { toast.error('Failed to delete note'); }
-  };
+  const [editNote, setEditNote] = useState<{ id: string; title: string; content: string } | null>(null);
 
   const { calendarEvents, updateLead, deleteLead, addActivity, pipelines, tags: storeTags, staff, bookingLinks, addCalendarEvent } = useCrmStore();
   const waPersonalStatus = useCrmStore((s) => s.waPersonalStatus);
@@ -2281,7 +2253,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
   useEffect(() => {
     api.get<any[]>(`/api/leads/${lead.id}/notes`).then(setLeadNotes).catch(() => null);
     api.get<any[]>(`/api/leads/${lead.id}/followups`).then((data) =>
-      setLeadFollowUps(data.map((f) => ({ id: f.id, leadId: lead.id, dueAt: f.due_at, note: f.title, completed: f.completed, assignedTo: f.assigned_to, createdAt: f.created_at })))
+      setLeadFollowUps(data.map((f) => ({ id: f.id, leadId: lead.id, dueAt: f.due_at, note: f.title, description: f.description, completed: f.completed, assignedTo: f.assigned_to, createdAt: f.created_at })))
     ).catch(() => null);
     api.get<any[]>(`/api/leads/${lead.id}/activities`).then((data) =>
       setLeadActivities(data.map((a) => ({ id: a.id, leadId: lead.id, type: a.type, title: a.title, detail: a.detail, timestamp: a.created_at, createdBy: a.created_by_name ?? a.created_by })))
@@ -2885,7 +2857,7 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
                         <div className="flex items-start justify-between gap-2">
                           <p className="text-[13px] font-semibold text-[#1c1410]">{entry.title}</p>
                           {isNote && canEditLead && (
-                            <button onClick={() => { setEditingNoteId(noteId); setEditNoteText(entry.detail ?? ''); }}
+                            <button onClick={() => setEditNote({ id: noteId, title: entry.title === 'Note' ? '' : entry.title, content: entry.detail ?? '' })}
                               className="p-1 rounded text-[#7a6b5c] hover:bg-[var(--accent-tint)] hover:text-primary shrink-0" title="Edit note"><Pencil className="w-3.5 h-3.5" /></button>
                           )}
                         </div>
@@ -2907,25 +2879,14 @@ export function LeadDetailPanel({ lead, onClose, onLeadUpdated }: {
           </div>
         )}
 
-        {/* Edit Note modal (centered) */}
-        {editingNoteId && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setEditingNoteId(null)}>
-            <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                <h3 className="font-bold text-[#1c1410]">Edit Note</h3>
-                <button onClick={() => setEditingNoteId(null)} className="p-1.5 rounded-lg hover:bg-gray-100"><X className="w-4 h-4" /></button>
-              </div>
-              <div className="p-5">
-                <textarea value={editNoteText} onChange={(e) => setEditNoteText(e.target.value)} rows={6} autoFocus
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[13px] text-[#1c1410] outline-none focus:border-primary/40 resize-none" placeholder="Note content" />
-              </div>
-              <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-100">
-                <button onClick={() => setEditingNoteId(null)} className="px-4 py-2 rounded-lg text-sm text-gray-600 bg-gray-100 hover:bg-gray-200">Cancel</button>
-                <button onClick={() => editingNoteId && saveNoteEdit(editingNoteId)} disabled={!editNoteText.trim()}
-                  className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary/90 disabled:opacity-50">Save Changes</button>
-              </div>
-            </div>
-          </div>
+        {/* Edit Note — reuses the same modal as Add */}
+        {editNote && (
+          <FollowUpModal
+            leadId={lead.id}
+            editItem={{ kind: 'note', id: editNote.id, title: editNote.title, notes: editNote.content }}
+            onUpdated={(u) => setLeadNotes((prev) => prev.map((n) => n.id === u.id ? { ...n, title: u.title, content: u.content } : n))}
+            onClose={() => setEditNote(null)}
+          />
         )}
 
         {/* ── Calls ── */}
