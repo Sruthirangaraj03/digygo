@@ -273,7 +273,7 @@ function PipelineCard({ pipeline, onEdit, onClone, onDelete, onView, canManage }
     <>
       <div
         onClick={onView}
-        className="bg-white rounded-2xl border border-black/[0.06] card-shadow hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden flex flex-col cursor-pointer"
+        className="bg-white rounded-2xl border border-black/[0.06] card-shadow hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 flex flex-col cursor-pointer"
       >
         {/* Header */}
         <div className="px-5 pt-5 pb-4 border-b border-black/[0.04] shrink-0">
