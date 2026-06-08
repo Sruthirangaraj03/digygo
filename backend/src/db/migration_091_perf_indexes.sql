@@ -1,7 +1,8 @@
 -- migration_091_perf_indexes
 -- Performance indexes for large tenants (thousands of leads/contacts after CRM imports).
 -- All IF NOT EXISTS so the migration is idempotent and safe to re-run.
--- NOTE: no semicolons inside comments (the migrate.ts splitter splits on every ';').
+-- NOTE: never write a semicolon character inside a comment here — the migrate
+-- splitter splits on it and corrupts the following statement.
 
 -- leads: the list query filters tenant_id + is_deleted and orders by created_at DESC.
 CREATE INDEX IF NOT EXISTS idx_leads_tenant_active_created
