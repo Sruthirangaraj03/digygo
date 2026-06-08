@@ -175,6 +175,13 @@ export function AppHeader({ onMenuClick }: { onMenuClick: () => void }) {
           )}
         </div>
 
+        {/* Desktop: DigyGo logo for super admin (the left sidebar that held it is hidden on /admin) */}
+        {currentUser?.role === 'super_admin' && (
+          <div className="hidden md:flex items-center shrink-0 mr-3">
+            <img src="/digygo-logo.png" alt="DigyGo" className="h-10 object-contain" />
+          </div>
+        )}
+
         {/* Tab nav — desktop only in full, scrollable on mobile */}
         <div className="flex-1 flex items-center overflow-x-auto scrollbar-hide">
           {subNav ? (
