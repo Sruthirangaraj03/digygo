@@ -120,7 +120,7 @@ function auditLog(
 
 // ── 2FA (login PIN) helpers ───────────────────────────────────────────────────
 const DEVICE_COOKIE = 'digygo_device';
-const OTP_TTL_MS = 10 * 60 * 1000;       // emailed one-time PIN valid 10 minutes
+const OTP_TTL_MS = 3 * 60 * 1000;        // emailed one-time PIN valid 3 minutes
 const OTP_MAX_ATTEMPTS = 5;
 const PIN_MAX_ATTEMPTS = 5;              // admin-set static PIN
 const PIN_LOCK_MS = 15 * 60 * 1000;     // lock the static PIN 15 min after too many tries
@@ -155,7 +155,7 @@ async function sendOtpEmail(user: { email: string; tenant_id: string | null }, o
     html: `<div style="font-family:Arial,sans-serif;max-width:420px;margin:0 auto;text-align:center">
              <p style="color:#5c5245;font-size:14px">Your ${brand} login PIN is:</p>
              <p style="font-size:34px;font-weight:800;letter-spacing:8px;color:#1c1410;margin:12px 0">${otp}</p>
-             <p style="color:#9c8f84;font-size:12px">This PIN expires in 10 minutes. If you didn't try to log in, ignore this email.</p>
+             <p style="color:#9c8f84;font-size:12px">This PIN expires in 3 minutes. If you didn't try to log in, ignore this email.</p>
            </div>`,
   });
 }
