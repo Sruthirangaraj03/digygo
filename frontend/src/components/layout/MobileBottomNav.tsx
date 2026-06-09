@@ -18,7 +18,7 @@ export function MobileBottomNav() {
     location.pathname === path || location.pathname.startsWith(path + '/');
 
   return (
-    <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-white border-t border-black/[0.07] safe-area-pb"
+    <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-black/[0.07] safe-area-pb"
       style={{ boxShadow: '0 -1px 0 rgba(0,0,0,0.04), 0 -4px 16px rgba(0,0,0,0.06)' }}>
       <div className="flex items-stretch h-16">
         {bottomItems.map((item) => {
