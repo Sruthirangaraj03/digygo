@@ -402,6 +402,10 @@ router.post('/meta/webhook', async (req: Request, res: Response) => {
       }
     }
 
+    // Leadgen fetches require a PAGE token — a user token returns #190 and the lead is dropped.
+    // Derive page tokens once per tenant and reuse them across this webhook batch.
+    const pageTokenCache = new Map<string, Map<string, string>>(); // tenantId -> (pageId -> pageToken)
+
     await Promise.allSettled(allChanges.map(async ({ pageId, metaFormId, leadgenId }) => {
       try {
 
@@ -440,7 +444,14 @@ router.post('/meta/webhook', async (req: Request, res: Response) => {
             return;
           }
 
-          const token = decrypt(mi.access_token);
+          // Use the PAGE token for this page — fetching leadgen with the user token returns #190.
+          const userToken = decrypt(mi.access_token);
+          let ptMap = pageTokenCache.get(mi.tenant_id);
+          if (!ptMap) {
+            ptMap = await buildPageTokenMap(userToken).catch(() => new Map<string, string>());
+            pageTokenCache.set(mi.tenant_id, ptMap);
+          }
+          const token = (pageId && ptMap.get(pageId)) || userToken; // fall back to user token only if no page token
 
           // 2. Fetch field_data from Meta
           const leadData = await graphGet(`/${leadgenId}?fields=field_data`, token);
