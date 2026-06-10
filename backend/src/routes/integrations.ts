@@ -1903,6 +1903,24 @@ router.delete('/configs/:integrationId', checkPermission('integrations:manage'),
 });
 
 // ── Meta polling worker (backup for missed webhooks, runs every 5 min) ────────
+// Paginated leadgen fetch over a window (since = epoch seconds). Returns ALL leads in the
+// window (not just the first page) so the poll can re-scan a lookback and self-heal any
+// missed lead. Surfaces the first Graph error (e.g. #190) so token failures are detected.
+async function fetchLeadsSince(formId: string, token: string, since: number): Promise<{ leads: any[]; error: any }> {
+  const out: any[] = [];
+  let path = `/${formId}/leads?fields=id,field_data&since=${since}&limit=100`;
+  for (let i = 0; i < 50; i++) { // safety cap: 50 pages
+    const r = await graphGet(path, token);
+    if (r && r.error) return { leads: out, error: r.error };
+    const data: any[] = r?.data ?? [];
+    out.push(...data);
+    const after = r?.paging?.cursors?.after;
+    if (!after || data.length === 0) break;
+    path = `/${formId}/leads?fields=id,field_data&since=${since}&limit=100&after=${encodeURIComponent(after)}`;
+  }
+  return { leads: out, error: null };
+}
+
 // Records Meta ingestion health per tenant. On auth failure (invalid/expired token) it
 // flags needs_reconnect and alerts the owner (deduped to once / 24h). On success it clears
 // the flag and stamps last_success_at. Best-effort; never throws.
@@ -1956,22 +1974,17 @@ export async function pollMetaLeads(): Promise<void> {
         // Leadgen (/{form}/leads) requires a PAGE token — the user token returns #190.
         // Fall back to the user token only if no page token could be derived.
         const token = (mf.page_id && ptMap.get(mf.page_id)) || userTok;
-        // On first run use activated_at as the cursor so only leads submitted
-        // AFTER the user turned Auto ON are fetched — no historical mass-import.
-        // Subsequent runs use last_sync_at with a 60-second overlap for clock skew.
-        const since = mf.last_sync_at
-          ? Math.floor(new Date(mf.last_sync_at).getTime() / 1000) - 60
-          : Math.floor(new Date(mf.activated_at ?? Date.now()).getTime() / 1000);
+        // SELF-HEALING window: re-scan a fixed lookback every run (NOT a sliding last_sync
+        // cursor — that permanently stranded leads missed in a window). Dedup-by-leadgen_id
+        // below makes re-scanning safe, so any lead the webhook missed or a restart skipped
+        // is recovered within the next poll. Never go before the form was activated.
+        const LOOKBACK_S = 72 * 3600; // 3 days
+        const activatedFloor = Math.floor(new Date(mf.activated_at ?? mf.created_at ?? Date.now()).getTime() / 1000);
+        const since = Math.max(Math.floor(Date.now() / 1000) - LOOKBACK_S, activatedFloor);
 
-        // Request `id` (leadgen_id) so we can do exact idempotency checks
-        const leadsRes = await graphGet(
-          `/${mf.form_id}/leads?fields=id,field_data&since=${since}`,
-          token
-        );
-        // Surface Graph errors instead of silently swallowing them. An auth error (190 /
-        // OAuthException) means the token is dead → flag the tenant for reconnect.
-        if (leadsRes && leadsRes.error) {
-          const ge = leadsRes.error;
+        // Paginated fetch of the whole window; surfaces #190 for token-health detection.
+        const { leads: leadsArr, error: ge } = await fetchLeadsSince(mf.form_id, token, since);
+        if (ge) {
           console.error(`[Meta poll] form ${mf.form_id} graph error:`, ge.message);
           if (ge.code === 190 || ge.type === 'OAuthException') {
             tenantStatus.set(tid, { ok: tenantStatus.get(tid)?.ok ?? false, err: ge.message });
@@ -1979,8 +1992,7 @@ export async function pollMetaLeads(): Promise<void> {
           continue;
         }
         if (tenantStatus.get(tid)?.ok !== true) tenantStatus.set(tid, { ok: true, err: tenantStatus.get(tid)?.err ?? null });
-        const leads: Array<{ id: string; field_data: Array<{ name: string; values: string[] }> }> =
-          leadsRes.data ?? [];
+        const leads: Array<{ id: string; field_data: Array<{ name: string; values: string[] }> }> = leadsArr;
 
         const mapping: Array<{ fb_field: string; crm_field: string }> = mf.field_mapping ?? [];
         let insertedCount = 0;

@@ -226,8 +226,9 @@ runMigrations()
     setInterval(() => processBroadcastQueue().catch(() => null), 30_000);
     console.log('📡  Broadcast queue worker started (30s interval)');
 
+    setTimeout(() => pollMetaLeads().catch(() => null), 15_000); // run shortly after boot so a restart never skips a cycle
     setInterval(() => pollMetaLeads().catch(() => null), 5 * 60_000);
-    console.log('📘  Meta leads poll worker started (5min interval)');
+    console.log('📘  Meta leads poll worker started (5min interval, 72h self-healing lookback)');
 
     setInterval(() => processScheduledTriggers().catch(() => null), 60_000);
     console.log('📅  Schedule trigger worker started (60s interval)');
