@@ -319,8 +319,8 @@ async function fetchAndInsertAllLeads(tenantId: string, token: string): Promise<
 
           // 4. Insert new lead
           const newLead = await query(
-            `INSERT INTO leads (tenant_id, name, email, phone, source, source_ref, meta_form_id, pipeline_id, stage_id, created_at)
-             VALUES ($1,$2,$3,$4,'meta_form',$5,$6,$7,$8,$9) RETURNING *`,
+            `INSERT INTO leads (tenant_id, name, email, phone, source, source_ref, meta_form_id, pipeline_id, stage_id, created_at, meta_created_at)
+             VALUES ($1,$2,$3,$4,'meta_form',$5,$6,$7,$8,$9,$9) RETURNING *`,
             [tenantId, name, email, phone, leadgenId, mf.form_id, mf.pipeline_id ?? null, mf.stage_id ?? null, createdAt]
           );
           const newLeadRow = newLead.rows[0];
@@ -329,10 +329,7 @@ async function fetchAndInsertAllLeads(tenantId: string, token: string): Promise<
           if (Object.keys(customValues).length > 0) {
             await storeCustomValues(newLeadRow.id, tenantId, customValues).catch(() => null);
           }
-          const leadCtx = { ...newLeadRow, form_id: newLeadRow.meta_form_id, form_name: mf.form_name };
-          sendNewLeadNotification(tenantId, newLeadRow, null).catch(() => null);
-          setImmediate(() => triggerWorkflows('lead_created', leadCtx, tenantId, 'historical').catch(() => null));
-          setImmediate(() => triggerWorkflows('meta_form',    leadCtx, tenantId, 'historical').catch(() => null));
+          // Bulk historical import is SILENT: insert only — no automation replay, no notification.
           return 1;
         })
       );
@@ -453,8 +450,8 @@ router.post('/meta/webhook', async (req: Request, res: Response) => {
           }
           const token = (pageId && ptMap.get(pageId)) || userToken; // fall back to user token only if no page token
 
-          // 2. Fetch field_data from Meta
-          const leadData = await graphGet(`/${leadgenId}?fields=field_data`, token);
+          // 2. Fetch field_data (+ created_time for the original submission timestamp) from Meta
+          const leadData = await graphGet(`/${leadgenId}?fields=created_time,field_data`, token);
           // Leak 1 fix: expired/invalid token returns error — skip rather than insert a blank lead
           if (leadData.error) {
             console.error(`[Meta webhook] Graph API error for leadgen ${leadgenId}:`, leadData.error.message ?? leadData.error);
@@ -532,11 +529,13 @@ router.post('/meta/webhook', async (req: Request, res: Response) => {
             setImmediate(() => triggerWorkflows('meta_form', existingCtx, mf.tenant_id, 'webhook', { forceReEntry: dataChanged }).catch((e) => console.error('[webhook trigger existing]', e)));
           } else {
             isNew = true;
-            // Insert with leadgen_id as source_ref — guarantees idempotency on re-delivery
+            const metaCreatedIso = leadData.created_time ? parseMetaTimestamp(leadData.created_time) : null;
+            // Insert with leadgen_id as source_ref — guarantees idempotency on re-delivery.
+            // created_at stays NOW() (real-time arrival); meta_created_at records the Meta submission time.
             const ins = await query(
-              `INSERT INTO leads (tenant_id, name, email, phone, source, source_ref, meta_form_id, pipeline_id, stage_id)
-               VALUES ($1,$2,$3,$4,'meta_form',$5,$6,$7,$8) RETURNING *`,
-              [mf.tenant_id, name, email, phone, leadgenId, mf.form_id, mf.pipeline_id ?? null, mf.stage_id ?? null]
+              `INSERT INTO leads (tenant_id, name, email, phone, source, source_ref, meta_form_id, pipeline_id, stage_id, meta_created_at)
+               VALUES ($1,$2,$3,$4,'meta_form',$5,$6,$7,$8,$9) RETURNING *`,
+              [mf.tenant_id, name, email, phone, leadgenId, mf.form_id, mf.pipeline_id ?? null, mf.stage_id ?? null, metaCreatedIso]
             );
             leadId = ins.rows[0]?.id;
             if (ins.rows[0]) {
@@ -1392,8 +1391,8 @@ router.post('/meta/forms/:formId/import', checkPermission('meta_forms:create'), 
         const createdAt = parseMetaTimestamp(leadEntry.created_time);
 
         const newLead = await query(
-          `INSERT INTO leads (tenant_id, name, email, phone, source, source_ref, meta_form_id, pipeline_id, stage_id, created_at)
-           VALUES ($1,$2,$3,$4,'meta_form',$5,$6,$7,$8,$9)
+          `INSERT INTO leads (tenant_id, name, email, phone, source, source_ref, meta_form_id, pipeline_id, stage_id, created_at, meta_created_at)
+           VALUES ($1,$2,$3,$4,'meta_form',$5,$6,$7,$8,$9,$9)
            ON CONFLICT (source, source_ref) WHERE source_ref IS NOT NULL AND source_ref <> ''
            DO NOTHING
            RETURNING *`,
@@ -1406,10 +1405,8 @@ router.post('/meta/forms/:formId/import', checkPermission('meta_forms:create'), 
         if (Object.keys(customValues).length > 0) {
           await storeCustomValues(newLeadRow.id as string, tenantId, customValues);
         }
-        const importCtx = { ...newLeadRow, form_id: newLeadRow.meta_form_id, form_name: mf.form_name };
-        sendNewLeadNotification(tenantId, newLeadRow, null).catch(() => null);
-        setImmediate(() => triggerWorkflows('lead_created', importCtx, tenantId, 'import').catch(() => null));
-        setImmediate(() => triggerWorkflows('meta_form',    importCtx, tenantId, 'import').catch(() => null));
+        // Historical import is SILENT: insert only — no automation replay and no new-lead
+        // notification. Avoids assign/route/webhook/notification blasts on a bulk backlog.
       } catch (leadErr: any) {
         console.error('[form-import] lead error:', leadErr.message);
         skipped++;
