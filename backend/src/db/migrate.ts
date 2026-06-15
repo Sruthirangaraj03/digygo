@@ -98,6 +98,7 @@ const MIGRATIONS = [
   'migration_096_lead_stage_history.sql',
   'migration_097_superfone_enabled.sql',
   'migration_098_meta_created_at.sql',
+  'migration_099_phone_unique_per_pipeline.sql',
 ];
 
 // Split SQL file into individual statements and execute each one separately.

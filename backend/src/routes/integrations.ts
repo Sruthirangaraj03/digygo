@@ -307,11 +307,13 @@ async function fetchAndInsertAllLeads(tenantId: string, token: string): Promise<
             return 0; // already active
           }
 
-          // 3. Email/phone dedup
+          // 3. Email/phone dedup — scoped to the form's pipeline (multi-pipeline: a contact may
+          //    exist once per pipeline). Phone/email-only when the form has no pipeline.
           const existing = (email || phone) ? await query(
             `SELECT id FROM leads WHERE tenant_id=$1 AND is_deleted=FALSE
-             AND (($2::text<>'' AND LOWER(email)=$2) OR ($3::text<>'' AND phone=$3)) LIMIT 1`,
-            [tenantId, email, phone]
+             AND (($2::text<>'' AND LOWER(email)=$2) OR ($3::text<>'' AND phone=$3))
+             AND ($4::uuid IS NULL OR pipeline_id = $4::uuid) LIMIT 1`,
+            [tenantId, email, phone, mf.pipeline_id ?? null]
           ) : { rows: [] };
           if (existing.rows[0]) return 0;
 
@@ -469,11 +471,13 @@ router.post('/meta/webhook', async (req: Request, res: Response) => {
           // Parse + normalize using shared utility (phone normalized, email lowercased)
           const { name, email, phone, customValues } = parseMetaFieldData(fieldData, mapping);
 
-          // 4. Email/phone dedup — update existing lead instead of creating duplicate
+          // 4. Email/phone dedup — scoped to the form's pipeline (multi-pipeline support).
+          //    A submission for a different pipeline creates a new lead instead of updating.
           const existing = (email || phone) ? await query(
             `SELECT id FROM leads WHERE tenant_id=$1 AND is_deleted=FALSE
-             AND (($2::text<>'' AND LOWER(email)=$2) OR ($3::text<>'' AND phone=$3)) LIMIT 1`,
-            [mf.tenant_id, email, phone]
+             AND (($2::text<>'' AND LOWER(email)=$2) OR ($3::text<>'' AND phone=$3))
+             AND ($4::uuid IS NULL OR pipeline_id = $4::uuid) LIMIT 1`,
+            [mf.tenant_id, email, phone, mf.pipeline_id ?? null]
           ) : { rows: [] };
 
           let leadId: string | null = null;
@@ -1380,11 +1384,12 @@ router.post('/meta/forms/:formId/import', checkPermission('meta_forms:create'), 
           continue;
         }
 
-        // Dedup by email/phone
+        // Dedup by email/phone — scoped to the target pipeline (multi-pipeline support).
         const dup = (email || phone) ? await query(
           `SELECT id FROM leads WHERE tenant_id=$1 AND is_deleted=FALSE
-           AND (($2::text<>'' AND LOWER(email)=$2) OR ($3::text<>'' AND phone=$3)) LIMIT 1`,
-          [tenantId, email, phone]
+           AND (($2::text<>'' AND LOWER(email)=$2) OR ($3::text<>'' AND phone=$3))
+           AND ($4::uuid IS NULL OR pipeline_id = $4::uuid) LIMIT 1`,
+          [tenantId, email, phone, effectivePipelineId]
         ) : { rows: [] };
         if (dup.rows[0]) { skipped++; continue; }
 
@@ -2030,11 +2035,12 @@ export async function pollMetaLeads(): Promise<void> {
             mapping
           );
 
-          // 3. Email/phone dedup
+          // 3. Email/phone dedup — scoped to the form's pipeline (multi-pipeline support).
           const existing = (email || phone) ? await query(
             `SELECT id FROM leads WHERE tenant_id=$1 AND is_deleted=FALSE
-             AND (($2::text<>'' AND LOWER(email)=$2) OR ($3::text<>'' AND phone=$3)) LIMIT 1`,
-            [mf.tenant_id, email, phone]
+             AND (($2::text<>'' AND LOWER(email)=$2) OR ($3::text<>'' AND phone=$3))
+             AND ($4::uuid IS NULL OR pipeline_id = $4::uuid) LIMIT 1`,
+            [mf.tenant_id, email, phone, mf.pipeline_id ?? null]
           ) : { rows: [] };
 
           if (existing.rows[0]) continue;
